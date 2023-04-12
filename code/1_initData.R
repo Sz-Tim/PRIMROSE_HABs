@@ -8,7 +8,6 @@
 
 library(raster)
 library(gdistance)
-library(rSDM)
 library(tidyverse)
 library(glue)
 library(lubridate)
@@ -115,7 +114,7 @@ wrf.dir <- ifelse(.Platform$OS.type=="unix",
                   "/media/archiver/common/sa01da-work/WRF/Archive/",
                   "D:/hydroOut/WRF/Archive/")
 get_WRF(wrf.dir=wrf.dir, nDays_buffer=nDays_avg, 
-        dateRng=c("2016-01-07", max(fsa.df$date)), 
+        dateRng=c(ymd("2016-01-07"), max(fsa.df$date)), 
         out.dir="data/0_init/")
 wrf.f <- dir("data/0_init/wrf/", "wrf.*rds", full.names=T)
 wrf.df <- map_dfr(wrf.f, readRDS)

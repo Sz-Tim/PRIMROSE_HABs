@@ -209,7 +209,7 @@ nest_WRF_domains <- function(path.ls) {
 
 get_shortestPaths <- function(ocean.path, site.df) {
   library(tidyverse); library(sf); library(glue);
-  library(raster); library(gdistance); library(rSDM)
+  library(raster); library(gdistance)
   
   # adapted from:
   # https://agrdatasci.github.io/gdistance/reference/index.html
@@ -252,4 +252,68 @@ get_shortestPaths <- function(ocean.path, site.df) {
     st_drop_geometry()
   
   return(dist.df)
+}
+
+
+
+
+
+point_in_cell <- function (locs, ras, layer=1) {
+  # copied from rSDM since not available for newer R versions
+  if (!isTRUE(raster::compareCRS(locs, ras))) {
+    stop("Coordinate data and raster object must have the same projection. Check their CRS or proj4string")
+  }
+  else {
+    if (nlayers(ras) > 1) 
+      ras <- raster(ras, layer)
+    rasvals <- raster::extract(ras, locs)
+    missing <- is.na(rasvals)
+    missing
+  }
+}
+
+
+
+points2nearestcell <- function (locs=NULL, ras=NULL, layer=1, 
+                                move=T, distance=NULL, showchanges=T) {
+  # copied from rSDM since not available for newer R versions
+  miss <- point_in_cell(locs, ras, layer)
+  if (sum(miss) > 0) {
+    coord.miss <- sp::coordinates(locs[miss, ])
+    if (nlayers(ras) > 1) 
+      ras <- raster::raster(ras, layer)
+    cells.notNA <- raster::rasterToPoints(ras, spatial = TRUE)
+    coord.ras <- sp::coordinates(cells.notNA)
+    cell.id <- factor(seq_len(nrow(coord.ras)))
+    nearest.cell <- class::knn1(coord.ras, coord.miss, cell.id)
+    new.coords <- matrix(coord.ras[nearest.cell, ], ncol = 2)
+    colnames(new.coords) <- c("longitude_new", "latitude_new")
+    if (!is.null(distance)) {
+      distances <- raster::pointDistance(coord.miss, new.coords, 
+                                         lonlat = raster::isLonLat(locs))
+      x <- ifelse(distances < distance, new.coords[, 1], 
+                  coord.miss[, 1])
+      y <- ifelse(distances < distance, new.coords[, 2], 
+                  coord.miss[, 2])
+      new.coords <- cbind(longitude_new = x, latitude_new = y)
+    }
+    if (isTRUE(move)) {
+      locs@coords[miss, ] <- new.coords
+    }
+    if (isTRUE(showchanges)) {
+      coords <- data.frame(coord.miss, new.coords)
+      distances <- round(raster::pointDistance(coord.miss, 
+                                               new.coords, lonlat = raster::isLonLat(locs)))
+      moved <- apply(coords, 1, function(x) {
+        !isTRUE(identical(x[1], x[3]) & identical(x[2], 
+                                                  x[4]))
+      })
+      coords <- cbind(coords, distances, moved)
+      print(coords)
+      message(sum(moved), " out of ", nrow(coords), 
+              " points have been moved.")
+    }
+  }
+  else message("All points fall within a raster cell")
+  return(locs)
 }
