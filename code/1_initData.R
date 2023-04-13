@@ -31,9 +31,9 @@ fsa.df <- fromJSON("data/0_init/copy_fsa.txt") %>%
   filter(!is.na(date_collected)) %>%
   filter(karenia_mikimotoi >= 0) %>% # -99 in karenia...?
   mutate(datetime_collected=as_datetime(date_collected),
-         date=date(datetime_collected),
-         siteid=as.numeric(factor(sin))) %>%
+         date=date(datetime_collected)) %>%
   filter(datetime_collected >= "2013-07-20") %>% 
+  mutate(siteid=as.numeric(factor(sin))) %>%
   rename(obsid=oid) %>%
   group_by(sin) %>% 
   mutate(lon=median(easting), lat=median(northing)) %>%
