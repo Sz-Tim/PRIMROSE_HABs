@@ -127,8 +127,9 @@ saveRDS(wrf.df, glue("data/0_init/wrf_end_{max(wrf.df$date)}.rds"))
 
 # Shortest paths within the ocean
 get_shortestPaths(ocean.path="data/0_init/northAtlantic_footprint.tif", 
-                  site.df=site.df) %>%
-  write_csv(glue("data{sep}fsa_site_pairwise_distances.csv"))
+                  site.df=site.df, 
+                  transMx.path="data/0_init/mesh_tmx.rds", recalc_transMx=F) %>%
+  write_csv("data/0_init/fsa_site_pairwise_distances.csv")
 
 
 
@@ -136,6 +137,10 @@ get_shortestPaths(ocean.path="data/0_init/northAtlantic_footprint.tif",
 # Fetch and bearing -------------------------------------------------------
 
 # Wave fetch and bearing with the most open water
+# https://doi.org/10.6084/m9.figshare.12029682.v1
+site.df <- site.df %>%
+  get_fetch(., "https://figshare.com/ndownloader/files/22107477") %>%
+  get_openBearing(., "data/0_init/northAtlantic_footprint.gpkg", buffer=200e3)
 
 
 

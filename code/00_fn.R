@@ -117,41 +117,6 @@ get_WRF <- function(wrf.dir, nDays_buffer, dateRng, out.dir) {
                  ungroup)
     saveRDS(var.df, glue("{out.dir}/wrf/wrf_{str_pad(i, 4, 'left', '0')}.rds"))
   }
-  
-  
-  
-  
-  
-  out.ls <- vector("list", n_distinct(sampling.df$wrf_i))
-  for(i in unique(sampling.df$wrf_i)) {
-    samp_i <- sampling.df %>% filter(wrf_i==i) %>%
-      mutate(wrf_coord=st_nearest_feature(., coord.wrf),
-             wrf_row=coord.wrf$row[wrf_coord],
-             wrf_col=coord.wrf$col[wrf_coord])
-    
-  
-    
-    for(j in 1:nrow(samp_i)) {
-      dims_ij <- list(lon=samp_i$wrf_row[j],
-                      lat=samp_i$wrf_col[j],
-                      time=which(times.df$date == samp_i$date[j]))
-      U_ij <- U[dims_ij$lon, dims_ij$lat, dims_ij$time]
-      V_ij <- V[dims_ij$lon, dims_ij$lat, dims_ij$time]
-      var_ij[[j]] <- tibble(
-        obs.id=samp_i$obs.id[j],
-        site.id=samp_i$site.id[j],
-        date=samp_i$date[j],
-        U_mn=mean(U_ij),
-        V_mn=mean(V_ij),
-        UV_speed=q90(sqrt(U_ij^2 + V_ij^2)),
-        UV_mnDir=mean(atan2(V_ij, U_ij)),
-        Shortwave=sum(Shortwave[dims_ij$lon, dims_ij$lat, dims_ij$time]),
-        Precip=sum(Precip[dims_ij$lon, dims_ij$lat, dims_ij$time]),
-        sst=mean(sst[dims_ij$lon, dims_ij$lat, dims_ij$time])
-      )
-    }
-    out.ls[[i]] <- do.call('rbind', var_ij)
-  }
 }
 
 
@@ -207,7 +172,7 @@ nest_WRF_domains <- function(path.ls) {
 
 
 
-get_shortestPaths <- function(ocean.path, site.df) {
+get_shortestPaths <- function(ocean.path, site.df, transMx.path=NULL, recalc_transMx=T) {
   library(tidyverse); library(sf); library(glue);
   library(raster); library(gdistance)
   
@@ -216,8 +181,14 @@ get_shortestPaths <- function(ocean.path, site.df) {
   
   # load ocean raster and calculate transition matrix
   mesh.r <- raster(ocean.path)
-  mesh.tmx <- transition(mesh.r, mean, 16)
-  mesh.tmx <- geoCorrection(mesh.tmx)
+  if(is.null(transMx.path) | recalc_transMx) {
+    mesh.tmx <- transition(mesh.r, mean, 16)
+    mesh.tmx <- geoCorrection(mesh.tmx)
+    saveRDS(mesh.tmx, "data/0_init/mesh_tmx.rds")
+  } else {
+    mesh.tmx <- readRDS(transMx.path)
+  }
+  
   
   # locate sites in mesh
   set_ll_warn(TRUE)
@@ -228,28 +199,16 @@ get_shortestPaths <- function(ocean.path, site.df) {
     as.data.frame
   
   # find pairwise shortest paths within ocean
-  paths.ls <- list()
-  for(i in 1:nrow(site.spdf)) {
-    paths.ls[[i]] <- shortestPath(mesh.tmx, 
-                                  as.matrix(site.spdf[i,2:3]),
-                                  as.matrix(site.spdf[-i,2:3]),
-                                  output="SpatialLines") %>%
-      st_as_sf %>%
-      mutate(origin=site.spdf$site.id[i],
-             destination=site.spdf$site.id[-i],
-             distance=st_length(.))
-  }
-  
   dist.df <- map_dfr(1:nrow(site.spdf),
                      ~shortestPath(mesh.tmx,
-                                   as.matrix(site.spdf[.x,2:3]),
-                                   as.matrix(site.spdf[-.x,2:3]),
+                                   as.matrix(site.spdf[.x, c("lon", "lat")]),
+                                   as.matrix(site.spdf[-.x, c("lon", "lat")]),
                                    output="SpatialLines") %>%
                        st_as_sf %>%
-                       mutate(origin=site.spdf$site.id[.x],
-                              destination=site.spdf$site.id[-.x],
-                              distance=st_length(.))) %>%
-    st_drop_geometry()
+                       mutate(origin=site.spdf$siteid[.x],
+                              destination=site.spdf$siteid[-.x],
+                              distance=st_length(.)) %>%
+                       st_drop_geometry)
   
   return(dist.df)
 }
@@ -317,3 +276,61 @@ points2nearestcell <- function (locs=NULL, ras=NULL, layer=1,
   else message("All points fall within a raster cell")
   return(locs)
 }
+
+
+
+
+
+get_fetch <- function(site.df, fetch.path, small=T, buffer=5e2, fun=mean) {
+  library(tidyverse); library(sf)
+  site.df %>%
+    st_as_sf(coords=c("lon", "lat"), crs=27700, remove=F) %>%
+    mutate(fetch=raster::extract(raster(fetch.path), ., 
+                                 small=small, buffer=buffer, fun=fun)) %>%
+    st_drop_geometry()
+}
+
+
+
+
+
+get_openBearing <- function(site.df, coast.path, buffer=10e3, nDir=120) {
+  library(tidyverse); library(sf)
+  
+  hub.df <- site.df %>% 
+    select(siteid, lon, lat) %>%
+    st_as_sf(coords=c("lon", "lat"), crs=27700)
+  spoke.df <- hub.df %>%
+    st_buffer(dist=buffer, nQuadSegs=nDir/4) %>%
+    st_cast("POINT") %>%
+    group_by(siteid) %>%
+    mutate(spoke.id=row_number()) %>%
+    filter(spoke.id <= nDir) 
+  hubRep.df <- full_join(hub.df, spoke.df %>% st_drop_geometry())
+  coords <- cbind(st_coordinates(hubRep.df), st_coordinates(spoke.df))
+  spoke.lines <- lapply(1:nrow(coords),
+                        function(i){
+                          st_linestring(matrix(coords[i,], ncol=2, byrow=TRUE))
+                        }) %>%
+    st_sfc() %>% st_as_sf() %>% st_set_crs(27700) %>%
+    rename(geometry=x) %>%
+    mutate(siteid=spoke.df$siteid,
+           spoke.id=spoke.df$spoke.id)
+  spoke.mesh <- st_intersection(spoke.lines, st_read(coast.path)) %>%
+    st_cast("LINESTRING") %>%
+    mutate(len=round(as.numeric(st_length(.)))) %>%
+    group_by(siteid) %>%
+    filter(len==max(len)) %>%
+    ungroup %>%
+    st_cast("POINT")
+  bearings <- as.numeric(lwgeom::st_geod_azimuth(st_transform(spoke.mesh, 4326)))
+  bearing.df <- spoke.mesh[1:nrow(spoke.mesh) %% 2 == 0,] %>%
+    st_drop_geometry() %>%
+    mutate(bearing=bearings[1:length(bearings) %% 2 == 1]) %>%
+    group_by(siteid) %>%
+    summarise(openBearing=median(bearing)) %>%
+    ungroup
+  return(full_join(site.df, bearing.df, by="siteid"))
+}
+
+
