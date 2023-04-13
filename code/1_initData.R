@@ -21,6 +21,21 @@ source("code/00_fn.R")
 nDays_avg <- 14
 UK_bbox <- list(xmin=-11, xmax=3, ymin=49, ymax=61.5)
 sp_i <- read_csv("data/sp_i.csv")
+hab.tl <- read_csv("data/hab_tl_thresholds.csv") %>%
+  filter(min_ge != -99) %>%
+  rename(sp=hab_parameter) %>%
+  group_by(sp) %>%
+  mutate(N_ord=LETTERS[row_number()],
+         alert=case_when(is.na(alert)~0,
+                         alert=="warn"~1,
+                         alert=="alert"~2)) %>%
+  select(sp, min_ge, alert, tl, N_ord)
+hab.tl <- hab.tl %>% 
+  bind_rows(hab.tl %>% filter(sp=="pseudo_nitzschia_sp") %>% 
+              mutate(sp="pseudo_nitzschia_delicatissima_group")) %>% 
+  bind_rows(hab.tl %>% filter(sp=="pseudo_nitzschia_sp") %>% 
+              mutate(sp="pseudo_nitzschia_seriata_group")) %>%
+  mutate(sp=sp_i$abbr[match(sp, sp_i$full)])
 
 
 
@@ -43,7 +58,8 @@ fsa.df <- fromJSON("data/0_init/copy_fsa.txt") %>%
   mutate(lon=median(easting), lat=median(northing)) %>%
   ungroup %>%
   select(-geom, -easting, -northing, -tide, -datetime_collected, -samplemethod, 
-         -depth, -site, -area)
+         -depth, -site, -area, -date_collected, -farm_species, -N) %>%
+  rename(all_of(setNames(sp_i$full, sp_i$abbr)))
 
 site.df <- fsa.df %>%  
   select(siteid, sin, lon, lat) %>%
@@ -140,7 +156,18 @@ path.ls <- get_shortestPaths(ocean.path="data/northAtlantic_footprint.tif",
                              transMx.path="data/mesh_tmx.rds", recalc_transMx=F)
 write_csv(path.ls$dist.df, "data/site_pairwise_distances.csv")
 site.df <- path.ls$site.df # slightly modified lat/lon to fit within ocean mesh
-
+path.ls$dist.df %>% 
+  bind_rows(tibble(origin=unique(.$origin), 
+                   destination=unique(.$origin), 
+                   distance=0)) %>%
+  filter(distance < 100e3) %>% 
+  select(-distance) %>% 
+  group_by(origin) %>% 
+  nest(data=destination) %>%
+  mutate(dest_c=c(data[[1]])) %>% 
+  select(-data) %>%
+  ungroup %>%
+  saveRDS("data/site_neighbors_100km.rds")
 
 
 
@@ -158,16 +185,47 @@ saveRDS(site.df, "data/site_df.rds")
 # HAB densities -----------------------------------------------------------
 
 # Observed densities and bloom states for focal taxa
-# N[t]
-# N[t-1]
-# N[t-2]
-fsa.df %>%
-  get_lags(n=2, R_dist=100e3)
+# * = [t]
+# *1 = [t-1]
+# *2 = [t-2]
+# N: reported density
+# lnN: ln(N + 1)
+# tl: HABReports traffic light for density N
+# cat: HABReports label category for density N
+# alert: HABReports action (0_none, 1_warn, 2_alert)
+# lnNAvg: regional average of lnN within previous week
+# prAlertAvg: regional average of alerting sites within previous week
+hab.df <- fsa.df %>% 
+  pivot_longer(any_of(sp_i$abbr), names_to="sp", values_to="N") %>%
+  filter(!is.na(N)) %>%
+  mutate(lnN=log1p(N)) %>%
+  get_trafficLights(N, hab.tl) %>%
+  arrange(sp, siteid, date) %>%
+  group_by(sp, siteid) %>%
+  get_lags(lnN, alert, date, n=2) %>%
+  mutate(lnDayLag1=log(as.numeric(date-date1)), 
+         lnDayLag2=log(as.numeric(date-date2)))
+for(i in 1:nrow(hab.df)) {
+  site_i <- hab.df$siteid[i]
+  date_i <- hab.df$date[i]
+  sp_i <- hab.df$sp[i]
+  wk.df <- hab.df %>% select(siteid, date, lnN1, lnN2, alert1, alert2) %>%
+    filter(siteid %in% site.100k$dest_c[site.100k$origin==site_i][[1]]) %>%
+    filter(date <= date_i & date > date_i-7) 
+  hab.df$lnNAvg1[i] <- mean(wk.df$lnN1, na.rm=T)
+  hab.df$lnNAvg2[i] <- mean(wk.df$lnN2, na.rm=T)
+  hab.df$prAlertAvg1[i] <- mean(wk.df$alert1 != "0_none", na.rm=T)
+  hab.df$prAlertAvg2[i] <- mean(wk.df$alert2 != "0_none", na.rm=T)
+  if(i %% 100 == 0) {cat(i, "of", nrow(hab.df), "\n")}
+}
+saveRDS(hab.df, "data/0_init/hab_densities.rds")
 
 
 
 
 
 # Compile and save --------------------------------------------------------
+
+# load, extract, and compile
 
 # Partition datasets for testing/training

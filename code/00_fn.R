@@ -335,3 +335,44 @@ get_openBearing <- function(site.df, coast.path, buffer=10e3, nDir=120) {
 }
 
 
+
+
+
+get_trafficLights <- function(hab.df, N, tl.df) {
+  library(tidyverse)
+  hab.df %>%
+    rowwise() %>%
+    mutate(tl=tl.df$tl[max(which(sp==tl.df$sp & {{N}} >= tl.df$min_ge))],
+           cat=tl.df$N_ord[max(which(sp==tl.df$sp & {{N}} >= tl.df$min_ge))],
+           alert=tl.df$alert[max(which(sp==tl.df$sp & {{N}} >= tl.df$min_ge))]) %>%
+    ungroup %>%
+    mutate(alert=c("0_none", "1_warn", "2_alert")[alert+1])
+}
+
+
+
+#' Lag multiple variables at once
+#'
+#' From https://stackoverflow.com/questions/55814028/multiple-lags-with-dplyr
+#'
+#' @param data Dataframe
+#' @param ... Unquoted variable names to lag
+#' @param n Number of lags
+#'
+#' @return
+#' @export
+#'
+#' @examples
+get_lags <- function(data, ..., n=2){
+  library(tidyverse); library(rlang)
+  variable <- enquos(...)
+  
+  indices <- seq_len(n)
+  combos <- crossing(indices, var=as.list(variable))
+  
+  quosures <- map2(combos$indices, combos$var,
+                   ~quo(lag(!!.y, !!.x)) ) %>%
+    set_names(paste0(map_chr(combos$var, quo_text), combos$indices))
+  mutate(data, !!!quosures )
+  
+}
