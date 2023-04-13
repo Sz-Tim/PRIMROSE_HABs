@@ -20,7 +20,7 @@ source("code/00_fn.R")
 
 nDays_avg <- 14
 UK_bbox <- list(xmin=-11, xmax=3, ymin=49, ymax=61.5)
-
+sp_i <- read_csv("data/sp_i.csv")
 
 
 
@@ -29,10 +29,14 @@ UK_bbox <- list(xmin=-11, xmax=3, ymin=49, ymax=61.5)
 fsa.df <- fromJSON("data/0_init/copy_fsa.txt") %>% 
   as_tibble %>% 
   filter(!is.na(date_collected)) %>%
-  filter(karenia_mikimotoi >= 0) %>% # -99 in karenia...?
   mutate(datetime_collected=as_datetime(date_collected),
          date=date(datetime_collected)) %>%
-  filter(datetime_collected >= "2013-07-20") %>% 
+  mutate(across(any_of(sp_i$full), ~na_if(.x, -99))) %>%
+  filter(datetime_collected >= "2013-07-20") %>%
+  group_by(sin) %>%
+  mutate(N=n()) %>%
+  filter(N > 2) %>%
+  ungroup %>%
   mutate(siteid=as.numeric(factor(sin))) %>%
   rename(obsid=oid) %>%
   group_by(sin) %>% 
@@ -44,6 +48,11 @@ fsa.df <- fromJSON("data/0_init/copy_fsa.txt") %>%
 site.df <- fsa.df %>%  
   select(siteid, sin, lon, lat) %>%
   group_by(siteid) %>% slice_head(n=1) %>% ungroup
+saveRDS(site.df, "data/site_df.rds")
+
+fsa.df <- fsa.df %>% select(-lon, -lat, -sin)
+saveRDS(fsa.df, "data/0_init/fsa_df.rds")
+
 site.4326 <- site.df %>% 
   st_as_sf(coords=c("lon", "lat"), crs=27700) %>%
   st_buffer(dist=50e3) %>%
@@ -77,7 +86,7 @@ cmems_i <- expand_grid(
          ID=glue("cmems_mod_nws_bgc-{var}_", 
                  "{if_else(source=='Reanalysis', 'my', 'anfc')}_7km-",
                  "{if_else(var=='spco2', '2D', '3D')}_P1D-m"))
-write_csv(cmems_i, "data/0_init/cmems_i.csv")
+write_csv(cmems_i, "data/cmems_i.csv")
 
 get_CMEMS(userid="tszewczyk", pw="xaj5kba*haq_TYD4pzb", 
           i.df=cmems_i, bbox=UK_bbox, 
@@ -126,10 +135,11 @@ saveRDS(wrf.df, glue("data/0_init/wrf_end_{max(wrf.df$date)}.rds"))
 # Pairwise distances ------------------------------------------------------
 
 # Shortest paths within the ocean
-get_shortestPaths(ocean.path="data/0_init/northAtlantic_footprint.tif", 
-                  site.df=site.df, 
-                  transMx.path="data/0_init/mesh_tmx.rds", recalc_transMx=F) %>%
-  write_csv("data/0_init/fsa_site_pairwise_distances.csv")
+path.ls <- get_shortestPaths(ocean.path="data/northAtlantic_footprint.tif", 
+                             site.df=site.df, 
+                             transMx.path="data/mesh_tmx.rds", recalc_transMx=F)
+write_csv(path.ls$dist.df, "data/site_pairwise_distances.csv")
+site.df <- path.ls$site.df # slightly modified lat/lon to fit within ocean mesh
 
 
 
@@ -139,9 +149,9 @@ get_shortestPaths(ocean.path="data/0_init/northAtlantic_footprint.tif",
 # Wave fetch and bearing with the most open water
 # https://doi.org/10.6084/m9.figshare.12029682.v1
 site.df <- site.df %>%
-  get_fetch(., "https://figshare.com/ndownloader/files/22107477") %>%
-  get_openBearing(., "data/0_init/northAtlantic_footprint.gpkg", buffer=200e3)
-
+  get_fetch(., "data/log10_eu200m1a.tif") %>%
+  get_openBearing(., "data/northAtlantic_footprint.gpkg", buffer=200e3)
+saveRDS(site.df, "data/site_df.rds")
 
 
 
@@ -151,7 +161,8 @@ site.df <- site.df %>%
 # N[t]
 # N[t-1]
 # N[t-2]
-
+fsa.df %>%
+  get_lags(n=2, R_dist=100e3)
 
 
 

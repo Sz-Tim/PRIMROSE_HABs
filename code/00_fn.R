@@ -184,7 +184,7 @@ get_shortestPaths <- function(ocean.path, site.df, transMx.path=NULL, recalc_tra
   if(is.null(transMx.path) | recalc_transMx) {
     mesh.tmx <- transition(mesh.r, mean, 16)
     mesh.tmx <- geoCorrection(mesh.tmx)
-    saveRDS(mesh.tmx, "data/0_init/mesh_tmx.rds")
+    saveRDS(mesh.tmx, "data/mesh_tmx.rds")
   } else {
     mesh.tmx <- readRDS(transMx.path)
   }
@@ -197,6 +197,7 @@ get_shortestPaths <- function(ocean.path, site.df, transMx.path=NULL, recalc_tra
                                       proj4string=CRS("+init=epsg:27700")) %>%
     points2nearestcell(., mesh.r) %>%
     as.data.frame
+  site.df_new <- site.df %>% select(siteid, sin) %>% left_join(site.spdf)
   
   # find pairwise shortest paths within ocean
   dist.df <- map_dfr(1:nrow(site.spdf),
@@ -210,7 +211,7 @@ get_shortestPaths <- function(ocean.path, site.df, transMx.path=NULL, recalc_tra
                               distance=st_length(.)) %>%
                        st_drop_geometry)
   
-  return(dist.df)
+  return(list(site.df=site.df_new, dist.df=dist.df))
 }
 
 
