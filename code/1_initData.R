@@ -69,11 +69,6 @@ saveRDS(site.df, "data/site_df.rds")
 fsa.df <- fsa.df %>% select(-lon, -lat, -sin)
 saveRDS(fsa.df, "data/0_init/fsa_df.rds")
 
-site.4326 <- site.df %>% 
-  st_as_sf(coords=c("lon", "lat"), crs=27700) %>%
-  st_buffer(dist=50e3) %>%
-  st_transform(4326)
-
 
 
 
@@ -118,7 +113,17 @@ cmems.df <- bind_rows(
   readRDS(anfo.f[1]) %>%
     bind_cols(map_dfc(anfo.f[-1], ~readRDS(.x) %>% select(5)))
   ) %>%
-  filter(complete.cases(.))
+  filter(complete.cases(.)) %>%
+  mutate(chl=log1p(chl),
+         kd=log(kd),
+         no3=log1p(no3),
+         o2=log(o2),
+         phyc=log1p(phyc),
+         po4=log1p(po4)) %>%
+  arrange(date, lon, lat) %>%
+  group_by(date) %>%
+  mutate(cmems_id=row_number()) %>%
+  ungroup
 saveRDS(cmems.df, glue("data/0_init/cmems_end_{max(cmems.df$date)}.rds"))
 
 
@@ -151,6 +156,7 @@ saveRDS(wrf.df, glue("data/0_init/wrf_end_{max(wrf.df$date)}.rds"))
 # Pairwise distances ------------------------------------------------------
 
 # Shortest paths within the ocean
+
 path.ls <- get_shortestPaths(ocean.path="data/northAtlantic_footprint.tif", 
                              site.df=site.df, 
                              transMx.path="data/mesh_tmx.rds", recalc_transMx=F)
@@ -171,14 +177,35 @@ path.ls$dist.df %>%
 
 
 
+
 # Fetch and bearing -------------------------------------------------------
 
 # Wave fetch and bearing with the most open water
 # https://doi.org/10.6084/m9.figshare.12029682.v1
+
 site.df <- site.df %>%
   get_fetch(., "data/log10_eu200m1a.tif") %>%
   get_openBearing(., "data/northAtlantic_footprint.gpkg", buffer=200e3)
 saveRDS(site.df, "data/site_df.rds")
+
+
+
+
+
+# site buffers ------------------------------------------------------------
+
+# Buffers for averaging environmental conditions
+# CMEMS is coarse and does not resolve lochs, so some sites are not covered
+# The buffer size was determined by trial and error to reduce averaging while
+# ensuring all sites are represented.
+
+coast.sf <- st_read("data/northAtlantic_footprint.gpkg")
+site.sf <- map(c(0.5, 1, 5, 10, 25, 50), 
+               ~site.df %>% 
+                 st_as_sf(coords=c("lon", "lat"), crs=27700) %>%
+                 select(-sin) %>% mutate(buffer_km=.x) %>%
+                 st_buffer(dist=.x*1e3))
+
 
 
 
@@ -195,6 +222,7 @@ saveRDS(site.df, "data/site_df.rds")
 # alert: HABReports action (0_none, 1_warn, 2_alert)
 # lnNAvg: regional average of lnN within previous week
 # prAlertAvg: regional average of alerting sites within previous week
+
 hab.df <- fsa.df %>% 
   pivot_longer(any_of(sp_i$abbr), names_to="sp", values_to="N") %>%
   filter(!is.na(N)) %>%
@@ -227,5 +255,41 @@ saveRDS(hab.df, "data/0_init/hab_densities.rds")
 # Compile and save --------------------------------------------------------
 
 # load, extract, and compile
+# - Algal densities
+# - CMEMS
+# - WRF
+# - fetch & bearing
+# - calculate cos(dir)'s
+
+# Extract CMEMS data for each site:date
+cmems.df <- readRDS(dir("data/0_init", "cmems_.*rds", full.names=T))
+cmems.sf <- cmems.df %>% select(date, lon, lat, cmems_id) %>% 
+  filter(date==min(date)) %>%
+  st_as_sf(., coords=c("lon", "lat"), crs=4326)
+site.df <- site.df %>%
+  st_as_sf(coords=c("lon", "lat"), crs=27700, remove=F) %>%
+  st_transform(4326) %>%
+  mutate(cmems_id=st_nearest_feature(., cmems.sf)) %>%
+  st_drop_geometry()
+cmems.df <- cmems.df %>% 
+  filter(cmems_id %in% site.df$cmems_id) %>%
+  group_by(cmems_id) %>%
+  mutate(across(any_of(unique(cmems_i$var)), 
+                ~zoo::rollmean(.x, k=7, na.pad=T),
+                .names="{.col}Wk")) %>%
+  ungroup %>%
+  mutate(day_cumul=as.numeric(date - ymd("2010-01-01")),
+         yday=yday(date)) %>%
+  group_by(cmems_id) %>%
+  mutate(across(any_of(unique(cmems_i$var)),
+                ~detrend_loess(yday, .x, span=0.2), 
+                .names="{.col}Dt")) %>%
+  ungroup
+
+# Extract WRF data for each site:date
+
+
+obs.df <- readRDS("data/0_init/hab_densities.rds") %>%
+  left_join(readRDS("data/site_df.rds"))
 
 # Partition datasets for testing/training

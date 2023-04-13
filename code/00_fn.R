@@ -376,3 +376,17 @@ get_lags <- function(data, ..., n=2){
   mutate(data, !!!quosures )
   
 }
+
+
+
+
+
+# modified from astsa::trend
+detrend_loess <- function (x, y, span=0.75, robust=TRUE) {
+  if(length(y) < 10) {
+    return(y)
+  }
+  fam = ifelse(robust, "symmetric", "gaussian")
+  lo = stats::predict(stats::loess(y ~ x, span=span, family=fam), se = F)
+  return(c(y - lo))
+}
