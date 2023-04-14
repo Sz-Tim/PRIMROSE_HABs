@@ -29,6 +29,7 @@ hab.tl <- read_csv("data/hab_tl_thresholds.csv") %>%
          alert=case_when(is.na(alert)~0,
                          alert=="warn"~1,
                          alert=="alert"~2)) %>%
+  ungroup %>%
   select(sp, min_ge, alert, tl, N_ord)
 hab.tl <- hab.tl %>% 
   bind_rows(hab.tl %>% filter(sp=="pseudo_nitzschia_sp") %>% 
@@ -64,7 +65,7 @@ fsa.df <- fromJSON("data/0_init/copy_fsa.txt") %>%
 site.df <- fsa.df %>%  
   select(siteid, sin, lon, lat) %>%
   group_by(siteid) %>% slice_head(n=1) %>% ungroup
-saveRDS(site.df, "data/site_df.rds")
+# saveRDS(site.df, "data/site_df.rds")
 
 fsa.df <- fsa.df %>% select(-lon, -lat, -sin)
 saveRDS(fsa.df, "data/0_init/fsa_df.rds")
@@ -99,7 +100,8 @@ cmems_i <- expand_grid(
                  "{if_else(var=='spco2', '2D', '3D')}_P1D-m"))
 write_csv(cmems_i, "data/cmems_i.csv")
 
-get_CMEMS(userid="tszewczyk", pw="xaj5kba*haq_TYD4pzb", 
+cmems_cred <- readRDS("data/cmems_cred.rds")
+get_CMEMS(userid=cmems_cred$userid, pw=cmems_cred$pw, 
           i.df=cmems_i, bbox=UK_bbox, 
           nDays_buffer=nDays_avg, dateRng=range(fsa.df$date), 
           out.dir="data/0_init/cmems/")
@@ -147,7 +149,10 @@ get_WRF(wrf.dir=wrf.dir, nDays_buffer=nDays_avg,
         dateRng=c(ymd("2016-01-07"), max(fsa.df$date)), 
         out.dir="data/0_init/")
 wrf.f <- dir("data/0_init/wrf/", "wrf.*rds", full.names=T)
-wrf.df <- map_dfr(wrf.f, readRDS)
+wrf.df <- map_dfr(wrf.f, readRDS) %>%
+  group_by(i, res, lat, lon, date) %>%
+  slice_head(n=1) %>%
+  ungroup
 saveRDS(wrf.df, glue("data/0_init/wrf_end_{max(wrf.df$date)}.rds"))
 
 
@@ -186,7 +191,7 @@ path.ls$dist.df %>%
 site.df <- site.df %>%
   get_fetch(., "data/log10_eu200m1a.tif") %>%
   get_openBearing(., "data/northAtlantic_footprint.gpkg", buffer=200e3)
-saveRDS(site.df, "data/site_df.rds")
+# saveRDS(site.df, "data/site_df.rds")
 
 
 
@@ -200,11 +205,10 @@ saveRDS(site.df, "data/site_df.rds")
 # ensuring all sites are represented.
 
 coast.sf <- st_read("data/northAtlantic_footprint.gpkg")
-site.sf <- map(c(0.5, 1, 5, 10, 25, 50), 
-               ~site.df %>% 
-                 st_as_sf(coords=c("lon", "lat"), crs=27700) %>%
-                 select(-sin) %>% mutate(buffer_km=.x) %>%
-                 st_buffer(dist=.x*1e3))
+site.sf <- site.df %>% 
+  st_as_sf(coords=c("lon", "lat"), crs=27700) %>%
+  select(-sin) %>%
+  st_buffer(dist=100e3)
 
 
 
@@ -223,6 +227,9 @@ site.sf <- map(c(0.5, 1, 5, 10, 25, 50),
 # lnNAvg: regional average of lnN within previous week
 # prAlertAvg: regional average of alerting sites within previous week
 
+site.df <- readRDS("data/site_df.rds")
+site.100km <- readRDS("data/site_neighbors_100km.rds")
+fsa.df <- readRDS("data/0_init/fsa_df.rds")
 hab.df <- fsa.df %>% 
   pivot_longer(any_of(sp_i$abbr), names_to="sp", values_to="N") %>%
   filter(!is.na(N)) %>%
@@ -231,20 +238,22 @@ hab.df <- fsa.df %>%
   arrange(sp, siteid, date) %>%
   group_by(sp, siteid) %>%
   get_lags(lnN, alert, date, n=2) %>%
+  ungroup %>%
   mutate(lnDayLag1=log(as.numeric(date-date1)), 
-         lnDayLag2=log(as.numeric(date-date2)))
-for(i in 1:nrow(hab.df)) {
-  site_i <- hab.df$siteid[i]
-  date_i <- hab.df$date[i]
-  sp_i <- hab.df$sp[i]
-  wk.df <- hab.df %>% select(siteid, date, lnN1, lnN2, alert1, alert2) %>%
-    filter(siteid %in% site.100k$dest_c[site.100k$origin==site_i][[1]]) %>%
-    filter(date <= date_i & date > date_i-7) 
-  hab.df$lnNAvg1[i] <- mean(wk.df$lnN1, na.rm=T)
-  hab.df$lnNAvg2[i] <- mean(wk.df$lnN2, na.rm=T)
-  hab.df$prAlertAvg1[i] <- mean(wk.df$alert1 != "0_none", na.rm=T)
-  hab.df$prAlertAvg2[i] <- mean(wk.df$alert2 != "0_none", na.rm=T)
-  if(i %% 100 == 0) {cat(i, "of", nrow(hab.df), "\n")}
+         lnDayLag2=log(as.numeric(date-date2)),
+         lnNAvg1=0, lnNAvg2=0, prAlertAvg1=0, prAlertAvg2=0)
+for(j in 1:nrow(hab.df)) {
+  site_j <- hab.df$siteid[j]
+  date_j <- hab.df$date[j]
+  sp_j <- hab.df$sp[j]
+  wk.df <- hab.df %>% select(sp, siteid, date, lnN1, lnN2, alert1, alert2) %>%
+    filter(siteid %in% site.100km$dest_c[site.100km$origin==site_j][[1]]) %>%
+    filter(date <= date_j & date > date_j-7 & sp==sp_j) 
+  hab.df$lnNAvg1[j] <- mean(wk.df$lnN1, na.rm=T)
+  hab.df$lnNAvg2[j] <- mean(wk.df$lnN2, na.rm=T)
+  hab.df$prAlertAvg1[j] <- mean(wk.df$alert1 != "0_none", na.rm=T)
+  hab.df$prAlertAvg2[j] <- mean(wk.df$alert2 != "0_none", na.rm=T)
+  if(j %% 1000 == 0) {cat(j, "of", nrow(hab.df), "\n")}
 }
 saveRDS(hab.df, "data/0_init/hab_densities.rds")
 
@@ -252,17 +261,12 @@ saveRDS(hab.df, "data/0_init/hab_densities.rds")
 
 
 
-# Compile and save --------------------------------------------------------
+# Extract sites -----------------------------------------------------------
 
-# load, extract, and compile
-# - Algal densities
-# - CMEMS
-# - WRF
-# - fetch & bearing
-# - calculate cos(dir)'s
+# * CMEMS  site:date ------------------------------------------------------
 
-# Extract CMEMS data for each site:date
-cmems.df <- readRDS(dir("data/0_init", "cmems_.*rds", full.names=T))
+cmems_i <- read_csv("data/cmems_i.csv")
+cmems.df <- readRDS(dir("data/0_init", "cmems_end.*rds", full.names=T))
 cmems.sf <- cmems.df %>% select(date, lon, lat, cmems_id) %>% 
   filter(date==min(date)) %>%
   st_as_sf(., coords=c("lon", "lat"), crs=4326)
@@ -271,25 +275,116 @@ site.df <- site.df %>%
   st_transform(4326) %>%
   mutate(cmems_id=st_nearest_feature(., cmems.sf)) %>%
   st_drop_geometry()
-cmems.df <- cmems.df %>% 
+saveRDS(site.df, "data/site_df.rds")
+cmems.site <- cmems.df %>% 
   filter(cmems_id %in% site.df$cmems_id) %>%
   group_by(cmems_id) %>%
   mutate(across(any_of(unique(cmems_i$var)), 
                 ~zoo::rollmean(.x, k=7, na.pad=T),
                 .names="{.col}Wk")) %>%
+  mutate(across(any_of(paste0(unique(cmems_i$var), "Wk")),
+                ~.x - lag(.x),
+                .names="{.col}Delta")) %>%
   ungroup %>%
-  mutate(day_cumul=as.numeric(date - ymd("2010-01-01")),
-         yday=yday(date)) %>%
+  mutate(yday=yday(date)) %>%
   group_by(cmems_id) %>%
   mutate(across(any_of(unique(cmems_i$var)),
-                ~detrend_loess(yday, .x, span=0.2), 
+                ~detrend_loess(yday, .x, span=0.3), 
                 .names="{.col}Dt")) %>%
   ungroup
+
+corrplot::corrplot(cor(cmems.site[,c(15:22,24:31,35:42)], use="pairwise"),
+                   diag=F, method="number")
+# Threshold of abs(r) = 0.8, select variable with lowest other correlations
+# exclude: 
+# - chlWk (phycWk, ppWk)
+# - no3Wk (po4Wk)
+# - chlWkDelta (phycWkDelta)
+# - chlDt (phycDt)
+cmems_incl <- c(paste0(c("kd", "o2", "ph", "phyc", "po4", "pp"), "Wk"),
+                paste0(c("kd", "no3", "o2", "ph", "phyc", "po4", "pp"), "WkDelta"),
+                paste0(c("kd", "no3", "o2", "ph", "phyc", "po4", "pp"), "Dt"))
+saveRDS(cmems_incl, "data/cmems_includeVars.rds")
+corrplot::corrplot(cor(cmems.site[,cmems_incl], use="pairwise"),
+                   diag=F, method="number")
+cmems.site <- cmems.site %>% 
+  select(cmems_id, date, all_of(cmems_incl)) %>%
+  filter(complete.cases(.))
+saveRDS(cmems.site, "data/0_init/cmems_sitePt.rds")
+
+
+# * CMEMS  buffer:date ----------------------------------------------------
+
+site.buffer <- site.df %>% 
+  st_as_sf(coords=c("lon", "lat"), crs=27700) %>%
+  st_buffer(dist=100e3) %>%
+  st_transform(4326) %>%
+  mutate(cmems_id=st_intersects(., cmems.sf))
+cmems.buffer <- expand_grid(siteid=site.df$siteid,
+                            date=unique(cmems.df$date)) %>%
+  bind_cols(as_tibble(setNames(map(unique(cmems_i$var), ~0), unique(cmems_i$var))))
+
+cmems_id.ls <- map(site.buffer$cmems_id, ~.x)
+cmems_dates.ls <- map(unique(cmems.df$date), ~which(cmems.df$date==.x))
+ij <- 1
+for(i in unique(site.buffer$siteid)) {
+  for(j in 1:length(cmems_dates.ls)) {
+    for(k in unique(cmems_i$var)) {
+      cmems.buffer[ij,k] <- mean(cmems.df[cmems_dates.ls[[j]],][cmems_id.ls[[i]],][[k]])
+    }
+    ij <- ij+1
+    if(ij %% 1000 == 0) {cat(ij, "of", nrow(cmems.buffer), "\n")}
+  }
+}
+cmems.buffer <- cmems.buffer %>% 
+  group_by(siteid) %>%
+  mutate(across(any_of(unique(cmems_i$var)), 
+                ~zoo::rollmean(.x, k=7, na.pad=T),
+                .names="{.col}AvgWk")) %>%
+  mutate(across(any_of(paste0(unique(cmems_i$var), "AvgWk")),
+                ~.x - lag(.x),
+                .names="{.col}Delta")) %>%
+  ungroup %>%
+  mutate(yday=yday(date)) %>%
+  group_by(siteid) %>%
+  mutate(across(any_of(unique(cmems_i$var)),
+                ~detrend_loess(yday, .x, span=0.3), 
+                .names="{.col}AvgDt")) %>%
+  ungroup %>% 
+  select(siteid, date, all_of(cmems_incl)) %>%
+  filter(complete.cases(.))
+saveRDS(cmems.buffer, "data/0_init/cmems_siteBuffer.rds")
 
 # Extract WRF data for each site:date
 
 
-obs.df <- readRDS("data/0_init/hab_densities.rds") %>%
-  left_join(readRDS("data/site_df.rds"))
+
+
+
+# Compile -----------------------------------------------------------------
+
+# Load all datasets and merge
+site.df <- readRDS("data/site_df.rds") %>% select(-sin)
+hab.df <- readRDS("data/0_init/hab_densities.rds")
+cmems.site <- readRDS("data/0_init/cmems_sitePt.rds")
+cmems.buffer <- readRDS("data/0_init/cmems_siteBuffer.rds")
+
+# load, extract, and compile
+# - Algal densities
+# - CMEMS
+# - WRF
+# - fetch & bearing
+# - calculate cos(dir)'s
+obs.df <- site.df %>%
+  right_join(hab.df, by="siteid") %>%
+  left_join(cmems.site, by=c("cmems_id", "date")) %>%
+  left_join(cmems.buffer, by=c("siteid", "date")) %>%
+  filter(complete.cases(.))
 
 # Partition datasets for testing/training
+
+
+# Save
+
+
+
