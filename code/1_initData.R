@@ -148,11 +148,45 @@ wrf.dir <- ifelse(.Platform$OS.type=="unix",
 get_WRF(wrf.dir=wrf.dir, nDays_buffer=nDays_avg, 
         dateRng=c(ymd("2016-01-07"), max(fsa.df$date)), 
         out.dir="data/0_init/")
-wrf.f <- dir("data/0_init/wrf/", "wrf.*rds", full.names=T)
-wrf.df <- map_dfr(wrf.f, readRDS) %>%
-  group_by(i, res, lat, lon, date) %>%
-  slice_head(n=1) %>%
-  ungroup
+wrf.out <- "data/0_init/wrf/"
+
+# find change in domain to identify which index to use 
+wrf_d1.f <- dir(wrf.out, "wrfDomains_.*d01.rds", full.names=T)
+wrf_d2.f <- dir(wrf.out, "wrfDomains_.*d02.rds", full.names=T)
+wrf_d3.f <- dir(wrf.out, "wrfDomains_.*d03.rds", full.names=T)
+wrf_d1 <- map(wrf_d1.f, readRDS)
+wrf_d2 <- map(wrf_d2.f, readRDS)
+wrf_d3 <- map(wrf_d3.f, readRDS)
+i_d1 <- c(1, which(map_lgl(1:(length(wrf_d1)-1), ~!identical(wrf_d1[[.x]], wrf_d1[[.x+1]]))))
+i_d2 <- c(1, which(map_lgl(1:(length(wrf_d2)-1), ~!identical(wrf_d2[[.x]], wrf_d2[[.x+1]]))))
+i_d3 <- c(1, which(map_lgl(1:(length(wrf_d3)-1), ~!identical(wrf_d3[[.x]], wrf_d3[[.x+1]]))))
+dateChg_d1 <- ifelse(length(i_d1)>1, wrf_d1.f[i_d1[2]], "3000-01-01")
+dateChg_d2 <- ifelse(length(i_d2)>1, wrf_d2.f[i_d2[2]], "3000-01-01")
+dateChg_d3 <- ifelse(length(i_d3)>1, wrf_d3.f[i_d3[2]], "3000-01-01")
+wrf_d1 <- wrf_d1[i_d1]
+wrf_d2 <- wrf_d2[i_d2]
+wrf_d3 <- wrf_d3[i_d3]
+
+# read and subset WRF domains to nest higher res within lower res
+wrf_1.f <- dir(wrf.out, "wrf_.*d01.rds", full.names=T)
+wrf_2.f <- dir(wrf.out, "wrf_.*d02.rds", full.names=T)
+wrf_3.f <- dir(wrf.out, "wrf_.*d03.rds", full.names=T)
+
+wrf.df <- map_dfr(wrf_1.f, ~readRDS(.x) %>% 
+                   right_join(., 
+                              wrf_d1[[(str_sub(.x, 22, 31) > dateChg_d1)+1]],
+                              by="i") %>%
+                   select(-lat_i, -lon_i, -row, -col)) %>%
+  bind_rows(map_dfr(wrf_2.f, ~readRDS(.x) %>% 
+                      right_join(., 
+                                 wrf_d2[[(str_sub(.x, 22, 31) > dateChg_d2)+1]],
+                                 by="i") %>%
+                      select(-lat_i, -lon_i, -row, -col))) %>%
+  bind_rows(map_dfr(wrf_3.f, ~readRDS(.x) %>% 
+                      right_join(., 
+                                 wrf_d3[[(str_sub(.x, 22, 31) > dateChg_d3)+1]],
+                                 by="i") %>%
+                      select(-lat_i, -lon_i, -row, -col)))
 saveRDS(wrf.df, glue("data/0_init/wrf_end_{max(wrf.df$date)}.rds"))
 
 

@@ -82,40 +82,52 @@ get_WRF <- function(wrf.dir, nDays_buffer, dateRng, out.dir) {
            date_1 <= dateRng[2]+nDays_buffer)
   wrf_dates <- unique(wrf_i$date_0)
   
-  for(i in seq_along(wrf_dates)) {
+  for(i in 1:length(wrf_dates)) {
     wrf_i.i <- filter(wrf_i, date_0==wrf_dates[i])
     nc_f.i <- map(wrf_i.i$fname, ~glue("{wrf.dir}/{.x}")) %>% 
       set_names(wrf_i.i$res)
-    d_i <- nest_WRF_domains(nc_f.i)
     nc.ls <- map(nc_f.i, nc_open)
     time.ls <- map(nc.ls, 
                    ~tibble(Times=ncvar_get(.x, "Times")) %>%
                      mutate(Time.dt=as_datetime(str_replace(Times, "_", " "))))
-    var.df <- map2(nc.ls, time.ls,
-                   ~expand_grid(time=.y$Time.dt,
-                                lat_i=1:(.x$dim$south_north$len),
-                                lon_i=1:(.x$dim$west_east$len)) %>%
-                     mutate(date=date(time),
-                            U=c(ncvar_get(.x, "U10")),
-                            V=c(ncvar_get(.x, "V10")),
-                            Shortwave=c(ncvar_get(.x, "Shortwave")),
-                            Precipitation=c(ncvar_get(.x, "Precipitation")),
-                            sst=c(ncvar_get(.x, "sst")))) %>%
-      map2_dfr(., d_i,
-               ~.x %>% 
-                 group_by(time) %>%
-                 mutate(i=row_number()) %>%
-                 ungroup %>%
-                 right_join(., .y %>% select(i, elev, res, lon, lat)) %>%
-                 group_by(i, res, lat, lon, date) %>%
-                 summarise(UV_90=q90(sqrt(U^2 + V^2)),
-                           UV_mn=mean(sqrt(U^2 + V^2)),
-                           UV_mnDir=atan2(mean(V), mean(U)),
-                           Shortwave=sum(Shortwave),
-                           Precip=sum(Precipitation),
-                           sst=mean(sst)) %>%
-                 ungroup)
-    saveRDS(var.df, glue("{out.dir}/wrf/wrf_{str_pad(i, 4, 'left', '0')}.rds"))
+    var.ls <- map2_dfr(nc.ls, time.ls,
+                       ~expand_grid(time=.y$Time.dt,
+                                    lat_i=1:(.x$dim$south_north$len),
+                                    lon_i=1:(.x$dim$west_east$len)) %>%
+                         mutate(date=date(time),
+                                U=c(ncvar_get(.x, "U10")),
+                                V=c(ncvar_get(.x, "V10")),
+                                Shortwave=c(ncvar_get(.x, "Shortwave")),
+                                Precipitation=c(ncvar_get(.x, "Precipitation")),
+                                sst=c(ncvar_get(.x, "sst"))) %>%
+                         group_by(time) %>%
+                         mutate(i=row_number()) %>%
+                         ungroup, 
+                       .id="res") %>% 
+      group_by(res, date) %>%
+      group_split()
+    for(j in seq_along(var.ls)) {
+      j.fname <- glue("{out.dir}/wrf/wrf_{var.ls[[j]]$date[1]}_{var.ls[[j]]$res[1]}.rds")
+      if(!file.exists(j.fname)) {
+        var.ls[[j]] %>% 
+          group_by(i, lat_i, lon_i, date) %>%
+          summarise(UV_90=q90(sqrt(U^2 + V^2)),
+                    UV_mn=mean(sqrt(U^2 + V^2)),
+                    UV_mnDir=atan2(mean(V), mean(U)),
+                    Shortwave=sum(Shortwave),
+                    Precip=sum(Precipitation),
+                    sst=mean(sst)) %>%
+          ungroup %>%
+          saveRDS(j.fname)
+      }
+    }
+    # save domain extents IF all three domains are represented
+    if(length(nc_f.i)==3 & all(c("d01", "d02", "d03") %in% names(nc_f.i))) {
+      nest_WRF_domains(nc.ls) %>%
+        walk(~saveRDS(.x, glue("{out.dir}/wrf/wrfDomains_{wrf_dates[i]}_{.x$res[1]}.rds")))
+      
+    }
+    walk(nc.ls, nc_close)
   }
 }
 
@@ -124,14 +136,12 @@ get_WRF <- function(wrf.dir, nDays_buffer, dateRng, out.dir) {
 
 
 
-nest_WRF_domains <- function(path.ls) {
+nest_WRF_domains <- function(nc.ls) {
   library(tidyverse); library(ncdf4); library(sf)
-  nDomain <- length(path.ls)
-  nc.ls <- map(path.ls, nc_open)
+  nDomain <- length(nc.ls)
   lon <- map(nc.ls, ~ncvar_get(.x, "XLONG"))
   lat <- map(nc.ls, ~ncvar_get(.x, "XLAT"))
   elev <- map(nc.ls, ~ncvar_get(.x, "HGT"))
-  walk(nc.ls, nc_close)
   coord.rows <- map(lon, ~matrix(1:nrow(.x), nrow=nrow(.x), ncol=ncol(.x)))
   coord.cols <- map(lon, ~matrix(1:ncol(.x), nrow=nrow(.x), ncol=ncol(.x), byrow=T))
   coord.wrf <- map(1:nDomain, 
