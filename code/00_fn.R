@@ -182,6 +182,39 @@ nest_WRF_domains <- function(nc.ls) {
 
 
 
+subset_WRF <- function(f.domain, f.wrf) {
+  domain.ls <- map(f.domain, readRDS)
+  i_chg <- c(1, which(map_lgl(1:(length(domain.ls)-1), 
+                              ~!identical(domain.ls[[.x]], domain.ls[[.x+1]]))))
+  v_dateRng <- tibble(v=seq_along(i_chg),
+                      start=str_split_fixed(str_split_fixed(f.domain[i_chg], "Domains_", 2)[,2], "_d0", 2)[,1]) %>%
+    mutate(start=ymd(start), 
+           end=lead(start, default=ymd("3000-01-01")))
+  v_dateRng$start[1] <- "2015-01-01"
+  domain.ls <- domain.ls[i_chg]
+  iwalk(domain.ls, 
+        ~.x %>% mutate(version=.y) %>%
+          select(-row, -col) %>%
+          saveRDS(glue("data/0_init/wrf/domain_d01_{.y}.rds")))
+  
+  wrf.ls <- vector("list", length(f.wrf))
+  for(i in seq_along(f.wrf)) {
+    date_i <- str_split_fixed(str_split_fixed(f.wrf[i], "/wrf_", 2)[,2], "_d0", 2)[,1]
+    v_i <- which(date_i >= v_dateRng$start & date_i < v_dateRng$end)
+    wrf.ls[[i]] <- readRDS(f.wrf[i]) %>%
+      select(-lon_i, -lat_i) %>%
+      right_join(domain.ls[[v_i]] %>% select(-row, -col), by="i") %>%
+      mutate(version=v_i)
+  }
+  wrf.ls <- do.call('rbind', wrf.ls)
+  return(wrf.ls)
+}
+
+
+
+
+
+
 get_shortestPaths <- function(ocean.path, site.df, transMx.path=NULL, recalc_transMx=T) {
   library(tidyverse); library(sf); library(glue);
   library(raster); library(gdistance)
@@ -400,3 +433,12 @@ detrend_loess <- function (x, y, span=0.75, robust=TRUE) {
   lo = stats::predict(stats::loess(y ~ x, span=span, family=fam), se = F)
   return(c(y - lo))
 }
+
+
+
+
+
+dirf <- function(...) {
+  dir(..., full.names=T)
+}
+
