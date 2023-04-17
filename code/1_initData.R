@@ -148,15 +148,12 @@ wrf.dir <- ifelse(.Platform$OS.type=="unix",
 get_WRF(wrf.dir=wrf.dir, nDays_buffer=nDays_avg, 
         dateRng=c(ymd("2016-01-07"), max(fsa.df$date)), 
         out.dir="data/0_init/")
-wrf.out <- "data/0_init/wrf/"
 
 # read and subset WRF domains to nest higher res within lower res
-wrf.df <- subset_WRF(dirf(wrf.out, "wrfDomains_.*d01.rds"),
-                     dirf(wrf.out, "wrf_.*d01.rds")) %>%
-  bind_rows(subset_WRF(dirf(wrf.out, "wrfDomains_.*d02.rds"),
-                       dirf(wrf.out, "wrf_.*d02.rds"))) %>%
-  bind_rows(subset_WRF(dirf(wrf.out, "wrfDomains_.*d03.rds"),
-                       dirf(wrf.out, "wrf_.*d03.rds"))) %>%
+wrf.out <- "data/0_init/wrf/"
+wrf.df <- subset_WRF("d01", wrf.out) %>%
+  bind_rows(subset_WRF("d02", wrf.out)) %>%
+  bind_rows(subset_WRF("d03", wrf.out)) %>%
   arrange(date, res, i) %>%
   group_by(date) %>%
   mutate(wrf_id=row_number()) %>%

@@ -182,7 +182,9 @@ nest_WRF_domains <- function(nc.ls) {
 
 
 
-subset_WRF <- function(f.domain, f.wrf) {
+subset_WRF <- function(domain, wrf.out) {
+  f.domain <- dirf(wrf.out, glue("wrfDomains_.*{domain}.rds"))
+  f.wrf <- dirf(wrf.out, glue("wrf_.*{domain}.rds"))
   domain.ls <- map(f.domain, readRDS)
   i_chg <- c(1, which(map_lgl(1:(length(domain.ls)-1), 
                               ~!identical(domain.ls[[.x]], domain.ls[[.x+1]]))))
@@ -195,7 +197,7 @@ subset_WRF <- function(f.domain, f.wrf) {
   iwalk(domain.ls, 
         ~.x %>% mutate(version=.y) %>%
           select(-row, -col) %>%
-          saveRDS(glue("data/0_init/wrf/domain_d01_{.y}.rds")))
+          saveRDS(glue("data/0_init/wrf/domain_{domain}_{.y}.rds")))
   
   wrf.ls <- vector("list", length(f.wrf))
   for(i in seq_along(f.wrf)) {
