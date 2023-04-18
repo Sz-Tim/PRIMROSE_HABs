@@ -151,13 +151,17 @@ get_WRF(wrf.dir=wrf.dir, nDays_buffer=nDays_avg,
 
 # read and subset WRF domains to nest higher res within lower res
 wrf.out <- "data/0_init/wrf/"
-wrf.df <- subset_WRF("d01", wrf.out) %>%
-  bind_rows(subset_WRF("d02", wrf.out)) %>%
-  bind_rows(subset_WRF("d03", wrf.out)) %>%
+wrf.df <- subset_WRF("d01", wrf.out, v2_start="2019-04-01") %>%
+  bind_rows(subset_WRF("d02", wrf.out, v2_start="2019-04-01")) %>%
+  bind_rows(subset_WRF("d03", wrf.out, v2_start="2019-04-01")) %>%
   arrange(date, res, i) %>%
   group_by(date) %>%
   mutate(wrf_id=row_number()) %>%
-  ungroup
+  ungroup %>%
+  mutate(Shortwave=log1p(Shortwave),
+         UV_mn=log1p(UV_mn),
+         UV_90=log1p(UV_90),
+         Precip=log1p(pmax(Precip, 0)*1e9))
 saveRDS(wrf.df, glue("data/0_init/wrf_end_{max(wrf.df$date)}.rds"))
 
 
@@ -354,39 +358,51 @@ saveRDS(cmems.buffer_, "data/0_init/cmems_siteBuffer.rds")
 
 wrf_i <- list(vars=c("UV_90", "UV_mn", "UV_mnDir", "Shortwave", "Precip", "sst"))
 site.df <- readRDS("data/site_df.rds")
-wrf_d.v1 <- map_dfr(dirf("data/0_init/wrf", "^domain_d0._1.rds"), readRDS) %>%
-  st_as_sf(coords=c("lon", "lat"), remove=F, crs=4326) %>%
-  mutate(wrf.v1_id=row_number())
-site.df <- site.df %>%
-  st_as_sf(coords=c("lon", "lat"), crs=27700, remove=F) %>%
-  st_transform(4326) %>%
-  mutate(wrf.v1_id=st_nearest_feature(., wrf_d.v1)) %>%
-  st_drop_geometry()
+wrf_versions <- map(seq_along(dir("data/0_init/wrf", "^domain_d01")), 
+                    ~map_dfr(dirf("data/0_init/wrf", glue("domain_d0._{.x}")), readRDS) %>%
+                      arrange(res, i) %>%
+                      mutate(wrf_id=row_number()) %>%
+                      st_as_sf(coords=c("lon", "lat"), remove=F, crs=4326))
+site.df <- map(wrf_versions,
+               ~site.df %>%
+                 st_as_sf(coords=c("lon", "lat"), crs=27700, remove=F) %>%
+                 st_transform(4326) %>%
+                 mutate(wrf_id=st_nearest_feature(., .x)) %>%
+                 st_drop_geometry) %>%
+  reduce(full_join, 
+         by=names(site.df), suffix=paste0(".", seq_along(wrf_versions)))
 saveRDS(site.df, "data/site_df.rds")
+site.versions <- grep("wrf_id", names(site.df), value=T)
 wrf.df <- readRDS(dirf("data/0_init/", "wrf_end_.*rds"))
-wrf.site <- wrf.df %>% 
-  filter(wrf.v1_id %in% site.df$wrf.v1_id) %>%
-  arrange(wrf.v1_id, date) %>%
-  group_by(wrf.v1_id) %>%
-  mutate(across(any_of(unique(wrf_i$var)), 
+wrf.site <- wrf.df %>%
+  group_by(version) %>%
+  group_split() %>%
+  map2_dfr(., site.versions, 
+           ~.x %>% filter(wrf_id %in% site.df[[.y]])) %>%
+  arrange(wrf_id, date) %>%
+  group_by(wrf_id) %>%
+  mutate(across(any_of(wrf_i$var), 
                 ~zoo::rollmean(.x, k=7, na.pad=T),
                 .names="{.col}Wk")) %>%
-  mutate(across(any_of(paste0(unique(wrf_i$var), "Wk")),
+  mutate(across(any_of(paste0(wrf_i$var, "Wk")),
                 ~.x - lag(.x),
                 .names="{.col}Delta")) %>%
   ungroup %>%
   mutate(yday=yday(date)) %>%
-  group_by(wrf.v1_id) %>%
-  mutate(across(any_of(unique(wrf_i$var)),
+  group_by(wrf_id) %>%
+  mutate(across(any_of(wrf_i$var),
                 ~detrend_loess(yday, .x, span=0.3), 
                 .names="{.col}Dt")) %>%
   ungroup
 wrf.site <- wrf.site %>% 
-  select(wrf.v1_id, date, all_of(wrf_i$vars)) %>%
+  select(wrf_id, date, all_of(wrf_i$vars)) %>%
   filter(complete.cases(.))
 saveRDS(wrf.site, "data/0_init/wrf_sitePt.rds")
 
 
+
+corrplot::corrplot(cor(wrf.site[,c(15:26,28:33)], use="pairwise"),
+                   diag=F, method="number")
 
 
 
@@ -397,6 +413,8 @@ site.df <- readRDS("data/site_df.rds") %>% select(-sin)
 hab.df <- readRDS("data/0_init/hab_densities.rds")
 cmems.site <- readRDS("data/0_init/cmems_sitePt.rds")
 cmems.buffer <- readRDS("data/0_init/cmems_siteBuffer.rds")
+wrf.site <- readRDS("data/0_init/wrf_sitePts.rds")
+wrf.buffer <- readRDS("data/0_init/wrf_siteBuffer.rds")
 
 # load, extract, and compile
 # - Algal densities
@@ -408,6 +426,8 @@ obs.df <- site.df %>%
   right_join(hab.df, by="siteid") %>%
   left_join(cmems.site, by=c("cmems_id", "date")) %>%
   left_join(cmems.buffer, by=c("siteid", "date")) %>%
+  left_join(wrf.site, by=c("wrf_id", "date")) %>%
+  left_join(wrf.buffer, by=c("siteid", "date")) %>%
   filter(complete.cases(.))
 
 

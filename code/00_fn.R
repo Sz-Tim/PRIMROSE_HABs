@@ -182,18 +182,25 @@ nest_WRF_domains <- function(nc.ls) {
 
 
 
-subset_WRF <- function(domain, wrf.out) {
+subset_WRF <- function(domain, wrf.out, v2_start=NULL) {
   f.domain <- dirf(wrf.out, glue("wrfDomains_.*{domain}.rds"))
   f.wrf <- dirf(wrf.out, glue("wrf_.*{domain}.rds"))
-  domain.ls <- map(f.domain, readRDS)
-  i_chg <- c(1, which(map_lgl(1:(length(domain.ls)-1), 
-                              ~!identical(domain.ls[[.x]], domain.ls[[.x+1]]))))
+  if(is.null(v2_start)) {
+    domain.ls <- map(f.domain, readRDS)
+    i_chg <- c(1, which(map_lgl(1:(length(domain.ls)-1), 
+                                ~!(identical(domain.ls[[.x]]$lon, domain.ls[[.x+1]]$lon) &
+                                     identical(domain.ls[[.x]]$lat, domain.ls[[.x+1]]$lat))))+1)
+    domain.ls <- domain.ls[i_chg]
+  } else {
+    i_chg <- c(1, grep(v2_start, f.domain))
+    domain.ls <- map(f.domain[i_chg], readRDS)
+  }
   v_dateRng <- tibble(v=seq_along(i_chg),
                       start=str_split_fixed(str_split_fixed(f.domain[i_chg], "Domains_", 2)[,2], "_d0", 2)[,1]) %>%
     mutate(start=ymd(start), 
            end=lead(start, default=ymd("3000-01-01")))
-  v_dateRng$start[1] <- "2015-01-01"
-  domain.ls <- domain.ls[i_chg]
+  v_dateRng$start[1] <- "2013-01-01"
+  
   iwalk(domain.ls, 
         ~.x %>% mutate(version=.y) %>%
           select(-row, -col) %>%
