@@ -111,9 +111,9 @@ get_WRF <- function(wrf.dir, nDays_buffer, dateRng, out.dir) {
       if(!file.exists(j.fname)) {
         var.ls[[j]] %>% 
           group_by(i, lat_i, lon_i, date) %>%
-          summarise(UV_90=q90(sqrt(U^2 + V^2)),
+          summarise(U_mn=mean(U),
+                    V_mn=mean(V),
                     UV_mn=mean(sqrt(U^2 + V^2)),
-                    UV_mnDir=atan2(mean(V), mean(U)),
                     Shortwave=sum(Shortwave),
                     Precip=sum(Precipitation),
                     sst=mean(sst)) %>%
@@ -532,7 +532,7 @@ prep_recipe <- function(train.df, response) {
     step_select(-any_of(exclude_vars)) %>%
     step_dummy(all_nominal_predictors(), naming=dummy_names(sep="")) %>%
     step_logit(starts_with("prAlert"), offset=0.01) %>%
-    step_impute(contains("Dir[NSEW]")) %>%
+    step_impute(matches("Dir[NSEW]")) %>%
     step_normalize(all_predictors()) %>%
     step_corr(all_predictors()) %>%
     prep(training=train.df)

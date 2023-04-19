@@ -160,7 +160,6 @@ wrf.df <- subset_WRF("d01", wrf.out, v2_start="2019-04-01") %>%
   ungroup %>%
   mutate(Shortwave=log1p(Shortwave),
          UV_mn=log1p(UV_mn),
-         UV_90=log1p(UV_90),
          Precip=log1p(pmax(Precip, 0)*1e9))
 saveRDS(wrf.df, glue("data/0_init/wrf_end_{max(wrf.df$date)}.rds"))
 
@@ -285,8 +284,7 @@ cmems.site <- cmems.site %>%
   select(cmems_id, date, 
          all_of(paste0(cmems_vars, "Wk")),
          all_of(paste0(cmems_vars, "WkDelta")),
-         all_of(paste0(cmems_vars, "Dt"))) %>%
-  na.omit()
+         all_of(paste0(cmems_vars, "Dt")))
 saveRDS(cmems.site, "data/0_init/cmems_sitePt.rds")
 
 
@@ -334,16 +332,15 @@ cmems.buffer <- cmems.buffer %>%
   select(siteid, quadrant, date, 
          all_of(paste0(cmems_vars, "AvgWk")),
          all_of(paste0(cmems_vars, "AvgWkDelta")),
-         all_of(paste0(cmems_vars, "AvgDt"))) %>%
-  na.omit()
-saveRDS(cmems.buffer, "data/0_init/cmems_siteBuffer.rds")
+         all_of(paste0(cmems_vars, "AvgDt")))
+saveRDS(cmems.buffer, "data/0_init/cmems_siteBufferNSEW.rds")
 
 
 
 # * WRF  site:date --------------------------------------------------------
 
-wrf_i <- list(vars=c("UV_90", "UV_mn", "UV_mnDir", "Shortwave", "Precip", "sst"),
-              sea_vars=c("UV_90", "UV_mn", "UV_mnDir", "Shortwave", "Precip"),
+wrf_i <- list(vars=c("U_mn", "V_mn", "UV_mn", "Shortwave", "Precip", "sst"),
+              sea_vars=c("U_mn", "V_mn", "UV_mn", "Shortwave", "Precip"),
               land_vars=c("sst"))
 site.df <- readRDS("data/site_df.rds")
 wrf_versions <- map(seq_along(dir("data/0_init/wrf", "^domain_d01")), 
@@ -359,7 +356,7 @@ site.df <- map(wrf_versions,
                  st_drop_geometry) %>%
   reduce(full_join, 
          by=names(site.df), suffix=paste0(".", seq_along(wrf_versions)))
-saveRDS(site.df, "data/site_df.rds")
+# saveRDS(site.df, "data/site_df.rds")
 site.versions <- grep("wrf_id", names(site.df), value=T)
 wrf.df <- readRDS(dirf("data/0_init/", "wrf_end_.*rds")) %>%
   mutate(sst=if_else(sst > -100, sst, NA_real_))
@@ -387,14 +384,9 @@ wrf.site <- wrf.site %>%
   select(wrf_id, version, date, 
          all_of(paste0(wrf_i$vars, "AvgWk")),
          all_of(paste0(wrf_i$vars, "AvgWkDelta")),
-         all_of(paste0(wrf_i$vars, "AvgDt"))) %>%
-  na.omit()
+         all_of(paste0(wrf_i$vars, "AvgDt")))
 saveRDS(wrf.site, "data/0_init/wrf_sitePt.rds")
 
-
-
-corrplot::corrplot(cor(wrf.site[,c(15:26,28:33)], use="pairwise"),
-                   diag=F, method="number")
 
 
 
@@ -452,8 +444,7 @@ wrf.buffer <- wrf.buffer %>%
   select(siteid, quadrant, date, 
          all_of(paste0(wrf_i$vars, "AvgWk")),
          all_of(paste0(wrf_i$vars, "AvgWkDelta")),
-         all_of(paste0(wrf_i$vars, "AvgDt"))) %>%
-  na.omit()
+         all_of(paste0(wrf_i$vars, "AvgDt")))
 saveRDS(wrf.buffer, "data/0_init/wrf_siteBuffer.rds")
 
 
@@ -485,8 +476,7 @@ obs.df <- site.df %>%
   mutate(wrf_id=if_else(date < "2019-04-01", wrf_id.1, wrf_id.2)) %>%
   select(-wrf_id.1, wrf_id.2) %>%
   left_join(wrf.site, by=c("wrf_id", "date")) %>%
-  # left_join(wrf.buffer, by=c("siteid", "date")) %>%
-  na.omit()
+  left_join(wrf.buffer, by=c("siteid", "date"))
 saveRDS(obs.df, "data/0_init/data_allSpp_full.rds")
 
 
