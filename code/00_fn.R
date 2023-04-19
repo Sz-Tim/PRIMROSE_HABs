@@ -390,6 +390,38 @@ get_openBearing <- function(site.df, coast.path, buffer=10e3, nDir=120) {
 
 
 
+split_to_NSEW <- function(sf, radius=110e3) {
+  library(tidyverse); library(sf); library(lwgeom)
+  hub.df <- sf %>% 
+    st_centroid() %>%
+    select(siteid, geometry)
+  spoke.df <- hub.df %>%
+    st_buffer(dist=radius, nQuadSegs=2) %>%
+    st_cast("POINT") %>%
+    group_by(siteid) %>%
+    mutate(spoke.id=row_number()) %>%
+    filter(spoke.id %% 2 == 0) %>%
+    mutate(side=c("start", "start", "end", "end")) %>%
+    ungroup
+  coords <- cbind(st_coordinates(filter(spoke.df, side=="start")),
+                  st_coordinates(filter(spoke.df, side=="end")))
+  spoke.lines <- map(1:nrow(coords),
+                     ~st_linestring(matrix(coords[.x,],ncol=2, byrow=T))) %>%
+    st_sfc() %>% st_as_sf() %>% st_set_crs(27700) %>%
+    rename(geometry=x) %>%
+    mutate(siteid=filter(spoke.df, side=="start")$siteid)
+  sf.quad <- sf$siteid %>%
+    map_dfr(~st_split(filter(sf, siteid==.x), filter(spoke.lines, siteid==.x)) %>%
+              st_collection_extract() %>%
+              mutate(quadrant=c("E", "S", "W", "N"))) 
+  
+  return(sf.quad)
+}
+
+
+
+
+
 get_trafficLights <- function(hab.df, N, tl.df) {
   library(tidyverse)
   hab.df %>%
@@ -433,8 +465,44 @@ get_lags <- function(data, ..., n=2){
 
 
 
+calc_hab_features <- function(fsa.df, sp_i, hab.tl, site.100km) {
+  hab.df <- fsa.df %>% 
+    pivot_longer(any_of(sp_i$abbr), names_to="sp", values_to="N") %>%
+    filter(!is.na(N)) %>%
+    mutate(lnN=log1p(N)) %>%
+    get_trafficLights(N, hab.tl) %>%
+    arrange(sp, siteid, date) %>%
+    group_by(sp, siteid) %>%
+    get_lags(lnN, alert, date, n=2) %>%
+    ungroup %>%
+    mutate(lnDayLag1=log(as.numeric(date-date1)), 
+           lnDayLag2=log(as.numeric(date-date2)),
+           lnNAvg1=0, lnNAvg2=0, prAlertAvg1=0, prAlertAvg2=0)
+  for(j in 1:nrow(hab.df)) {
+    site_j <- hab.df$siteid[j]
+    date_j <- hab.df$date[j]
+    sp_j <- hab.df$sp[j]
+    wk.df <- hab.df %>% select(sp, siteid, date, lnN1, lnN2, alert1, alert2) %>%
+      filter(siteid %in% site.100km$dest_c[site.100km$origin==site_j][[1]]) %>%
+      filter(date <= date_j & date > date_j-7 & sp==sp_j) 
+    hab.df$lnNAvg1[j] <- mean(wk.df$lnN1, na.rm=T)
+    hab.df$lnNAvg2[j] <- mean(wk.df$lnN2, na.rm=T)
+    hab.df$prAlertAvg1[j] <- mean(wk.df$alert1 != "0_none", na.rm=T)
+    hab.df$prAlertAvg2[j] <- mean(wk.df$alert2 != "0_none", na.rm=T)
+    if(j %% 1000 == 0) {cat(j, "of", nrow(hab.df), "\n")}
+  }
+  return(hab.df)
+}
+
+
+
+
+
 # modified from astsa::trend
 detrend_loess <- function (x, y, span=0.75, robust=TRUE) {
+  if(sum(!is.na(y)) < 10) {
+    return(y)
+  }
   if(length(y) < 10) {
     return(y)
   }
@@ -451,3 +519,21 @@ dirf <- function(...) {
   dir(..., full.names=T)
 }
 
+
+
+
+
+prep_recipe <- function(train.df, response) {
+  exclude_vars <- grep(response, c("lnN", "tl", "alert"), value=T, invert=T)
+  recipe(train.df) %>%
+    update_role(all_of(response), new_role="predictor") %>%
+    update_role(obsid, sp, date, siteid, year, new_role="ID") %>%
+    update_role(lon, lat, new_role="SRE") %>%
+    step_select(-any_of(exclude_vars)) %>%
+    step_dummy(all_nominal_predictors(), naming=dummy_names(sep="")) %>%
+    step_logit(starts_with("prAlert"), offset=0.01) %>%
+    step_impute(contains("Dir[NSEW]")) %>%
+    step_normalize(all_predictors()) %>%
+    step_corr(all_predictors()) %>%
+    prep(training=train.df)
+}

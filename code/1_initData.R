@@ -115,7 +115,7 @@ cmems.df <- bind_rows(
   readRDS(anfo.f[1]) %>%
     bind_cols(map_dfc(anfo.f[-1], ~readRDS(.x) %>% select(5)))
   ) %>%
-  filter(complete.cases(.)) %>%
+  na.omit() %>%
   mutate(chl=log1p(chl),
          kd=log(kd),
          no3=log1p(no3),
@@ -213,11 +213,14 @@ site.df <- site.df %>%
 # The buffer size was determined by trial and error to reduce averaging while
 # ensuring all sites are represented.
 
-coast.sf <- st_read("data/northAtlantic_footprint.gpkg")
+site.df <- readRDS("data/site_df.rds")
 site.sf <- site.df %>% 
   st_as_sf(coords=c("lon", "lat"), crs=27700) %>%
   select(-sin) %>%
-  st_buffer(dist=100e3)
+  st_buffer(dist=100e3) %>%
+  split_to_NSEW()
+st_write(site.sf, "data/site_sf.gpkg")
+
 
 
 
@@ -237,33 +240,9 @@ site.sf <- site.df %>%
 # prAlertAvg: regional average of alerting sites within previous week
 
 site.df <- readRDS("data/site_df.rds")
-site.100km <- readRDS("data/site_neighbors_100km.rds")
-fsa.df <- readRDS("data/0_init/fsa_df.rds")
-hab.df <- fsa.df %>% 
-  pivot_longer(any_of(sp_i$abbr), names_to="sp", values_to="N") %>%
-  filter(!is.na(N)) %>%
-  mutate(lnN=log1p(N)) %>%
-  get_trafficLights(N, hab.tl) %>%
-  arrange(sp, siteid, date) %>%
-  group_by(sp, siteid) %>%
-  get_lags(lnN, alert, date, n=2) %>%
-  ungroup %>%
-  mutate(lnDayLag1=log(as.numeric(date-date1)), 
-         lnDayLag2=log(as.numeric(date-date2)),
-         lnNAvg1=0, lnNAvg2=0, prAlertAvg1=0, prAlertAvg2=0)
-for(j in 1:nrow(hab.df)) {
-  site_j <- hab.df$siteid[j]
-  date_j <- hab.df$date[j]
-  sp_j <- hab.df$sp[j]
-  wk.df <- hab.df %>% select(sp, siteid, date, lnN1, lnN2, alert1, alert2) %>%
-    filter(siteid %in% site.100km$dest_c[site.100km$origin==site_j][[1]]) %>%
-    filter(date <= date_j & date > date_j-7 & sp==sp_j) 
-  hab.df$lnNAvg1[j] <- mean(wk.df$lnN1, na.rm=T)
-  hab.df$lnNAvg2[j] <- mean(wk.df$lnN2, na.rm=T)
-  hab.df$prAlertAvg1[j] <- mean(wk.df$alert1 != "0_none", na.rm=T)
-  hab.df$prAlertAvg2[j] <- mean(wk.df$alert2 != "0_none", na.rm=T)
-  if(j %% 1000 == 0) {cat(j, "of", nrow(hab.df), "\n")}
-}
+hab.df <- calc_hab_features(readRDS("data/0_init/fsa_df.rds"),
+                            sp_i, hab.tl,
+                            readRDS("data/site_neighbors_100km.rds"))
 saveRDS(hab.df, "data/0_init/hab_densities.rds")
 
 
@@ -275,7 +254,7 @@ saveRDS(hab.df, "data/0_init/hab_densities.rds")
 # * CMEMS  site:date ------------------------------------------------------
 
 site.df <- readRDS("data/site_df.rds")
-cmems_i <- read_csv("data/cmems_i.csv")
+cmems_vars <- c("chl", "kd", "no3", "o2", "ph", "phyc", "po4", "pp")
 cmems.df <- readRDS(dirf("data/0_init", "cmems_end.*rds"))
 cmems.sf <- cmems.df %>% select(date, lon, lat, cmems_id) %>% 
   filter(date==min(date)) %>%
@@ -289,74 +268,83 @@ saveRDS(site.df, "data/site_df.rds")
 cmems.site <- cmems.df %>% 
   filter(cmems_id %in% site.df$cmems_id) %>%
   group_by(cmems_id) %>%
-  mutate(across(any_of(unique(cmems_i$var)), 
+  mutate(across(all_of(cmems_vars), 
                 ~zoo::rollmean(.x, k=7, na.pad=T),
                 .names="{.col}Wk")) %>%
-  mutate(across(any_of(paste0(unique(cmems_i$var), "Wk")),
+  mutate(across(any_of(paste0(cmems_vars, "Wk")),
                 ~.x - lag(.x),
                 .names="{.col}Delta")) %>%
   ungroup %>%
   mutate(yday=yday(date)) %>%
   group_by(cmems_id) %>%
-  mutate(across(any_of(unique(cmems_i$var)),
+  mutate(across(all_of(cmems_vars),
                 ~detrend_loess(yday, .x, span=0.3), 
                 .names="{.col}Dt")) %>%
   ungroup
 cmems.site <- cmems.site %>% 
-  select(cmems_id, date, all_of(cmems_incl)) %>%
-  filter(complete.cases(.))
+  select(cmems_id, date, 
+         all_of(paste0(cmems_vars, "Wk")),
+         all_of(paste0(cmems_vars, "WkDelta")),
+         all_of(paste0(cmems_vars, "Dt"))) %>%
+  na.omit()
 saveRDS(cmems.site, "data/0_init/cmems_sitePt.rds")
 
 
 # * CMEMS  buffer:date ----------------------------------------------------
 
-cmems_inclAvg <- readRDS("data/cmems_includeVars.rds") %>%
-  str_replace("Wk", "AvgWk") %>% str_replace("Dt", "AvgDt")
-site.buffer <- site.df %>% 
-  st_as_sf(coords=c("lon", "lat"), crs=27700) %>%
-  st_buffer(dist=100e3) %>%
+site.buffer <- st_read("data/site_sf.gpkg") %>%
   st_transform(4326) %>%
-  mutate(cmems_id=st_intersects(., cmems.sf))
+  st_make_valid() %>%
+  mutate(cmems_id=st_intersects(., cmems.sf)) %>%
+  st_drop_geometry()
 cmems.buffer <- expand_grid(siteid=site.df$siteid,
+                            quadrant=unique(site.buffer$quadrant),
                             date=unique(cmems.df$date)) %>%
-  bind_cols(as_tibble(setNames(map(unique(cmems_i$var), ~0), unique(cmems_i$var))))
+  bind_cols(as_tibble(setNames(map(cmems_vars, ~NA_real_), cmems_vars)))
 
 cmems_id.ls <- map(site.buffer$cmems_id, ~.x)
 cmems_dates.ls <- map(unique(cmems.df$date), ~which(cmems.df$date==.x))
 ij <- 1
-for(i in unique(site.buffer$siteid)) {
+for(i in 1:nrow(site.buffer)) {
   for(j in 1:length(cmems_dates.ls)) {
-    for(k in unique(cmems_i$var)) {
-      cmems.buffer[ij,k] <- mean(cmems.df[cmems_dates.ls[[j]],][cmems_id.ls[[i]],][[k]])
+    if(length(cmems_id.ls[[i]]) > 0) {
+      for(k in cmems_vars) {
+        cmems.buffer[ij,k] <- mean(cmems.df[cmems_dates.ls[[j]],][cmems_id.ls[[i]],][[k]])
+      } 
     }
     ij <- ij+1
     if(ij %% 1000 == 0) {cat(ij, "of", nrow(cmems.buffer), "\n")}
   }
 }
-cmems.buffer_ <- cmems.buffer %>% 
-  group_by(siteid) %>%
-  mutate(across(any_of(unique(cmems_i$var)), 
+cmems.buffer <- cmems.buffer %>% 
+  group_by(siteid, quadrant) %>%
+  mutate(across(any_of(cmems_vars), 
                 ~zoo::rollmean(.x, k=7, na.pad=T),
                 .names="{.col}AvgWk")) %>%
-  mutate(across(any_of(paste0(unique(cmems_i$var), "AvgWk")),
+  mutate(across(any_of(paste0(cmems_vars, "AvgWk")),
                 ~.x - lag(.x),
                 .names="{.col}Delta")) %>%
   ungroup %>%
   mutate(yday=yday(date)) %>%
-  group_by(siteid) %>%
-  mutate(across(any_of(unique(cmems_i$var)),
+  group_by(siteid, quadrant) %>%
+  mutate(across(any_of(cmems_vars),
                 ~detrend_loess(yday, .x, span=0.3), 
                 .names="{.col}AvgDt")) %>%
   ungroup %>% 
-  select(siteid, date, all_of(cmems_inclAvg)) %>%
-  filter(complete.cases(.))
-saveRDS(cmems.buffer_, "data/0_init/cmems_siteBuffer.rds")
+  select(siteid, quadrant, date, 
+         all_of(paste0(cmems_vars, "AvgWk")),
+         all_of(paste0(cmems_vars, "AvgWkDelta")),
+         all_of(paste0(cmems_vars, "AvgDt"))) %>%
+  na.omit()
+saveRDS(cmems.buffer, "data/0_init/cmems_siteBuffer.rds")
 
 
 
 # * WRF  site:date --------------------------------------------------------
 
-wrf_i <- list(vars=c("UV_90", "UV_mn", "UV_mnDir", "Shortwave", "Precip", "sst"))
+wrf_i <- list(vars=c("UV_90", "UV_mn", "UV_mnDir", "Shortwave", "Precip", "sst"),
+              sea_vars=c("UV_90", "UV_mn", "UV_mnDir", "Shortwave", "Precip"),
+              land_vars=c("sst"))
 site.df <- readRDS("data/site_df.rds")
 wrf_versions <- map(seq_along(dir("data/0_init/wrf", "^domain_d01")), 
                     ~map_dfr(dirf("data/0_init/wrf", glue("domain_d0._{.x}")), readRDS) %>%
@@ -373,7 +361,8 @@ site.df <- map(wrf_versions,
          by=names(site.df), suffix=paste0(".", seq_along(wrf_versions)))
 saveRDS(site.df, "data/site_df.rds")
 site.versions <- grep("wrf_id", names(site.df), value=T)
-wrf.df <- readRDS(dirf("data/0_init/", "wrf_end_.*rds"))
+wrf.df <- readRDS(dirf("data/0_init/", "wrf_end_.*rds")) %>%
+  mutate(sst=if_else(sst > -100, sst, NA_real_))
 wrf.site <- wrf.df %>%
   group_by(version) %>%
   group_split() %>%
@@ -395,14 +384,81 @@ wrf.site <- wrf.df %>%
                 .names="{.col}Dt")) %>%
   ungroup
 wrf.site <- wrf.site %>% 
-  select(wrf_id, date, all_of(wrf_i$vars)) %>%
-  filter(complete.cases(.))
+  select(wrf_id, version, date, 
+         all_of(paste0(wrf_i$vars, "AvgWk")),
+         all_of(paste0(wrf_i$vars, "AvgWkDelta")),
+         all_of(paste0(wrf_i$vars, "AvgDt"))) %>%
+  na.omit()
 saveRDS(wrf.site, "data/0_init/wrf_sitePt.rds")
 
 
 
 corrplot::corrplot(cor(wrf.site[,c(15:26,28:33)], use="pairwise"),
                    diag=F, method="number")
+
+
+
+# * WRF  buffer:date ------------------------------------------------------
+
+site.buffer <- map(wrf_versions,
+                   ~st_read("data/site_sf.gpkg") %>%
+                     select(siteid, quadrant, geom) %>%
+                     st_transform(4326) %>%
+                     st_make_valid() %>%
+                     mutate(wrf_id=st_intersects(., .x)) %>%
+                     st_drop_geometry()) %>%
+  reduce(full_join, 
+         by=c("siteid", "quadrant"), 
+         suffix=paste0(".", seq_along(wrf_versions)))
+wrf.buffer <- expand_grid(siteid=site.df$siteid,
+                          quadrant=unique(site.buffer$quadrant),
+                          date=unique(wrf.df$date)) %>%
+  mutate(version=1 + (date >= "2019-04-01")) %>%
+  bind_cols(as_tibble(setNames(map(wrf_i$vars, ~NA_real_), wrf_i$vars)))
+
+wrf_id.ls <- list(v1=map(site.buffer$wrf_id.1, ~.x),
+                  v2=map(site.buffer$wrf_id.2, ~.x))
+wrf_dates.ls <- map(unique(wrf.df$date), ~which(wrf.df$date==.x))
+ij <- 1
+for(i in 1:nrow(site.buffer)) {
+  for(j in 1:length(wrf_dates.ls)) {
+    if(length(wrf_id.ls[[wrf.buffer$version[ij]]][[i]]) > 0) {
+      for(k in wrf_i$sea_vars) {
+        wrf.buffer[ij,k] <- mean(wrf.df[wrf_dates.ls[[j]],][wrf_id.ls[[wrf.buffer$version[ij]]][[i]],][[k]])
+      }
+      sst_ij <- wrf.df[wrf_dates.ls[[j]],][wrf_id.ls[[wrf.buffer$version[ij]]][[i]],][["sst"]]
+      elev_ij <- wrf.df[wrf_dates.ls[[j]],][wrf_id.ls[[wrf.buffer$version[ij]]][[i]],][["elev"]]
+      wrf.buffer[ij,"sst"] <- mean(sst_ij[elev_ij==0], na.rm=T) 
+    }
+    ij <- ij+1
+    if(ij %% 1000 == 0) {cat(ij, "of", nrow(wrf.buffer), "\n")}
+  }
+}
+wrf.buffer <- wrf.buffer %>% 
+  group_by(siteid, quadrant) %>%
+  mutate(across(any_of(wrf_i$vars), 
+                ~zoo::rollmean(.x, k=7, na.pad=T),
+                .names="{.col}AvgWk")) %>%
+  mutate(across(any_of(paste0(wrf_i$vars, "AvgWk")),
+                ~.x - lag(.x),
+                .names="{.col}Delta")) %>%
+  ungroup %>%
+  mutate(yday=yday(date)) %>%
+  group_by(siteid, quadrant) %>%
+  mutate(across(any_of(wrf_i$vars),
+                ~detrend_loess(yday, .x, span=0.3), 
+                .names="{.col}AvgDt")) %>%
+  ungroup %>% 
+  select(siteid, quadrant, date, 
+         all_of(paste0(wrf_i$vars, "AvgWk")),
+         all_of(paste0(wrf_i$vars, "AvgWkDelta")),
+         all_of(paste0(wrf_i$vars, "AvgDt"))) %>%
+  na.omit()
+saveRDS(wrf.buffer, "data/0_init/wrf_siteBuffer.rds")
+
+
+
+
 
 
 
@@ -413,7 +469,7 @@ site.df <- readRDS("data/site_df.rds") %>% select(-sin)
 hab.df <- readRDS("data/0_init/hab_densities.rds")
 cmems.site <- readRDS("data/0_init/cmems_sitePt.rds")
 cmems.buffer <- readRDS("data/0_init/cmems_siteBuffer.rds")
-wrf.site <- readRDS("data/0_init/wrf_sitePts.rds")
+wrf.site <- readRDS("data/0_init/wrf_sitePt.rds") %>% select(-version)
 wrf.buffer <- readRDS("data/0_init/wrf_siteBuffer.rds")
 
 # load, extract, and compile
@@ -426,31 +482,34 @@ obs.df <- site.df %>%
   right_join(hab.df, by="siteid") %>%
   left_join(cmems.site, by=c("cmems_id", "date")) %>%
   left_join(cmems.buffer, by=c("siteid", "date")) %>%
+  mutate(wrf_id=if_else(date < "2019-04-01", wrf_id.1, wrf_id.2)) %>%
+  select(-wrf_id.1, wrf_id.2) %>%
   left_join(wrf.site, by=c("wrf_id", "date")) %>%
-  left_join(wrf.buffer, by=c("siteid", "date")) %>%
-  filter(complete.cases(.))
+  # left_join(wrf.buffer, by=c("siteid", "date")) %>%
+  na.omit()
+saveRDS(obs.df, "data/0_init/data_allSpp_full.rds")
 
 
 # Reduce highly correlated predictors
-corrplot::corrplot(cor(obs.df[,c(15:22,24:31,35:42)], use="pairwise"),
-                   diag=F, method="number")
+corrplot::corrplot(cor(obs.df[,c(27:78)], use="pairwise"), diag=F, method="number", 
+                   order="alphabet", number.cex=0.7, tl.cex=0.6)
+corrplot::corrplot(abs(cor(obs.df[,c(27:70)], use="pairwise"))>0.8, is.corr=F, diag=F,# method="number", 
+                   order="alphabet", number.cex=0.7, tl.cex=0.8)
 # Threshold of abs(r) = 0.8, select variable with lowest other correlations
 # exclude: 
 # - chlWk (phycWk, ppWk)
-# - no3Wk (po4Wk)
 # - chlWkDelta (phycWkDelta)
 # - chlDt (phycDt)
+# - no3Wk (po4Wk)
 cmems_incl <- c(paste0(c("kd", "o2", "ph", "phyc", "po4", "pp"), "Wk"),
-                paste0(c("kd", "no3", "o2", "ph", "phyc", "po4", "pp"), "WkDelta"),
-                paste0(c("kd", "no3", "o2", "ph", "phyc", "po4", "pp"), "Dt"))
+              paste0(c("kd", "no3", "o2", "ph", "phyc", "po4", "pp"), "WkDelta"),
+              paste0(c("kd", "no3", "o2", "ph", "phyc", "po4", "pp"), "Dt"),
+              paste0(c("kd", "ph", "phyc", "po4"), "AvgWk"),
+              paste0(c("kd", "o2", "ph", "phyc", "po4", "pp"), "AvgWkDelta"),
+              paste0(c("kd", "o2", "ph", "phyc", "po4"), "AvgDt"))
+corrplot::corrplot(cor(obs.df[,cmems_incl], use="pairwise"), diag=F, method="number", 
+                   order="FPC", number.cex=0.7, tl.cex=0.6)
 saveRDS(cmems_incl, "data/cmems_includeVars.rds")
-corrplot::corrplot(cor(cmems.site[,cmems_incl], use="pairwise"),
-                   diag=F, method="number")
-
-# Partition datasets for testing/training
-
-
-# Save
 
 
 
