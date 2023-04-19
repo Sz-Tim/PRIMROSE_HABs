@@ -160,7 +160,8 @@ wrf.df <- subset_WRF("d01", wrf.out, v2_start="2019-04-01") %>%
   ungroup %>%
   mutate(Shortwave=log1p(Shortwave),
          UV_mn=log1p(UV_mn),
-         Precip=log1p(pmax(Precip, 0)*1e9))
+         Precip=log1p(pmax(Precip, 0)*3600*24*1000), # m/s to mm/day
+         sst=if_else(sst > -100, sst, NA_real_))
 saveRDS(wrf.df, glue("data/0_init/wrf_end_{max(wrf.df$date)}.rds"))
 
 
@@ -250,7 +251,7 @@ saveRDS(hab.df, "data/0_init/hab_densities.rds")
 
 # Extract sites -----------------------------------------------------------
 
-# * CMEMS  site:date ------------------------------------------------------
+# . CMEMS  site:date ------------------------------------------------------
 
 site.df <- readRDS("data/site_df.rds")
 cmems_vars <- c("chl", "kd", "no3", "o2", "ph", "phyc", "po4", "pp")
@@ -288,7 +289,7 @@ cmems.site <- cmems.site %>%
 saveRDS(cmems.site, "data/0_init/cmems_sitePt.rds")
 
 
-# * CMEMS  buffer:date ----------------------------------------------------
+# . CMEMS  buffer:date ----------------------------------------------------
 
 site.buffer <- st_read("data/site_sf.gpkg") %>%
   st_transform(4326) %>%
@@ -314,7 +315,7 @@ for(i in 1:nrow(site.buffer)) {
     if(ij %% 1000 == 0) {cat(ij, "of", nrow(cmems.buffer), "\n")}
   }
 }
-cmems.buffer <- cmems.buffer %>% 
+cmems.buffer_ <- cmems.buffer %>% 
   group_by(siteid, quadrant) %>%
   mutate(across(any_of(cmems_vars), 
                 ~zoo::rollmean(.x, k=7, na.pad=T),
@@ -333,16 +334,16 @@ cmems.buffer <- cmems.buffer %>%
          all_of(paste0(cmems_vars, "AvgWk")),
          all_of(paste0(cmems_vars, "AvgWkDelta")),
          all_of(paste0(cmems_vars, "AvgDt")))
-saveRDS(cmems.buffer, "data/0_init/cmems_siteBufferNSEW.rds")
+saveRDS(cmems.buffer_, "data/0_init/cmems_siteBufferNSEW.rds")
 
 
 
-# * WRF  site:date --------------------------------------------------------
+# . WRF  site:date --------------------------------------------------------
 
-wrf_i <- list(vars=c("U_mn", "V_mn", "UV_mn", "Shortwave", "Precip", "sst"),
-              sea_vars=c("U_mn", "V_mn", "UV_mn", "Shortwave", "Precip"),
+wrf_i <- list(vars=c("U", "V", "UV", "Shortwave", "Precip", "sst"),
+              sea_vars=c("U", "V", "UV", "Shortwave", "Precip"),
               land_vars=c("sst"))
-site.df <- readRDS("data/site_df.rds")
+site.df <- readRDS("data/site_df.rds") %>% select(-starts_with("wrf_id"))
 wrf_versions <- map(seq_along(dir("data/0_init/wrf", "^domain_d01")), 
                     ~map_dfr(dirf("data/0_init/wrf", glue("domain_d0._{.x}")), readRDS) %>%
                       arrange(res, i) %>%
@@ -382,15 +383,15 @@ wrf.site <- wrf.df %>%
   ungroup
 wrf.site <- wrf.site %>% 
   select(wrf_id, version, date, 
-         all_of(paste0(wrf_i$vars, "AvgWk")),
-         all_of(paste0(wrf_i$vars, "AvgWkDelta")),
-         all_of(paste0(wrf_i$vars, "AvgDt")))
+         all_of(paste0(wrf_i$vars, "Wk")),
+         all_of(paste0(wrf_i$vars, "WkDelta")),
+         all_of(paste0(wrf_i$vars, "Dt")))
 saveRDS(wrf.site, "data/0_init/wrf_sitePt.rds")
 
 
 
 
-# * WRF  buffer:date ------------------------------------------------------
+# . WRF  buffer:date ------------------------------------------------------
 
 site.buffer <- map(wrf_versions,
                    ~st_read("data/site_sf.gpkg") %>%
@@ -476,8 +477,10 @@ obs.df <- site.df %>%
   mutate(wrf_id=if_else(date < "2019-04-01", wrf_id.1, wrf_id.2)) %>%
   select(-wrf_id.1, wrf_id.2) %>%
   left_join(wrf.site, by=c("wrf_id", "date")) %>%
-  left_join(wrf.buffer, by=c("siteid", "date"))
-saveRDS(obs.df, "data/0_init/data_allSpp_full.rds")
+  # left_join(wrf.buffer, by=c("siteid", "date"))
+  select(-sst) %>%
+  na.omit()
+saveRDS(obs.df, "data/0_init/data_full_allSpp.rds")
 
 
 # Reduce highly correlated predictors
