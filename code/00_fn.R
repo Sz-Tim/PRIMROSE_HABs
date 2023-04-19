@@ -118,6 +118,7 @@ get_WRF <- function(wrf.dir, nDays_buffer, dateRng, out.dir) {
                     Precip=sum(Precipitation),
                     sst=mean(sst)) %>%
           ungroup %>%
+          rename(U=U_mn, V=V_mn, UV=UV_mn) %>%
           saveRDS(j.fname)
       }
     }
@@ -475,8 +476,8 @@ calc_hab_features <- function(fsa.df, sp_i, hab.tl, site.100km) {
     group_by(sp, siteid) %>%
     get_lags(lnN, alert, date, n=2) %>%
     ungroup %>%
-    mutate(lnDayLag1=log(as.numeric(date-date1)), 
-           lnDayLag2=log(as.numeric(date-date2)),
+    mutate(lnNWt1=lnN1/log1p(as.numeric(date-date1)), 
+           lnNWt2=lnN2/log1p(as.numeric(date-date2)),
            lnNAvg1=0, lnNAvg2=0, prAlertAvg1=0, prAlertAvg2=0)
   for(j in 1:nrow(hab.df)) {
     site_j <- hab.df$siteid[j]
@@ -525,15 +526,78 @@ dirf <- function(...) {
 
 prep_recipe <- function(train.df, response) {
   exclude_vars <- grep(response, c("lnN", "tl", "alert"), value=T, invert=T)
+  pred_vars <- names(train.df)
   recipe(train.df) %>%
-    update_role(all_of(response), new_role="predictor") %>%
+    update_role(all_of(pred_vars), new_role="predictor") %>%
+    update_role(all_of(response), new_role="outcome") %>%
     update_role(obsid, sp, date, siteid, year, new_role="ID") %>%
     update_role(lon, lat, new_role="SRE") %>%
     step_select(-any_of(exclude_vars)) %>%
-    step_dummy(all_nominal_predictors(), naming=dummy_names(sep="")) %>%
+    step_dummy(all_factor_predictors()) %>%
     step_logit(starts_with("prAlert"), offset=0.01) %>%
-    step_impute(matches("Dir[NSEW]")) %>%
     step_normalize(all_predictors()) %>%
-    step_corr(all_predictors()) %>%
+    step_interact(term=~ydaySin:ydayCos, sep="X") %>%
+    # step_interact(terms=~matches("Dir[EW]"):U, sep="X") %>%
+    # step_interact(terms=~matches("Dir[NS]"):V, sep="X") %>%
+    step_mutate_at(lon, lat, fn=list(z=~.)) %>%
+    step_normalize(ends_with("_z")) %>%
+    step_interact(terms=~lon_z:lat_z, sep="X") %>%
+    step_corr(all_predictors(), threshold=0.9) %>%
+    step_rename_at(contains("_"), fn=~str_remove_all(.x, "_")) %>%
     prep(training=train.df)
+}
+
+
+
+
+filter_corr_covs <- function(all_covs, data.sp) {
+  uncorr_covs <- unique(unlist(map(data.sp, ~unlist(map(.x, names)))))
+  map(all_covs, ~.x[.x %in% uncorr_covs])
+}
+
+
+
+
+
+make_HB_formula <- function(resp, covs, sTerms=NULL, 
+                            splinesInt="both", splinesCovs="time") {
+  library(tidyverse); library(brms); library(glue)
+  
+  if(is.null(sTerms)) {
+    if(resp=="lnN") {
+      form <- bf(glue("{resp} ~ 1 + {paste(covs, collapse='+')}", 
+                      "+ (1 + {paste(covs, collapse='+')} | siteid)"),
+                 glue("hu ~ 1 + {paste(covs, collapse='+')}", 
+                      "+ (1 + {paste(covs, collapse='+')} | siteid)"))  
+    } else {
+      form <- bf(glue("{resp} ~ 1 + {paste(covs, collapse='+')}", 
+                      "+ (1 + {paste(covs, collapse='+')} | siteid)"))
+    }
+  } else {
+    splines_int <- switch(splinesInt,
+                          "time"="s(ydayCos, ydaySin)",
+                          "space"="s(lon, lat)",
+                          "both"="s(ydayCos, ydaySin) + s(lon, lat)")
+    splines_cov <- switch(splinesCovs,
+                          "time"="s(ydayCos, ydaySin)",
+                          "space"="s(lon, lat)",
+                          "both"="s(ydayCos, ydaySin) + s(lon, lat)")
+    flist <- c(
+      map(sTerms$b, ~as.formula(glue("{.x} ~ {splines_cov} + (1|siteid)"))),
+      map(sTerms$p, ~as.formula(glue("{.x} ~ 1 + (1|siteid)"))),
+      map(1, ~glue("bIntercept ~ 1 + {splines_int} + (1|siteid)"))
+    )
+    if(resp=="lnN") {
+      form <- bf(glue("{resp} ~ 1*bIntercept",
+                      "+ {paste(sTerms$p, sTerms$b, covs, sep='*', collapse='+')}"),
+                 glue("hu ~ 1*bIntercept",
+                      "+ {paste(sTerms$p, sTerms$b, covs, sep='*', collapse='+')}"),
+                 flist=flist, nl=T) 
+    } else {
+      form <- bf(glue("{resp} ~ 1*bIntercept",
+                      "+ {paste(sTerms$p, sTerms$b, covs, sep='*', collapse='+')}"),
+                 flist=flist, nl=T)
+    }
+  }
+  return(form)
 }
