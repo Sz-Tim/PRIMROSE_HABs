@@ -315,7 +315,7 @@ for(i in 1:nrow(site.buffer)) {
     if(ij %% 1000 == 0) {cat(ij, "of", nrow(cmems.buffer), "\n")}
   }
 }
-cmems.buffer_ <- cmems.buffer %>% 
+cmems.buffer <- cmems.buffer %>% 
   group_by(siteid, quadrant) %>%
   mutate(across(any_of(cmems_vars), 
                 ~zoo::rollmean(.x, k=7, na.pad=T),
@@ -333,8 +333,11 @@ cmems.buffer_ <- cmems.buffer %>%
   select(siteid, quadrant, date, 
          all_of(paste0(cmems_vars, "AvgWk")),
          all_of(paste0(cmems_vars, "AvgWkDelta")),
-         all_of(paste0(cmems_vars, "AvgDt")))
-saveRDS(cmems.buffer_, "data/0_init/cmems_siteBufferNSEW.rds")
+         all_of(paste0(cmems_vars, "AvgDt"))) %>%
+  group_by(siteid, date) %>%
+  mutate(across(where(is.numeric), zoo::na.aggregate)) %>%
+  ungroup
+saveRDS(cmems.buffer, "data/0_init/cmems_siteBufferNSEW.rds")
 
 
 
@@ -445,11 +448,11 @@ wrf.buffer <- wrf.buffer %>%
   select(siteid, quadrant, date, 
          all_of(paste0(wrf_i$vars, "AvgWk")),
          all_of(paste0(wrf_i$vars, "AvgWkDelta")),
-         all_of(paste0(wrf_i$vars, "AvgDt")))
-saveRDS(wrf.buffer, "data/0_init/wrf_siteBuffer.rds")
-
-
-
+         all_of(paste0(wrf_i$vars, "AvgDt"))) %>%
+  group_by(siteid, date) %>%
+  mutate(across(where(is.numeric), zoo::na.aggregate)) %>%
+  ungroup
+saveRDS(wrf.buffer, "data/0_init/wrf_siteBufferNSEW.rds")
 
 
 
@@ -460,9 +463,11 @@ saveRDS(wrf.buffer, "data/0_init/wrf_siteBuffer.rds")
 site.df <- readRDS("data/site_df.rds") %>% select(-sin)
 hab.df <- readRDS("data/0_init/hab_densities.rds")
 cmems.site <- readRDS("data/0_init/cmems_sitePt.rds")
-cmems.buffer <- readRDS("data/0_init/cmems_siteBuffer.rds")
-wrf.site <- readRDS("data/0_init/wrf_sitePt.rds") %>% select(-version)
-wrf.buffer <- readRDS("data/0_init/wrf_siteBuffer.rds")
+cmems.buffer <- readRDS("data/0_init/cmems_siteBufferNSEW.rds") %>% 
+  pivot_wider(names_from="quadrant", values_from=-(1:3), names_sep="Dir")
+wrf.site <- readRDS("data/0_init/wrf_sitePt.rds") %>% select(-version, -contains("sst"))
+wrf.buffer <- readRDS("data/0_init/wrf_siteBufferNSEW.rds") %>% 
+  pivot_wider(names_from="quadrant", values_from=-(1:3), names_sep="Dir")
 
 # load, extract, and compile
 # - Algal densities
@@ -471,38 +476,37 @@ wrf.buffer <- readRDS("data/0_init/wrf_siteBuffer.rds")
 # - fetch & bearing
 # - calculate cos(dir)'s
 obs.df <- site.df %>%
-  right_join(hab.df, by="siteid") %>%
+  right_join(hab.df, by="siteid", multiple="all") %>%
   left_join(cmems.site, by=c("cmems_id", "date")) %>%
   left_join(cmems.buffer, by=c("siteid", "date")) %>%
   mutate(wrf_id=if_else(date < "2019-04-01", wrf_id.1, wrf_id.2)) %>%
   select(-wrf_id.1, wrf_id.2) %>%
   left_join(wrf.site, by=c("wrf_id", "date")) %>%
-  # left_join(wrf.buffer, by=c("siteid", "date"))
-  select(-sst) %>%
+  left_join(wrf.buffer, by=c("siteid", "date")) %>%
   na.omit()
 saveRDS(obs.df, "data/0_init/data_full_allSpp.rds")
 
+cmems_vars <- grep("cmems_id|date|siteid", 
+                   unique(c(names(cmems.site), names(cmems.buffer))),
+                   value=T, invert=T) %>% sort
+saveRDS(cmems_vars, "data/cmems_vars.rds")
+
+wrf_vars <- grep("wrf_id|date|siteid", 
+                   unique(c(names(wrf.site), names(wrf.buffer))),
+                   value=T, invert=T) %>% sort
+saveRDS(wrf_vars, "data/wrf_vars.rds")
+
 
 # Reduce highly correlated predictors
-corrplot::corrplot(cor(obs.df[,c(27:78)], use="pairwise"), diag=F, method="number", 
+corrplot::corrplot(cor(obs.df[,wrf_vars], use="pairwise"), diag=F, method="number", 
                    order="alphabet", number.cex=0.7, tl.cex=0.6)
-corrplot::corrplot(abs(cor(obs.df[,c(27:70)], use="pairwise"))>0.8, is.corr=F, diag=F,# method="number", 
+corrplot::corrplot(abs(cor(obs.df[,wrf_vars], use="pairwise"))>0.9, is.corr=F, diag=F,
                    order="alphabet", number.cex=0.7, tl.cex=0.8)
-# Threshold of abs(r) = 0.8, select variable with lowest other correlations
-# exclude: 
-# - chlWk (phycWk, ppWk)
-# - chlWkDelta (phycWkDelta)
-# - chlDt (phycDt)
-# - no3Wk (po4Wk)
-cmems_incl <- c(paste0(c("kd", "o2", "ph", "phyc", "po4", "pp"), "Wk"),
-              paste0(c("kd", "no3", "o2", "ph", "phyc", "po4", "pp"), "WkDelta"),
-              paste0(c("kd", "no3", "o2", "ph", "phyc", "po4", "pp"), "Dt"),
-              paste0(c("kd", "ph", "phyc", "po4"), "AvgWk"),
-              paste0(c("kd", "o2", "ph", "phyc", "po4", "pp"), "AvgWkDelta"),
-              paste0(c("kd", "o2", "ph", "phyc", "po4"), "AvgDt"))
-corrplot::corrplot(cor(obs.df[,cmems_incl], use="pairwise"), diag=F, method="number", 
-                   order="FPC", number.cex=0.7, tl.cex=0.6)
-saveRDS(cmems_incl, "data/cmems_includeVars.rds")
+corrplot::corrplot(cor(obs.df[,cmems_vars], use="pairwise"), diag=F, method="number", 
+                   order="alphabet", number.cex=0.7, tl.cex=0.6)
+corrplot::corrplot(abs(cor(obs.df[,cmems_vars], use="pairwise"))>0.9, is.corr=F, diag=F,
+                   order="alphabet", number.cex=0.7, tl.cex=0.8)
+
 
 
 
