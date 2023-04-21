@@ -35,7 +35,9 @@ all_covs <- list(
   ),
   interact=c(
     paste("UWkXfetch", grep("Dir[EW]", col_cmems, value=T), sep="X"),
-    paste("VWkXfetch", grep("Dir[NS]", col_cmems, value=T), sep="X")
+    paste("VWkXfetch", grep("Dir[NS]", col_cmems, value=T), sep="X"),
+    paste("UWkXfetch", grep("^[Precip|Shortwave|sst].*Dir[EW]", col_wrf, value=T), sep="X"),
+    paste("VWkXfetch", grep("^[Precip|Shortwave|sst].*Dir[EW]", col_wrf, value=T), sep="X")
   ),
   nonHB=c("ydaySinXydayCos", "lonz", "latz", "lonzXlatz")
 )
@@ -48,7 +50,7 @@ obs.ls <- readRDS("data/0_init/data_full_allSpp.rds") %>%
          across(starts_with("tl"), 
                 ~factor(.x, ordered=T, 
                         levels=c("0_green", "1_yellow", "2_orange", "3_red"),
-                        labels=c("TL0green", "TL1yellow", "TL2orange", "TL3red")))) %>%
+                        labels=c("TL0", "TL1", "TL2", "TL3")))) %>%
   mutate(year=year(date),
          ydayCos=cos(yday(date)),
          ydaySin=sin(yday(date))) %>%
@@ -59,17 +61,17 @@ test.ls <- map(obs.ls, ~.x %>% filter(date >= test_startDate))
 
 
 
-
 # runs by taxon -----------------------------------------------------------
 
 registerDoParallel(n_spp_parallel)
 foreach(s=seq_along(train.ls),
-        .export=c("all_covs", "obs.ls", "train.ls", "test.ls")
+        .export=c("all_covs", "train.ls", "test.ls", "fit.dir", "sp_i")
 ) %dopar% {
   
   lapply(pkgs, library, character.only=T)
   source("code/00_fn.R")
   sp <- train.ls[[s]]$sp[1]
+  sp_i.i <- filter(sp_i, abbr==sp)
   
   
 
@@ -77,19 +79,18 @@ foreach(s=seq_along(train.ls),
 
   # TODO: remove ifelse for final version
   reprep <- F
-  responses <- c(lnN="lnN", tl="tl", alert="alert")
+  responses <- c(alert="alert", tl="tl", lnN="lnN")
   if(reprep) {
     prep.ls <- map(responses, ~prep_recipe(train.ls[[s]], .x))
-    data.sp <- list(train=map(prep.ls, ~bake(.x, train.ls[[s]])),
+    d.sp <- list(train=map(prep.ls, ~bake(.x, train.ls[[s]])),
                     test=map(prep.ls, ~bake(.x, test.ls[[s]])))
     saveRDS(prep.ls, glue("data/0_init/data_prep_{sp}.rds"))
-    saveRDS(data.sp, glue("data/0_init/data_baked_{sp}.rds"))
+    saveRDS(d.sp, glue("data/0_init/data_baked_{sp}.rds"))
   } else {
-    prep.ls <- readRDS(glue("data/0_init/data_prep_{sp}.rds"))
-    data.sp <- readRDS(glue("data/0_init/data_baked_{sp}.rds"))
+    d.sp <- readRDS(glue("data/0_init/data_baked_{sp}.rds"))
   }
   
-  covs <- filter_corr_covs(all_covs, data.sp)
+  covs <- filter_corr_covs(all_covs, d.sp, test_run=T)
   
   # formulas
   smooths <- list(b=glue("b{c(covs$main, covs$interact)}"),
@@ -98,7 +99,6 @@ foreach(s=seq_along(train.ls),
     responses,
     ~list(HBL=make_HB_formula(.x, c(all_covs$date, covs$main, covs$interact)),
           HBN=make_HB_formula(.x, c(covs$main, covs$interact), sTerms=smooths),
-          GLM=formula(glue("{.x} ~ {paste(unlist(covs), collapse='+')}")),
           ML=formula(glue("{.x} ~ {paste(unlist(covs), collapse='+')}"))
     )
   )
@@ -129,160 +129,127 @@ foreach(s=seq_along(train.ls),
   )
   
   # Tuning controls
-  folds <- map(data.sp$train, createFoldsByYear)
-  ctrl <- map(folds, ~trainControl("cv", index=.x$i.in, indexOut=.x$i.out, classProbs=T))
+  folds <- map(d.sp$train, createFoldsByYear)
+  ctrl <- map(folds, ~trainControl("cv", classProbs=T, number=length(.x$i.in),
+                                   index=.x$i.in, indexOut=.x$i.out))
   grids <- list(
-    elast=expand.grid(alpha=seq(0, 1, length.out=26),
-                      lambda=2^(seq(-15,-1,length.out=25))),
-    rf=expand.grid(mtry=seq(1, min(6, length(unlist(covs))/10), by=1),
-                   coefReg=seq(0.1, 0.8, by=0.1))
+    ENet=expand.grid(alpha=seq(0, 1, length.out=4),
+                      lambda=2^(seq(-15,-1,length.out=4))),
+    RRF=expand.grid(mtry=seq(1, min(6, length(unlist(covs))/10), by=3),
+                   coefReg=seq(0.1, 0.8, by=0.4))
   )
-  nTreeRF <- 20
   HB.i <- list(
-    iter=100,
-    warmup=50,
+    iter=200,
+    warmup=100,
     refresh=1,
     chains=cores_per_model,
     cores=cores_per_model,
-    ctrl=list(adapt_delta=0.95, max_treedepth=20)
+    ctrl=list(adapt_delta=0.8, max_treedepth=10)
   )
+  
   
   
 # . train: fit models -----------------------------------------------------
   
-  # Elastic Net GLM
-  elast.lnN <- train(form.ls$lnN$GLM, data=data.sp$train$lnN, 
-                     method="glmnet", trControl=ctrl$lnN, tuneGrid=grids$elast)
-  saveRDS(elast.lnN, glue("{fit.dir}/{sp}_lnN_elast.rds"))
-  elast.tl <- train(form.ls$tl$GLM, data=data.sp$train$tl, 
-                    method="glmnet", trControl=ctrl$tl, tuneGrid=grids$elast)
-  saveRDS(elast.tl, glue("{fit.dir}/{sp}_tl_elast.rds"))
-  elast.alert <- train(as.formula(form.ls$alert$GLM), data=data.sp$train$alert, 
-                       method="glmnet", trControl=ctrl$alert, tuneGrid=grids$elast)
-  saveRDS(elast.alert, glue("{fit.dir}/{sp}_alert_elast.rds"))
-  
-  # Random Forest
-  rf.lnN <- train(form.ls$lnN$ML, data=data.sp$train$lnN, 
-                    method="RRFglobal", trControl=ctrl$lnN, tuneGrid=rf.grid, ntree=nTreeRF)
-  saveRDS(rf.lnN, glue("{fit.dir}/{sp}_lnN_rf.rds"))
-  rf.tl <- train(form.ls$tl$ML, data=data.sp$train$tl, 
-                 method="RRFglobal", trControl=ctrl$tl, tuneGrid=rf.grid, ntree=nTreeRF)
-  saveRDS(rf.tl, glue("{fit.dir}/{sp}_tl_rf.rds"))
-  rf.alert <- train(form.ls$alert$ML, data=data.sp$train$alert, 
-                    method="RRFglobal", trControl=ctrl$alert, tuneGrid=rf.grid, ntree=nTreeRF)
-  saveRDS(rf.lnN, glue("{fit.dir}/{sp}_alert_rf.rds"))
-  
-  # HB: linear
-  HBL.lnN <- brm(form.ls$lnN$HBL, data=data.sp$train$lnN, family=hurdle_lognormal(), 
-                 prior=priors$HBL, iter=HB.i$iter, warmup=HB.i$warmup, refresh=HB.i$refresh, 
-                 init=0, control=HB.i$ctrl, chains=HB.i$chains, cores=HB.i$cores,
-                 file=glue("{fit.dir}/{sp}_lnN_HBL.rds"))
-  HBL.tl <- brm(form.ls$tl$HBL, data=data.sp$train$tl, family=cumulative(), 
-                 prior=priors$HBL, iter=HB.i$iter, warmup=HB.i$warmup, refresh=HB.i$refresh, 
-                 init=0, control=HB.i$ctrl, chains=HB.i$chains, cores=HB.i$cores,
-                 file=glue("{fit.dir}/{sp}_tl_HBL.rds"))
-  HBL.alert <- brm(form.ls$alert$HBL, data=data.sp$train$alert, family=bernoulli(), 
-                 prior=priors$HBL, iter=HB.i$iter, warmup=HB.i$warmup, refresh=HB.i$refresh, 
-                 init=0, control=HB.i$ctrl, chains=HB.i$chains, cores=HB.i$cores,
-                 file=glue("{fit.dir}/{sp}_alert_HBL.rds"))
-  
-  # HB: nonlinear
-  HBN.lnN <- brm(form.ls$lnN$HBN, data=data.sp$train$lnN, family=hurdle_lognormal(), 
-                 prior=priors$HBN, iter=HB.i$iter, warmup=HB.i$warmup, refresh=HB.i$refresh, 
-                 init=0, control=HB.i$ctrl, chains=HB.i$chains, cores=HB.i$cores,
-                 file=glue("{fit.dir}/{sp}_lnN_HBN.rds"))
-  HBN.tl <- brm(form.ls$tl$HBN, data=data.sp$train$tl, family=cumulative(), 
-                prior=priors$HBN, iter=HB.i$iter, warmup=HB.i$warmup, refresh=HB.i$refresh, 
-                init=0, control=HB.i$ctrl, chains=HB.i$chains, cores=HB.i$cores,
-                file=glue("{fit.dir}/{sp}_tl_HBN.rds"))
-  HBN.alert <- brm(form.ls$alert$HBN, data=data.sp$train$alert, family=bernoulli(), 
-                   prior=priors$HBN, iter=HB.i$iter, warmup=HB.i$warmup, refresh=HB.i$refresh, 
-                   init=0, control=HB.i$ctrl, chains=HB.i$chains, cores=HB.i$cores,
-                   file=glue("{fit.dir}/{sp}_alert_HBN.rds"))
-  
-  
-  # TEMP CHECKING
-  varImp(elast.lnN)
-  varImp(rf.lnN)
-  par(mfrow=c(1,2))
-  walk(data.sp, ~plot(predict(elast.lnN, .x$lnN), .x$lnN$lnN, col=rgb(0,0,0,0.2)))
-  walk(data.sp, ~plot(predict(rf.lnN, .x$lnN), .x$lnN$lnN, col=rgb(0,0,0,0.2)))
-  map(data.sp, ~yardstick::rmse_vec(.x$lnN$lnN, predict(elast.lnN, .x$lnN)))
-  map(data.sp, ~yardstick::rmse_vec(.x$lnN$lnN, predict(rf.lnN, .x$lnN)))
-  
-  varImp(elast.tl)
-  varImp(rf.tl)
-  par(mfrow=c(4,2))
-  walk(data.sp, ~plot(.x$tl$tl, predict(elast.tl, .x$tl, type="prob")[,1], main="GLM", ylim=c(0,1)))
-  walk(data.sp, ~plot(.x$tl$tl, predict(elast.tl, .x$tl, type="prob")[,2], main="GLM", ylim=c(0,1)))
-  walk(data.sp, ~plot(.x$tl$tl, predict(elast.tl, .x$tl, type="prob")[,3], main="GLM", ylim=c(0,1)))
-  walk(data.sp, ~plot(.x$tl$tl, predict(elast.tl, .x$tl, type="prob")[,4], main="GLM", ylim=c(0,1)))
-  walk(data.sp, ~plot(.x$tl$tl, predict(rf.tl, .x$tl, type="prob")[,1], main="RF", ylim=c(0,1)))
-  walk(data.sp, ~plot(.x$tl$tl, predict(rf.tl, .x$tl, type="prob")[,2], main="RF", ylim=c(0,1)))
-  walk(data.sp, ~plot(.x$tl$tl, predict(rf.tl, .x$tl, type="prob")[,3], main="RF", ylim=c(0,1)))
-  walk(data.sp, ~plot(.x$tl$tl, predict(rf.tl, .x$tl, type="prob")[,4], main="RF", ylim=c(0,1)))
-  map(data.sp, ~tibble(truth=.x$tl$tl) %>%
-        bind_cols(predict(elast.tl, .x$tl, type="prob")) %>%
-        yardstick::roc_auc(TL0green, TL1yellow, TL2orange, TL3red, truth=truth))
-  map(data.sp, ~tibble(truth=.x$tl$tl) %>%
-        bind_cols(predict(rf.tl, .x$tl, type="prob")) %>%
-        yardstick::roc_auc(TL0green, TL1yellow, TL2orange, TL3red, truth=truth))
-  map(data.sp, ~tibble(truth=.x$tl$tl) %>%
-        bind_cols(predict(elast.tl, .x$tl, type="prob")) %>%
-        yardstick::roc_curve(TL0green, TL1yellow, TL2orange, TL3red, truth=truth) %>%
-        ggplot(aes(1-specificity, sensitivity, colour=.level)) + geom_line() + ggtitle("GLM") +
-        scale_colour_manual(values=c("green3", "yellow3", "orange", "red3")))
-  map(data.sp, ~tibble(truth=.x$tl$tl) %>%
-        bind_cols(predict(rf.tl, .x$tl, type="prob")) %>%
-        yardstick::roc_curve(TL0green, TL1yellow, TL2orange, TL3red, truth=truth) %>%
-        ggplot(aes(1-specificity, sensitivity, colour=.level)) + geom_line() + ggtitle("RF") +
-        scale_colour_manual(values=c("green3", "yellow3", "orange", "red3")))
-  
-  par(mfrow=c(1,2))
-  varImp(elast.alert)
-  varImp(rf.alert)
-  walk(data.sp, ~plot(.x$alert$alert, predict(elast.alert, .x$alert, type="prob")[,2]))
-  walk(data.sp, ~plot(.x$alert$alert, predict(rf.alert, .x$alert, type="prob")[,2]))
-  map(data.sp, ~yardstick::roc_auc_vec(.x$alert$alert, 
-                                       predict(elast.alert, .x$alert, type="prob")[,2],
-                                       event_level="second"))
-  map(data.sp, ~yardstick::roc_auc_vec(.x$alert$alert, 
-                                       predict(rf.alert, .x$alert, type="prob")[,2],
-                                       event_level="second"))
-  
-  
-  
-  # Random Forest
-  
-  
+  walk(responses, ~fit_model("ENet", .x, form.ls, d.sp$train, ctrl, grids, fit.dir, sp))
+  walk(responses, ~fit_model("RRF", .x, form.ls, d.sp$train, ctrl, grids, fit.dir, sp))
+  walk(responses, ~fit_model("HBL", .x, form.ls, d.sp$train, HB.i, priors, fit.dir, sp))
+  walk(responses, ~fit_model("HBN", .x, form.ls, d.sp$train, HB.i, priors, fit.dir, sp))
   
   
 
 # . train: summarise ------------------------------------------------------
   
-  fit.lnN <- data.sp$train$lnN %>%
+  fit.ls <- map(responses, ~summarise_predictions(d.sp, "train", .x, fit.dir, sp_i.i))
+  fit.ls$alert <- fit.ls$alert %>%
+    full_join(fit.ls$tl %>% select(sp, obsid, ends_with("_A1"))) %>%
+    full_join(fit.ls$lnN %>% select(sp, obsid, ends_with("_A1")))
+  
+  
+
+  oos.ls <- map(responses, ~summarise_predictions(d.sp, "test", .x, fit.dir, sp_i.i))
+  oos.ls$alert <- oos.ls$alert %>%
+    full_join(oos.ls$tl %>% select(sp, obsid, ends_with("_A1"))) %>%
+    full_join(oos.ls$lnN %>% select(sp, obsid, ends_with("_A1")))
+  
+  fit.ls$alert %>% 
+    pivot_longer(ends_with("_A1"), names_to="run", values_to="prA1") %>% 
+    mutate(model=str_split_fixed(run, "_", 3)[,1], 
+           resp=str_split_fixed(run, "_", 3)[,2]) %>% 
+    ggplot(aes(model, prA1, fill=alert)) + geom_boxplot() + facet_wrap(~resp) +
+    scale_fill_manual(values=c("grey", "red3"))
+  fit.ls$alert %>% 
+    pivot_longer(ends_with("_A1"), names_to="run", values_to="prA1") %>% 
+    mutate(model=str_split_fixed(run, "_", 3)[,1], 
+           resp=str_split_fixed(run, "_", 3)[,2]) %>% 
+    ggplot(aes(date, prA1, colour=alert)) + geom_point(shape=1) + 
+    facet_grid(model~resp) +
+    scale_colour_manual(values=c("grey", "red3"))
+  fit.ls$alert %>% 
+    pivot_longer(ends_with("_A1"), names_to="run", values_to="prA1") %>% 
+    mutate(model=str_split_fixed(run, "_", 3)[,1], 
+           resp=str_split_fixed(run, "_", 3)[,2]) %>% 
+    group_by(date, alert, model, resp) %>%
+    summarise(mnPr=mean(prA1)) %>%
+    ggplot(aes(date, mnPr, colour=alert)) +
+    geom_point(shape=1) + stat_smooth(span=0.2, se=F) +
+    facet_grid(model~resp) +
+    scale_colour_manual(values=c("grey", "red3"))
+  
+  
+  oos.ls$alert %>% 
+    pivot_longer(ends_with("_A1"), names_to="run", values_to="prA1") %>% 
+    mutate(model=str_split_fixed(run, "_", 3)[,1], 
+           resp=str_split_fixed(run, "_", 3)[,2]) %>% 
+    ggplot(aes(model, prA1, fill=alert)) + geom_boxplot() + facet_wrap(~resp) +
+    scale_fill_manual(values=c("grey", "red3"))
+  oos.ls$alert %>% 
+    pivot_longer(ends_with("_A1"), names_to="run", values_to="prA1") %>% 
+    mutate(model=str_split_fixed(run, "_", 3)[,1], 
+           resp=str_split_fixed(run, "_", 3)[,2]) %>% 
+    ggplot(aes(date, prA1, colour=alert)) + geom_point(shape=1) + 
+    facet_grid(model~resp) +
+    scale_colour_manual(values=c("grey", "red3"))
+  oos.ls$alert %>% 
+    pivot_longer(ends_with("_A1"), names_to="run", values_to="prA1") %>% 
+    mutate(model=str_split_fixed(run, "_", 3)[,1], 
+           resp=str_split_fixed(run, "_", 3)[,2]) %>% 
+    group_by(date, alert, model, resp) %>%
+    summarise(mnPr=mean(prA1)) %>%
+    ggplot(aes(date, mnPr, colour=alert)) + 
+    geom_point(shape=1) + stat_smooth(span=0.3, se=F) +
+    facet_grid(model~resp) +
+    scale_colour_manual(values=c("grey", "red3")) +
+    ggtitle("Could be adapted to show running means")
+  
+  
+  
+  
+  
+  
+  fit.lnN <- d.sp$train$lnN %>%
     select(sp, obsid, siteid, date, lnN) %>%
     mutate(
-      glm_lnN=predict(elast.lnN),
-      rf_lnN=predict(rf.lnN),
-      HBL_lnN,
-      HBN_lnN
+      glm_lnN=predict(ENet.lnN),
+      rf_lnN=predict(RRF.lnN),
+      HBL_lnN=colMeans(posterior_epred(HBL.lnN)),
+      HBN_lnN=colMeans(posterior_epred(HBN.lnN))
     )
-  fit.tl <- data.sp$train$tl %>%
+  fit.tl <- d.sp$train$tl %>%
     select(sp, obsid, siteid, date, tl) %>%
     mutate(
-      glm_tl=predict(elast.tl),
-      rf_tl=predict(rf.tl),
+      glm_tl=predict(ENet.tl),
+      rf_tl=predict(RRF.tl),
       HBL_tl,
       HBN_tl
     )
-  fit.alert <- data.sp$train$alert %>%
+  fit.alert <- d.sp$train$alert %>%
     select(sp, obsid, siteid, date, alert) %>%
     mutate(
-      glm_alert=predict(elast.alert),
-      rf_alert=predict(rf.alert),
-      HBL_alert,
-      HBN_alert
+      glm_alert=predict(ENet.alert),
+      rf_alert=predict(RRF.alert),
+      HBL_alert=colMeans(posterior_epred(HBL.alert)),
+      HBN_alert=colMeans(posterior_epred(HBN.alert))
     )
   
 
@@ -302,7 +269,7 @@ foreach(s=seq_along(train.ls),
   
 }
 
-
+closeAllConnections()
 
 
 
@@ -372,19 +339,19 @@ obs.df %>%
 # Models: lnN
 # - Null: 4wk-historic domain
 # - Null: 4wk-historic site
-# - ElastGLM (hurdle log-normal)
+# - ENetGLM (hurdle log-normal)
 # - HB-int (hurdle log-normal)
 # - HB-smooth (hurdle log-normal)
-# - RF
+# - RRF
 # Models: alertBinary
 # - Null: 4wk-historic domain
 # - Null: 4wk-historic site
-# - ElastGLM
+# - ENetGLM
 # - HB-int (ordinal)
 # - HB-int (logistic)
 # - HB-smooth (ordinal)
 # - HB-smooth (logistic)
-# - RF
+# - RRF
 # - SVM
 # - XGBoost
 # - ANN

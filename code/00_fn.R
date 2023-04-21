@@ -428,7 +428,6 @@ get_trafficLights <- function(hab.df, N, tl.df) {
   hab.df %>%
     rowwise() %>%
     mutate(tl=tl.df$tl[max(which(sp==tl.df$sp & {{N}} >= tl.df$min_ge))],
-           cat=tl.df$N_ord[max(which(sp==tl.df$sp & {{N}} >= tl.df$min_ge))],
            alert=tl.df$alert[max(which(sp==tl.df$sp & {{N}} >= tl.df$min_ge))]) %>%
     ungroup %>%
     mutate(alert=c("0_none", "1_warn", "2_alert")[alert+1])
@@ -542,7 +541,7 @@ prep_recipe <- function(train.df, response, dimReduce=F) {
     step_interact(terms=~lon_z:lat_z, sep="X") %>%
     step_YeoJohnson(all_predictors()) %>%
     step_normalize(all_predictors()) %>%
-    step_corr(all_predictors(), threshold=0.9) %>%
+    step_corr(all_predictors(), threshold=0.8) %>%
     step_lincomb(all_predictors()) %>%
     step_rename_at(contains("_"), fn=~str_remove_all(.x, "_"))
   if(dimReduce) {
@@ -556,15 +555,20 @@ prep_recipe <- function(train.df, response, dimReduce=F) {
 
 
 
-filter_corr_covs <- function(all_covs, data.sp) {
+filter_corr_covs <- function(all_covs, data.sp, test_run) {
   uncorr_covs <- unique(unlist(map(data.sp, ~unlist(map(.x, names)))))
   if(any(grepl("^PC", uncorr_covs))) {
-    list(main=grep("^PC", uncorr_covs, value=T),
-         interact=NULL,
-         nonHB=NULL)
+    covs_incl <- list(main=grep("^PC", uncorr_covs, value=T),
+                      interact=NULL,
+                      nonHB=NULL)
   } else {
-    map(all_covs, ~.x[.x %in% uncorr_covs])
+    covs_incl <- map(all_covs, ~.x[.x %in% uncorr_covs])
   }
+  if(test_run) {
+    covs_incl <- map(covs_incl, 
+                    ~grep("Xfetch|Delta|Dt|Avg", .x, value=T, invert=T))
+  }
+  return(covs_incl)
 }
 
 
@@ -626,4 +630,134 @@ createFoldsByYear <- function(data.df) {
   folds_in <- map(folds_out, ~(1:nrow(data.df))[-.x])
   return(list(i.in=folds_in, i.out=folds_out))
 }
+
+
+
+
+
+fit_model <- function(mod, resp, form.ls, d.ls, opts, tunes, out.dir, sp) {
+  library(glue)
+  # Fit ML models
+  if(mod %in% c("ENet", "RRF")) {
+    ML.method <- switch(mod,
+                        ENet="glmnet",
+                        RRF="RRFglobal")
+    out <- train(form.ls[[resp]]$ML, 
+                 data=d.ls[[resp]],
+                 method=ML.method,
+                 trControl=opts[[resp]], 
+                 tuneGrid=tunes[[mod]])
+  }
+  
+  # Fit Hierarchical Bayesian models
+  if(mod %in% c("HBL", "HBN")) {
+    library(brms)
+    dir.create(glue("{out.dir}/stan"), showWarnings=F)
+    HB.family <- switch(resp, 
+                        lnN=hurdle_lognormal,
+                        tl=cumulative,
+                        alert=bernoulli)
+    out <- brm(form.ls[[resp]][[mod]], 
+               data=d.ls[[resp]], 
+               family=HB.family,
+               prior=tunes[[mod]],
+               init=0,
+               iter=opts$iter,
+               warmup=opts$warmup,
+               refresh=opts$refresh,
+               control=opts$ctrl,
+               chains=opts$chains,
+               cores=opts$cores,
+               save_model=glue("{out.dir}/stan/{sp}_{resp}_{mod}"))
+  }
+  saveRDS(out, glue("{out.dir}/{sp}_{resp}_{mod}.rds"))
+  cat("Fit ", mod, " for ", sp, ":", resp, ". Saved in ", out.dir, "\n", sep="")
+}
+
+
+
+
+summarise_predictions <- function(d.sp, set, resp, fit.dir, sp_i.i) {
+  library(tidyverse); library(glue)
+  fits.f <- dirf(fit.dir, glue("{sp_i.i$abbr[1]}_{resp}"))
+  names(fits.f) <- str_remove(str_split_fixed(fits.f, glue("{resp}_"), 2)[,2], ".rds")
+  fits <- map(fits.f, readRDS)
+  preds <- imap_dfc(fits, ~get_predictions(.x, .y, resp, set, d.sp[[set]], sp_i.i))
+  
+  out.df <- d.sp[[set]][[resp]] %>%
+    select(sp, obsid, siteid, date, {{resp}}) %>%
+    bind_cols(preds)
+  return(out.df)
+}
+
+
+
+
+
+get_predictions <- function(fit, mod, resp, set, d.df, sp_i.i) {
+  library(tidyverse); library(glue); library(caret); library(brms)
+  
+  if(grepl("HB", mod)) {
+    pred <- posterior_epred(fit, d.df[[resp]], allow_new_levels=T) %>%
+      summarise_post_preds(., resp, sp_i.i)
+  } else {
+    pred_type <- ifelse(resp=="lnN", "raw", "prob")
+    if(set=="train") {
+      preds <- predict(fit, type=pred_type)
+    } else {
+      preds <- predict(fit, d.df[[resp]], pred_type)
+    }
+    pred <- summarise_ML_preds(preds, resp, sp_i.i)
+  }
+  pred.df <- as_tibble(pred) %>% 
+    rename_with(~glue("{mod}_{resp}_{.x}"))
+  return(pred.df)
+}
+
+
+
+
+summarise_ML_preds <- function(preds, resp, sp_i.i) {
+  if(resp=="alert") {
+    pred <- cbind(A1=preds[,2])
+  }
+  if(resp=="tl") {
+    thresh <- as.numeric(str_sub(sp_i.i$tl_thresh, -1, -1)) + 1
+    pred <- cbind(preds, 
+                  rowSums(preds[,thresh:4]))
+    colnames(pred) <- c(paste0("TL", 0:3), "A1")
+  }
+  if(resp=="lnN") {
+    thresh <- sp_i.i$N_thresh
+    pred <- cbind(lnN=preds,
+                  A1=preds>=thresh)
+  }
+  return(pred)
+}
+
+
+
+
+summarise_post_preds <- function(post, resp, sp_i.i) {
+  if(resp=="alert") {
+    pred <- cbind(A1=colMeans(post))
+  }
+  
+  if(resp=="tl") {
+    thresh <- as.numeric(str_sub(sp_i.i$tl_thresh, -1, -1)) + 1
+    pred <- cbind(apply(post, 2:3, mean),
+                  colMeans(apply(post[,,(thresh):4], 1:2, sum)))
+    colnames(pred) <- c(paste0("TL", 0:3), "A1")
+  }
+  
+  if(resp=="lnN") {
+    thresh <- sp_i.i$N_thresh
+    pred <- cbind(lnN=colMeans(post),
+                  A1=colMeans(post>=thresh))
+  }
+  return(pred)
+} 
+
+
+
 
