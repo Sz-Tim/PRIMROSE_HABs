@@ -670,7 +670,7 @@ fit_model <- function(mod, resp, form.ls, d.ls, opts, tunes, out.dir, sp, suffix
                cores=opts$cores,
                save_model=glue("{out.dir}/stan/{sp}_{resp}_{mod}{suffix}"))
   }
-  saveRDS(out, glue("{out.dir}/{sp}_{resp}_{mod}{suffix}.rds"))
+  saveRDS(out, glue("{out.dir}/{sp}_{resp}_{mod}{ifelse(is.null(suffix),'',suffix)}.rds"))
   cat("Saved ", sp, "_", resp, "_", mod, " as ", out.dir, "*", suffix, "\n", sep="")
 }
 
