@@ -25,18 +25,27 @@ hab.tl <- read_csv("data/hab_tl_thresholds.csv") %>%
   filter(min_ge != -99) %>%
   rename(sp=hab_parameter) %>%
   group_by(sp) %>%
-  mutate(N_ord=LETTERS[row_number()],
-         alert=case_when(is.na(alert)~0,
+  mutate(alert=case_when(is.na(alert)~0,
                          alert=="warn"~1,
-                         alert=="alert"~2)) %>%
+                         alert=="alert"~2),
+         A=paste0("A", as.numeric(alert>0)),
+         tl=factor(tl, labels=paste0("TL", 0:3))) %>%
   ungroup %>%
-  select(sp, min_ge, alert, tl, N_ord)
+  select(sp, min_ge, A, alert, tl)
 hab.tl <- hab.tl %>% 
   bind_rows(hab.tl %>% filter(sp=="pseudo_nitzschia_sp") %>% 
               mutate(sp="pseudo_nitzschia_delicatissima_group")) %>% 
   bind_rows(hab.tl %>% filter(sp=="pseudo_nitzschia_sp") %>% 
               mutate(sp="pseudo_nitzschia_seriata_group")) %>%
   mutate(sp=sp_i$abbr[match(sp, sp_i$full)])
+# sp_i <- sp_i %>% 
+#   left_join(hab.tl %>% filter(A=="A1") %>% 
+#               group_by(sp) %>% slice_head(n=1) %>%
+#               rename(N_thresh=min_ge, tl_thresh=tl) %>%
+#               select(sp, N_thresh, tl_thresh) %>%
+#               mutate(N_thresh=pmax(1, N_thresh)) %>%,
+#             by=c("abbr"="sp"))
+# write_csv(sp_i, "data/sp_i.csv")
 
 
 
