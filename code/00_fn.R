@@ -677,9 +677,9 @@ fit_model <- function(mod, resp, form.ls, d.ls, opts, tunes, out.dir, sp, suffix
 
 
 
-summarise_predictions <- function(d.sp, set, resp, fit.dir, sp_i.i) {
+summarise_predictions <- function(d.sp, set, resp, fit.dir, sp_i.i, suffix=NULL) {
   library(tidyverse); library(glue)
-  fits.f <- dirf(fit.dir, glue("{sp_i.i$abbr[1]}_{resp}"))
+  fits.f <- dirf(fit.dir, glue("{sp_i.i$abbr[1]}_{resp}.*{ifelse(is.null(suffix),'',suffix)}"))
   names(fits.f) <- str_split_fixed(str_split_fixed(fits.f, glue("{resp}_"), 2)[,2], "_|\\.", 2)[,1]
   fits <- map(fits.f, readRDS)
   preds <- imap_dfc(fits, ~get_predictions(.x, .y, resp, set, d.sp[[set]], sp_i.i))
@@ -759,5 +759,36 @@ summarise_post_preds <- function(post, resp, sp_i.i) {
 } 
 
 
+
+
+
+calc_LL_wts <- function(cv.df, resp, wt.penalty=1) {
+  library(yardstick)
+  if(resp=="alert") {
+    wt.df <- cv.df %>%
+      pivot_longer(ends_with("_A1"), names_to="model", values_to="pr") %>%
+      group_by(model) %>%
+      mn_log_loss(pr, truth=alert, event_level="second") 
+  }
+  if(resp=="tl") {
+    wt.df <- cv.df %>%
+      pivot_longer(contains("_tl_TL"), names_to="ID", values_to="pr") %>%
+      mutate(model=str_split_fixed(ID, "_TL", 2)[,1],
+             predCat=str_split_fixed(ID, "_tl_", 2)[,2]) %>%
+      select(-ID) %>%
+      pivot_wider(names_from=predCat, values_from=pr) %>%
+      group_by(model) %>%
+      mn_log_loss(TL0, TL1, TL2, TL3, truth=tl)
+  }
+  if(resp=="lnN") {
+    wt.df <- cv.df %>%
+      pivot_longer(ends_with("_lnN_lnN"), names_to="model", values_to="pr") %>%
+      group_by(model) %>%
+      rmse(truth=lnN, estimate=pr)
+  }
+  return(wt.df %>%
+           ungroup %>%
+           mutate(wt=(1/.estimate^wt.penalty)/sum(1/.estimate^wt.penalty)))
+}
 
 

@@ -134,10 +134,10 @@ foreach(s=seq_along(train.ls),
   ctrl <- map(folds, ~trainControl("cv", classProbs=T, number=length(.x$i.in),
                                    index=.x$i.in, indexOut=.x$i.out))
   grids <- list(
-    ENet=expand.grid(alpha=seq(0, 1, length.out=4),
-                      lambda=2^(seq(-15,-1,length.out=4))),
-    RRF=expand.grid(mtry=seq(1, min(6, length(unlist(covs))/10), by=3),
-                   coefReg=seq(0.1, 0.8, by=0.4))
+    ENet=expand.grid(alpha=seq(0, 1, length.out=51),
+                      lambda=2^(seq(-15,-1,length.out=50))),
+    RRF=expand.grid(mtry=seq(1, min(4, length(unlist(covs))/10), by=1),
+                   coefReg=seq(0.05, 0.8, by=0.05))
   )
   HB.i <- list(
     iter=500,
@@ -154,8 +154,8 @@ foreach(s=seq_along(train.ls),
   
   walk(responses, ~fit_model("ENet", .x, form.ls, d.sp$train, ctrl, grids, fit.dir, sp))
   walk(responses, ~fit_model("RRF", .x, form.ls, d.sp$train, ctrl, grids, fit.dir, sp))
-  walk(responses, ~fit_model("HBL", .x, form.ls, d.sp$train, HB.i, priors, fit.dir, sp))
-  walk(responses, ~fit_model("HBN", .x, form.ls, d.sp$train, HB.i, priors, fit.dir, sp))
+  # walk(responses, ~fit_model("HBL", .x, form.ls, d.sp$train, HB.i, priors, fit.dir, sp))
+  # walk(responses, ~fit_model("HBN", .x, form.ls, d.sp$train, HB.i, priors, fit.dir, sp))
 
   fit.ls <- map(responses, ~summarise_predictions(d.sp, "train", .x, fit.dir, sp_i.i))
   fit.ls$alert <- fit.ls$alert %>%
@@ -190,15 +190,15 @@ foreach(s=seq_along(train.ls),
     # fit models
     walk(responses, ~fit_model("ENet", .x, form.ls, d.cv$train, ctrl, grids, cv.dir, sp, y_))
     walk(responses, ~fit_model("RRF", .x, form.ls, d.cv$train, ctrl, grids, cv.dir, sp, y_))
-    walk(responses, ~fit_model("HBL", .x, form.ls, d.cv$train, HB.i, priors, cv.dir, sp, y_))
-    walk(responses, ~fit_model("HBN", .x, form.ls, d.cv$train, HB.i, priors, cv.dir, sp, y_))
+    # walk(responses, ~fit_model("HBL", .x, form.ls, d.cv$train, HB.i, priors, cv.dir, sp, y_))
+    # walk(responses, ~fit_model("HBN", .x, form.ls, d.cv$train, HB.i, priors, cv.dir, sp, y_))
     
     # predict
-    cv.ls <- map(responses, ~summarise_predictions(d.cv, "test", .x, cv.dir, sp_i.i))
+    cv.ls <- map(responses, ~summarise_predictions(d.cv, "test", .x, cv.dir, sp_i.i, y_))
     cv.ls$alert <- cv.ls$alert %>%
       full_join(cv.ls$tl %>% select(sp, obsid, ends_with("_A1"))) %>%
       full_join(cv.ls$lnN %>% select(sp, obsid, ends_with("_A1")))
-    saveRDS(cv.ls, glue("{cv.dir}/{sp}_CV_{yr}.rds"))
+    saveRDS(cv.ls, glue("{cv.dir}/{sp}_CV{y_}.rds"))
   }
   
   
@@ -210,8 +210,9 @@ foreach(s=seq_along(train.ls),
   oos.ls <- readRDS(glue("out/{sp}_oos_ls.rds"))
   cv.ls <- map(dirf(cv.dir, glue("{sp}_CV")), readRDS)
   cv.ls <- list(alert=map_dfr(cv.ls, ~.x$alert),
-                tl=map_dfr(cv.ls, ~.x$tl),
-                lnN=map_dfr(cv.ls, ~.x$lnN))
+                tl=map_dfr(cv.ls, ~.x$tl) %>% select(-ends_with("_A1")),
+                lnN=map_dfr(cv.ls, ~.x$lnN) %>% select(-ends_with("_A1")))
+  wt.ls <- imap(cv.ls, ~calc_LL_wts(.x, .y))
   
   
       
