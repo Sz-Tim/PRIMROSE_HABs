@@ -635,7 +635,7 @@ createFoldsByYear <- function(data.df) {
 
 
 
-fit_model <- function(mod, resp, form.ls, d.ls, opts, tunes, out.dir, sp) {
+fit_model <- function(mod, resp, form.ls, d.ls, opts, tunes, out.dir, sp, suffix=NULL) {
   library(glue)
   # Fit ML models
   if(mod %in% c("ENet", "RRF")) {
@@ -668,10 +668,10 @@ fit_model <- function(mod, resp, form.ls, d.ls, opts, tunes, out.dir, sp) {
                control=opts$ctrl,
                chains=opts$chains,
                cores=opts$cores,
-               save_model=glue("{out.dir}/stan/{sp}_{resp}_{mod}"))
+               save_model=glue("{out.dir}/stan/{sp}_{resp}_{mod}{suffix}"))
   }
-  saveRDS(out, glue("{out.dir}/{sp}_{resp}_{mod}.rds"))
-  cat("Fit ", mod, " for ", sp, ":", resp, ". Saved in ", out.dir, "\n", sep="")
+  saveRDS(out, glue("{out.dir}/{sp}_{resp}_{mod}{suffix}.rds"))
+  cat("Saved ", sp, "_", resp, "_", mod, " as ", out.dir, "*", suffix, "\n", sep="")
 }
 
 
@@ -680,7 +680,7 @@ fit_model <- function(mod, resp, form.ls, d.ls, opts, tunes, out.dir, sp) {
 summarise_predictions <- function(d.sp, set, resp, fit.dir, sp_i.i) {
   library(tidyverse); library(glue)
   fits.f <- dirf(fit.dir, glue("{sp_i.i$abbr[1]}_{resp}"))
-  names(fits.f) <- str_remove(str_split_fixed(fits.f, glue("{resp}_"), 2)[,2], ".rds")
+  names(fits.f) <- str_split_fixed(str_split_fixed(fits.f, glue("{resp}_"), 2)[,2], "_|\\.", 2)[,1]
   fits <- map(fits.f, readRDS)
   preds <- imap_dfc(fits, ~get_predictions(.x, .y, resp, set, d.sp[[set]], sp_i.i))
   
@@ -728,7 +728,7 @@ summarise_ML_preds <- function(preds, resp, sp_i.i) {
     colnames(pred) <- c(paste0("TL", 0:3), "A1")
   }
   if(resp=="lnN") {
-    thresh <- sp_i.i$N_thresh
+    thresh <- log1p(sp_i.i$N_thresh)
     pred <- cbind(lnN=preds,
                   A1=preds>=thresh)
   }
@@ -751,7 +751,7 @@ summarise_post_preds <- function(post, resp, sp_i.i) {
   }
   
   if(resp=="lnN") {
-    thresh <- sp_i.i$N_thresh
+    thresh <- log1p(sp_i.i$N_thresh)
     pred <- cbind(lnN=colMeans(post),
                   A1=colMeans(post>=thresh))
   }

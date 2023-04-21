@@ -17,6 +17,7 @@ cores_per_model <- 4
 n_spp_parallel <- 7
 test_startDate <- "2021-01-01"
 fit.dir <- "out/model_fits/"
+cv.dir <- "out/model_fits/cv/"
 
 sp_i <- read_csv("data/sp_i.csv") %>% arrange(abbr)
 
@@ -139,8 +140,8 @@ foreach(s=seq_along(train.ls),
                    coefReg=seq(0.1, 0.8, by=0.4))
   )
   HB.i <- list(
-    iter=200,
-    warmup=100,
+    iter=500,
+    warmup=200,
     refresh=1,
     chains=cores_per_model,
     cores=cores_per_model,
@@ -155,116 +156,64 @@ foreach(s=seq_along(train.ls),
   walk(responses, ~fit_model("RRF", .x, form.ls, d.sp$train, ctrl, grids, fit.dir, sp))
   walk(responses, ~fit_model("HBL", .x, form.ls, d.sp$train, HB.i, priors, fit.dir, sp))
   walk(responses, ~fit_model("HBN", .x, form.ls, d.sp$train, HB.i, priors, fit.dir, sp))
-  
-  
 
-# . train: summarise ------------------------------------------------------
-  
   fit.ls <- map(responses, ~summarise_predictions(d.sp, "train", .x, fit.dir, sp_i.i))
   fit.ls$alert <- fit.ls$alert %>%
     full_join(fit.ls$tl %>% select(sp, obsid, ends_with("_A1"))) %>%
     full_join(fit.ls$lnN %>% select(sp, obsid, ends_with("_A1")))
-  
-  
+  saveRDS(fit.ls, glue("out/{sp}_fit_ls.rds"))
 
   oos.ls <- map(responses, ~summarise_predictions(d.sp, "test", .x, fit.dir, sp_i.i))
   oos.ls$alert <- oos.ls$alert %>%
     full_join(oos.ls$tl %>% select(sp, obsid, ends_with("_A1"))) %>%
     full_join(oos.ls$lnN %>% select(sp, obsid, ends_with("_A1")))
-  
-  fit.ls$alert %>% 
-    pivot_longer(ends_with("_A1"), names_to="run", values_to="prA1") %>% 
-    mutate(model=str_split_fixed(run, "_", 3)[,1], 
-           resp=str_split_fixed(run, "_", 3)[,2]) %>% 
-    ggplot(aes(model, prA1, fill=alert)) + geom_boxplot() + facet_wrap(~resp) +
-    scale_fill_manual(values=c("grey", "red3"))
-  fit.ls$alert %>% 
-    pivot_longer(ends_with("_A1"), names_to="run", values_to="prA1") %>% 
-    mutate(model=str_split_fixed(run, "_", 3)[,1], 
-           resp=str_split_fixed(run, "_", 3)[,2]) %>% 
-    ggplot(aes(date, prA1, colour=alert)) + geom_point(shape=1) + 
-    facet_grid(model~resp) +
-    scale_colour_manual(values=c("grey", "red3"))
-  fit.ls$alert %>% 
-    pivot_longer(ends_with("_A1"), names_to="run", values_to="prA1") %>% 
-    mutate(model=str_split_fixed(run, "_", 3)[,1], 
-           resp=str_split_fixed(run, "_", 3)[,2]) %>% 
-    group_by(date, alert, model, resp) %>%
-    summarise(mnPr=mean(prA1)) %>%
-    ggplot(aes(date, mnPr, colour=alert)) +
-    geom_point(shape=1) + stat_smooth(span=0.2, se=F) +
-    facet_grid(model~resp) +
-    scale_colour_manual(values=c("grey", "red3"))
+  saveRDS(oos.ls, glue("out/{sp}_oos_ls.rds"))
   
   
-  oos.ls$alert %>% 
-    pivot_longer(ends_with("_A1"), names_to="run", values_to="prA1") %>% 
-    mutate(model=str_split_fixed(run, "_", 3)[,1], 
-           resp=str_split_fixed(run, "_", 3)[,2]) %>% 
-    ggplot(aes(model, prA1, fill=alert)) + geom_boxplot() + facet_wrap(~resp) +
-    scale_fill_manual(values=c("grey", "red3"))
-  oos.ls$alert %>% 
-    pivot_longer(ends_with("_A1"), names_to="run", values_to="prA1") %>% 
-    mutate(model=str_split_fixed(run, "_", 3)[,1], 
-           resp=str_split_fixed(run, "_", 3)[,2]) %>% 
-    ggplot(aes(date, prA1, colour=alert)) + geom_point(shape=1) + 
-    facet_grid(model~resp) +
-    scale_colour_manual(values=c("grey", "red3"))
-  oos.ls$alert %>% 
-    pivot_longer(ends_with("_A1"), names_to="run", values_to="prA1") %>% 
-    mutate(model=str_split_fixed(run, "_", 3)[,1], 
-           resp=str_split_fixed(run, "_", 3)[,2]) %>% 
-    group_by(date, alert, model, resp) %>%
-    summarise(mnPr=mean(prA1)) %>%
-    ggplot(aes(date, mnPr, colour=alert)) + 
-    geom_point(shape=1) + stat_smooth(span=0.3, se=F) +
-    facet_grid(model~resp) +
-    scale_colour_manual(values=c("grey", "red3")) +
-    ggtitle("Could be adapted to show running means")
-  
-  
-  
-  
-  
-  
-  fit.lnN <- d.sp$train$lnN %>%
-    select(sp, obsid, siteid, date, lnN) %>%
-    mutate(
-      glm_lnN=predict(ENet.lnN),
-      rf_lnN=predict(RRF.lnN),
-      HBL_lnN=colMeans(posterior_epred(HBL.lnN)),
-      HBN_lnN=colMeans(posterior_epred(HBN.lnN))
-    )
-  fit.tl <- d.sp$train$tl %>%
-    select(sp, obsid, siteid, date, tl) %>%
-    mutate(
-      glm_tl=predict(ENet.tl),
-      rf_tl=predict(RRF.tl),
-      HBL_tl,
-      HBN_tl
-    )
-  fit.alert <- d.sp$train$alert %>%
-    select(sp, obsid, siteid, date, alert) %>%
-    mutate(
-      glm_alert=predict(ENet.alert),
-      rf_alert=predict(RRF.alert),
-      HBL_alert=colMeans(posterior_epred(HBL.alert)),
-      HBN_alert=colMeans(posterior_epred(HBN.alert))
-    )
   
 
-# . test ------------------------------------------------------------------
+# . cross validation by year ----------------------------------------------
 
-
+  yrCV <- unique(d.sp$train$alert$year)
+  for(k in 1:length(yrCV)) {
+    yr <- yrCV[k]
+    y_ <- paste0("_", yr)
+    
+    d.cv <- list(train=map(d.sp$train, ~.x %>% filter(year!=yr)),
+                 test=map(d.sp$train, ~.x %>% filter(year==yr)))
+    
+    # tuning controls
+    folds <- map(d.cv$train, createFoldsByYear)
+    ctrl <- map(folds, ~trainControl("cv", classProbs=T, number=length(.x$i.in),
+                                     index=.x$i.in, indexOut=.x$i.out))
+    
+    # fit models
+    walk(responses, ~fit_model("ENet", .x, form.ls, d.cv$train, ctrl, grids, cv.dir, sp, y_))
+    walk(responses, ~fit_model("RRF", .x, form.ls, d.cv$train, ctrl, grids, cv.dir, sp, y_))
+    walk(responses, ~fit_model("HBL", .x, form.ls, d.cv$train, HB.i, priors, cv.dir, sp, y_))
+    walk(responses, ~fit_model("HBN", .x, form.ls, d.cv$train, HB.i, priors, cv.dir, sp, y_))
+    
+    # predict
+    cv.ls <- map(responses, ~summarise_predictions(d.cv, "test", .x, cv.dir, sp_i.i))
+    cv.ls$alert <- cv.ls$alert %>%
+      full_join(cv.ls$tl %>% select(sp, obsid, ends_with("_A1"))) %>%
+      full_join(cv.ls$lnN %>% select(sp, obsid, ends_with("_A1")))
+    saveRDS(cv.ls, glue("{cv.dir}/{sp}_CV_{yr}.rds"))
+  }
   
-
-# . cross-validate --------------------------------------------------------
-
-
+  
   
 
 # . ensemble --------------------------------------------------------------
-
+  
+  fit.ls <- readRDS(glue("out/{sp}_fit_ls.rds"))
+  oos.ls <- readRDS(glue("out/{sp}_oos_ls.rds"))
+  cv.ls <- map(dirf(cv.dir, glue("{sp}_CV")), readRDS)
+  cv.ls <- list(alert=map_dfr(cv.ls, ~.x$alert),
+                tl=map_dfr(cv.ls, ~.x$tl),
+                lnN=map_dfr(cv.ls, ~.x$lnN))
+  
+  
       
   
 }
