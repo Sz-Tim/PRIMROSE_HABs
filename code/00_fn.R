@@ -530,11 +530,12 @@ prep_recipe <- function(train.df, response, dimReduce=F) {
     update_role(all_of(pred_vars), new_role="predictor") %>%
     update_role(all_of(response), new_role="outcome") %>%
     update_role(obsid, sp, date, siteid, year, new_role="ID") %>%
-    update_role(lon, lat, new_role="SRE") %>%
+    update_role(lon, lat, new_role="RE") %>%
     step_select(-any_of(exclude_vars)) %>%
     step_dummy(all_factor_predictors()) %>%
     step_logit(starts_with("prAlert"), offset=0.01) %>%
-    step_harmonic(yday, frequency=1, cycle_size=365) %>%
+    step_harmonic(yday, frequency=1, cycle_size=365, keep_original_cols=T) %>%
+    update_role(yday, new_role="RE") %>%
     step_rename(ydayCos=yday_cos_1, ydaySin=yday_sin_1) %>%
     step_mutate_at(lon, lat, fn=list(z=~.)) %>%
     step_interact(term=~ydaySin:ydayCos, sep="X") %>%
