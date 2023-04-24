@@ -534,6 +534,8 @@ prep_recipe <- function(train.df, response, dimReduce=F) {
     step_select(-any_of(exclude_vars)) %>%
     step_dummy(all_factor_predictors()) %>%
     step_logit(starts_with("prAlert"), offset=0.01) %>%
+    step_harmonic(yday, frequency=1, cycle_size=365) %>%
+    step_rename(ydayCos=yday_cos_1, ydaySin=yday_sin_1) %>%
     step_mutate_at(lon, lat, fn=list(z=~.)) %>%
     step_interact(term=~ydaySin:ydayCos, sep="X") %>%
     step_interact(terms=~UWk:fetch:matches("Dir[EW]"), sep="X") %>%
@@ -541,7 +543,7 @@ prep_recipe <- function(train.df, response, dimReduce=F) {
     step_interact(terms=~lon_z:lat_z, sep="X") %>%
     step_YeoJohnson(all_predictors()) %>%
     step_normalize(all_predictors()) %>%
-    step_corr(all_predictors(), threshold=0.8) %>%
+    step_corr(all_predictors(), threshold=0.9) %>%
     step_lincomb(all_predictors()) %>%
     step_rename_at(contains("_"), fn=~str_remove_all(.x, "_"))
   if(dimReduce) {

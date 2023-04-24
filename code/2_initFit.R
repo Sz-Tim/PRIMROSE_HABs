@@ -53,8 +53,7 @@ obs.ls <- readRDS("data/0_init/data_full_allSpp.rds") %>%
                         levels=c("0_green", "1_yellow", "2_orange", "3_red"),
                         labels=c("TL0", "TL1", "TL2", "TL3")))) %>%
   mutate(year=year(date),
-         ydayCos=cos(yday(date)),
-         ydaySin=sin(yday(date))) %>%
+         yday=yday(date)) %>%
   group_by(sp) %>%
   group_split()
 train.ls <- map(obs.ls, ~.x %>% filter(date < test_startDate))
