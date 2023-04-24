@@ -803,11 +803,11 @@ calc_LL_wts <- function(cv.df, resp, wt.penalty=1) {
 
 
 
-calc_ensemble <- function(fit.ls, wt.ls, resp, sp_i.i) {
+calc_ensemble <- function(out.ls, wt.ls, resp, sp_i.i) {
   library(tidyverse)
   if(resp=="alert") {
     out <- left_join(
-      fit.ls[[resp]] %>% 
+      out.ls[[resp]] %>% 
         pivot_longer(ends_with("_A1"), names_to="model", values_to="pr"),
       wt.ls[[resp]]
     ) %>%
@@ -819,7 +819,7 @@ calc_ensemble <- function(fit.ls, wt.ls, resp, sp_i.i) {
     thresh <- as.numeric(str_sub(sp_i.i$tl_thresh, -1, -1))
     alert_cols <- paste0("ens_tl_TL", thresh:3)
     out <- left_join(
-      fit.ls[[resp]] %>%
+      out.ls[[resp]] %>%
         select(-ends_with("_A1")) %>%
         pivot_longer(contains("_tl_TL"), names_to="ID", values_to="pr") %>%
         mutate(model=str_split_fixed(ID, "_TL", 2)[,1],
@@ -835,17 +835,86 @@ calc_ensemble <- function(fit.ls, wt.ls, resp, sp_i.i) {
   if(resp=="lnN") {
     thresh <- log1p(sp_i.i$N_thresh)
     out <- left_join(
-      fit.ls[[resp]] %>%
+      out.ls[[resp]] %>%
         select(-ends_with("_A1")) %>%
         pivot_longer(ends_with("_lnN_lnN"), names_to="model", values_to="pr"),
       wt.ls[[resp]]) %>%
       group_by(obsid) %>%
       summarise(ens_lnN=sum(pr*wt, na.rm=T),
-                ensAlt_lnN_A1=sum((pr >= thresh)*wt, na.rm=T)) %>%
-      ungroup %>%
-      mutate(ens_lnN_A1=as.numeric(ens_lnN >= thresh))
+                ens_lnN_A1=sum((pr >= thresh)*wt, na.rm=T)) %>%
+      ungroup
   }
-  return(left_join(fit.ls[[resp]], out))
+  return(left_join(out.ls[[resp]], out))
+}
+
+
+
+
+
+
+get_rows_by_yday <- function(x, y, thresh) {
+  xy_diff <- x - y
+  comp.mx <- cbind(abs(xy_diff),
+                   abs(xy_diff - 365),
+                   abs(xy_diff + 365))
+  ids <- which(apply(comp.mx, 1, function(j) any(j <= thresh)))
+  return(ids)
+}
+
+
+
+
+
+
+calc_null <- function(obs.ls, resp) {
+  library(tidyverse)
+  obs.df <- obs.ls[[resp]] %>%
+    mutate(yday=yday(date)) %>%
+    select(yday, {{resp}})
+  if(resp=="alert") {
+    temp.df <- tibble(yday=1:365,
+                      null4wk_alert_A1=NA_real_)
+    for(i in 1:nrow(temp.df)) {
+      obs.ids <- get_rows_by_yday(i, obs.df$yday, 14)
+      temp.df$null4wk_alert_A1[i] <- mean(obs.df$alert[obs.ids] == "A1")
+    }
+    out.df <- obs.ls[[resp]] %>% 
+      mutate(yday=yday(date),
+             nullGrand_alert_A1=mean(alert=="A1"))
+  }
+  if(resp=="tl") {
+    temp.df <- tibble(yday=1:365,
+                      null4wk_tl_TL0=NA_real_,
+                      null4wk_tl_TL1=NA_real_,
+                      null4wk_tl_TL2=NA_real_,
+                      null4wk_tl_TL3=NA_real_)
+    for(i in 1:nrow(temp.df)) {
+      obs.ids <- get_rows_by_yday(i, obs.df$yday, 14)
+      temp.df$null4wk_tl_TL0[i] <- mean(obs.df$tl[obs.ids] == "TL0")
+      temp.df$null4wk_tl_TL1[i] <- mean(obs.df$tl[obs.ids] == "TL1")
+      temp.df$null4wk_tl_TL2[i] <- mean(obs.df$tl[obs.ids] == "TL2")
+      temp.df$null4wk_tl_TL3[i] <- mean(obs.df$tl[obs.ids] == "TL3")
+    }
+    out.df <- obs.ls[[resp]] %>% 
+      mutate(yday=yday(date),
+             nullGrand_tl_TL0=mean(tl=="TL0"),
+             nullGrand_tl_TL1=mean(tl=="TL1"),
+             nullGrand_tl_TL2=mean(tl=="TL2"),
+             nullGrand_tl_TL3=mean(tl=="TL3"))
+  }
+  if(resp=="lnN") {
+    temp.df <- tibble(yday=1:365,
+                      null4wk_lnN_lnN=NA_real_)
+    for(i in 1:nrow(temp.df)) {
+      obs.ids <- get_rows_by_yday(i, obs.df$yday, 14)
+      temp.df$null4wk_lnN_lnN[i] <- mean(obs.df$lnN[obs.ids])
+    }
+    out.df <- obs.ls[[resp]] %>% 
+      mutate(yday=yday(date),
+             nullGrand_lnN_lnN=mean(lnN))
+  }
+  return(list(yday.df=temp.df,
+              obs.df=left_join(out.df, temp.df) %>% select(-yday)))
 }
 
 
