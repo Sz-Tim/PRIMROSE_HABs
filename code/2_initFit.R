@@ -153,8 +153,8 @@ foreach(s=seq_along(train.ls),
   
   walk(responses, ~fit_model("ENet", .x, form.ls, d.sp$train, ctrl, grids, fit.dir, sp))
   walk(responses, ~fit_model("RRF", .x, form.ls, d.sp$train, ctrl, grids, fit.dir, sp))
-  # walk(responses, ~fit_model("HBL", .x, form.ls, d.sp$train, HB.i, priors, fit.dir, sp))
-  # walk(responses, ~fit_model("HBN", .x, form.ls, d.sp$train, HB.i, priors, fit.dir, sp))
+  walk(responses, ~fit_model("HBL", .x, form.ls, d.sp$train, HB.i, priors, fit.dir, sp))
+  walk(responses, ~fit_model("HBN", .x, form.ls, d.sp$train, HB.i, priors, fit.dir, sp))
 
   fit.ls <- map(responses, ~summarise_predictions(d.sp, "train", .x, fit.dir, sp_i.i))
   fit.ls$alert <- fit.ls$alert %>%
@@ -167,7 +167,7 @@ foreach(s=seq_along(train.ls),
     full_join(oos.ls$tl %>% select(sp, obsid, ends_with("_A1"))) %>%
     full_join(oos.ls$lnN %>% select(sp, obsid, ends_with("_A1")))
   saveRDS(oos.ls, glue("out/{sp}_oos_ls.rds"))
-  
+
   
   
 
@@ -189,8 +189,8 @@ foreach(s=seq_along(train.ls),
     # fit models
     walk(responses, ~fit_model("ENet", .x, form.ls, d.cv$train, ctrl, grids, cv.dir, sp, y_))
     walk(responses, ~fit_model("RRF", .x, form.ls, d.cv$train, ctrl, grids, cv.dir, sp, y_))
-    # walk(responses, ~fit_model("HBL", .x, form.ls, d.cv$train, HB.i, priors, cv.dir, sp, y_))
-    # walk(responses, ~fit_model("HBN", .x, form.ls, d.cv$train, HB.i, priors, cv.dir, sp, y_))
+    walk(responses, ~fit_model("HBL", .x, form.ls, d.cv$train, HB.i, priors, cv.dir, sp, y_))
+    walk(responses, ~fit_model("HBN", .x, form.ls, d.cv$train, HB.i, priors, cv.dir, sp, y_))
     
     # predict
     cv.ls <- map(responses, ~summarise_predictions(d.cv, "test", .x, cv.dir, sp_i.i, y_))
@@ -212,9 +212,19 @@ foreach(s=seq_along(train.ls),
                 tl=map_dfr(cv.ls, ~.x$tl) %>% select(-ends_with("_A1")),
                 lnN=map_dfr(cv.ls, ~.x$lnN) %>% select(-ends_with("_A1")))
   wt.ls <- imap(cv.ls, ~calc_LL_wts(.x, .y))
-  
-  
-      
+  fit.ls <- map(responses, ~calc_ensemble(fit.ls, wt.ls, .x, sp_i.i))
+  fit.ls$alert <- fit.ls$alert %>%
+    mutate(ens_tl_A1=fit.ls$tl$ens_tl_A1,
+           ens_lnN_A1=fit.ls$lnN$ens_lnN_A1,
+           ensAlt_lnN_A1=fit.ls$lnN$ensAlt_lnN_A1)
+  oos.ls <- map(responses, ~calc_ensemble(oos.ls, wt.ls, .x, sp_i.i))
+  oos.ls$alert <- oos.ls$alert %>%
+    mutate(ens_tl_A1=oos.ls$tl$ens_tl_A1,
+           ens_lnN_A1=oos.ls$lnN$ens_lnN_A1,
+           ensAlt_lnN_A1=oos.ls$lnN$ensAlt_lnN_A1)
+  saveRDS(fit.ls, glue("out/{sp}_fit_ls.rds"))
+  saveRDS(oos.ls, glue("out/{sp}_oos_ls.rds"))
+  saveRDS(wt.ls, glue("out/{sp}_wt_ls.rds"))
   
 }
 
@@ -246,33 +256,6 @@ closeAllConnections()
 
 
 
-
-
-
-
-
-lnN.recipe <- recipe(lnN ~ fetch + phycWk + phycDt + lnNAvg1 + ydaySin + ydayCos + lat + lon, obs.ls[[1]]) %>%
-  step_normalize(any_of(col_cmems))
-lnN.wf <- workflow() %>%
-  add_model(rand_forest("regression") %>% set_engine("ranger")) %>%
-  add_recipe(lnN.recipe)
-test <- lnN.wf %>%
-  fit(obs.ls[[1]])
-test.pred <- predict(test, obs.ls[[2]])
-plot(obs.ls[[2]]$lnN, test.pred$.pred)
-
-
-
-
-
-obs.df %>%
-  filter(date < test_startDate) %>%
-  arrange(sp, date, siteid) %>%
-  saveRDS("data/0_init/data_allSpp_train.rds")
-obs.df %>%
-  filter(date >= test_startDate) %>%
-  arrange(sp, date, siteid) %>%
-  saveRDS("data/0_init/data_allSpp_test.rds")
 
 
 

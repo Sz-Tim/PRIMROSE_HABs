@@ -794,3 +794,52 @@ calc_LL_wts <- function(cv.df, resp, wt.penalty=1) {
 }
 
 
+
+
+
+calc_ensemble <- function(fit.ls, wt.ls, resp, sp_i.i) {
+  library(tidyverse)
+  if(resp=="alert") {
+    out <- left_join(
+      fit.ls[[resp]] %>% 
+        pivot_longer(ends_with("_A1"), names_to="model", values_to="pr"),
+      wt.ls[[resp]]
+    ) %>%
+      group_by(obsid) %>%
+      summarise(ens_alert_A1=sum(pr*wt, na.rm=T)) %>%
+      ungroup
+  }
+  if(resp=="tl") {
+    thresh <- as.numeric(str_sub(sp_i.i$tl_thresh, -1, -1))
+    alert_cols <- paste0("ens_tl_TL", thresh:3)
+    out <- left_join(
+      fit.ls[[resp]] %>%
+        select(-ends_with("_A1")) %>%
+        pivot_longer(contains("_tl_TL"), names_to="ID", values_to="pr") %>%
+        mutate(model=str_split_fixed(ID, "_TL", 2)[,1],
+               predCat=str_split_fixed(ID, "_tl_", 2)[,2]) %>%
+        select(-ID),
+      wt.ls[[resp]]) %>%
+      group_by(obsid, predCat) %>%
+      summarise(ens_tl=sum(pr*wt, na.rm=T)) %>%
+      ungroup %>%
+      pivot_wider(names_from=predCat, values_from=ens_tl, names_prefix="ens_tl_") %>%
+      mutate(ens_tl_A1=rowSums(pick(all_of(alert_cols))))
+  }
+  if(resp=="lnN") {
+    thresh <- log1p(sp_i.i$N_thresh)
+    out <- left_join(
+      fit.ls[[resp]] %>%
+        select(-ends_with("_A1")) %>%
+        pivot_longer(ends_with("_lnN_lnN"), names_to="model", values_to="pr"),
+      wt.ls[[resp]]) %>%
+      group_by(obsid) %>%
+      summarise(ens_lnN=sum(pr*wt, na.rm=T),
+                ensAlt_lnN_A1=sum((pr >= thresh)*wt, na.rm=T)) %>%
+      ungroup %>%
+      mutate(ens_lnN_A1=as.numeric(ens_lnN >= thresh))
+  }
+  return(left_join(fit.ls[[resp]], out))
+}
+
+
