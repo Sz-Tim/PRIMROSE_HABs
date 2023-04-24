@@ -113,7 +113,8 @@ foreach(s=seq_along(train.ls),
   priors <- list(
     HBL=c(prior_string(glue("horseshoe({priStr$hs1}, par_ratio={priStr$hs2})"), class="b"),
           prior(normal(0, 1), class="Intercept"),
-          prior(normal(0, 0.1), class="sd")),
+          prior(normal(0, 0.1), class="sd"),
+          prior(normal(0, 1), class="sds", lb=0)),
     HBN=c(
       prior_string("normal(0,1)", class="b", nlpar="bIntercept"),
       prior_string("normal(0,.5)", class="sd", nlpar="bIntercept", lb=0),
