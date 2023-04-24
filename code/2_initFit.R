@@ -227,6 +227,29 @@ foreach(s=seq_along(train.ls),
   saveRDS(oos.ls, glue("out/{sp}_oos_ls.rds"))
   saveRDS(wt.ls, glue("out/{sp}_wt_ls.rds"))
   
+  
+  
+  
+
+# . null ------------------------------------------------------------------
+
+  fit.ls <- readRDS(glue("out/{sp}_fit_ls.rds")) 
+  oos.ls <- readRDS(glue("out/{sp}_oos_ls.rds"))
+  
+  null.ls <- map(responses, ~calc_null(fit.ls, .x))
+  fit.ls <- map(null.ls, ~.x$obs.df)
+  oos.ls <- map2(oos.ls, null.ls, 
+                 ~left_join(.x %>% mutate(yday=yday(date)), .y$yday.df) %>% select(-yday))
+  
+  saveRDS(fit.ls, glue("out/{sp}_fit_ls.rds"))
+  saveRDS(oos.ls, glue("out/{sp}_oos_ls.rds"))
+  saveRDS(map(null.ls, ~.x$yday.df), glue("out/{sp}_null_ls.rds"))
+
+  
+  
+  
+  
+  
 }
 
 closeAllConnections()
