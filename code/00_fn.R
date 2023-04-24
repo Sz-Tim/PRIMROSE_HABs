@@ -564,6 +564,7 @@ filter_corr_covs <- function(all_covs, data.sp, test_run) {
                       interact=NULL,
                       nonHB=NULL)
   } else {
+    uncorr_covs <- unique(c(uncorr_covs, "ydayCos", "ydaySin", "lon", "lat"))
     covs_incl <- map(all_covs, ~.x[.x %in% uncorr_covs])
   }
   if(test_run) {
@@ -581,25 +582,29 @@ make_HB_formula <- function(resp, covs, sTerms=NULL,
                             splinesInt="both", splinesCovs="time") {
   library(tidyverse); library(brms); library(glue)
   
+  splines_int <- switch(splinesInt,
+                        "time"="s(ydayCos, ydaySin)",
+                        "space"="s(lon, lat)",
+                        "both"="t2(yday, lon, lat, bs=c('cc','ts'), d=c(1,2))")
+  splines_cov <- switch(splinesCovs,
+                        "time"="s(ydayCos, ydaySin)",
+                        "space"="s(lon, lat)",
+                        "both"="t2(yday, lon, lat, bs=c('cc','ts'), d=c(1,2))")
+  
   if(is.null(sTerms)) {
     if(resp=="lnN") {
       form <- bf(glue("{resp} ~ 1 + {paste(covs, collapse='+')}", 
+                      "+ {splines_int}",
                       "+ (1 + {paste(covs, collapse='+')} | siteid)"),
                  glue("hu ~ 1 + {paste(covs, collapse='+')}", 
+                      "+ {splines_int}",
                       "+ (1 + {paste(covs, collapse='+')} | siteid)"))  
     } else {
       form <- bf(glue("{resp} ~ 1 + {paste(covs, collapse='+')}", 
+                      "+ {splines_int}",
                       "+ (1 + {paste(covs, collapse='+')} | siteid)"))
     }
   } else {
-    splines_int <- switch(splinesInt,
-                          "time"="s(ydayCos, ydaySin)",
-                          "space"="s(lon, lat)",
-                          "both"="s(ydayCos, ydaySin) + s(lon, lat)")
-    splines_cov <- switch(splinesCovs,
-                          "time"="s(ydayCos, ydaySin)",
-                          "space"="s(lon, lat)",
-                          "both"="s(ydayCos, ydaySin) + s(lon, lat)")
     flist <- c(
       map(sTerms$b, ~as.formula(glue("{.x} ~ {splines_cov} + (1|siteid)"))),
       map(sTerms$p, ~as.formula(glue("{.x} ~ 1 + (1|siteid)"))),
@@ -841,5 +846,6 @@ calc_ensemble <- function(fit.ls, wt.ls, resp, sp_i.i) {
   }
   return(left_join(fit.ls[[resp]], out))
 }
+
 
 

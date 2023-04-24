@@ -78,7 +78,7 @@ foreach(s=seq_along(train.ls),
 # . prep ------------------------------------------------------------------
 
   # TODO: remove ifelse for final version
-  reprep <- F
+  reprep <- T
   responses <- c(alert="alert", tl="tl", lnN="lnN")
   if(reprep) {
     prep.ls <- map(responses, ~prep_recipe(train.ls[[s]], .x))
@@ -97,7 +97,7 @@ foreach(s=seq_along(train.ls),
                   p=glue("p{c(covs$main, covs$interact)}"))
   form.ls <- map(
     responses,
-    ~list(HBL=make_HB_formula(.x, c(all_covs$date, covs$main, covs$interact)),
+    ~list(HBL=make_HB_formula(.x, c(covs$main, covs$interact)),
           HBN=make_HB_formula(.x, c(covs$main, covs$interact), sTerms=smooths),
           ML=formula(glue("{.x} ~ {paste(unlist(covs), collapse='+')}"))
     )
