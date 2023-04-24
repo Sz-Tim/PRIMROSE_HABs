@@ -78,7 +78,7 @@ foreach(s=seq_along(train.ls),
 # . prep ------------------------------------------------------------------
 
   # TODO: remove ifelse for final version
-  reprep <- T
+  reprep <- F
   responses <- c(alert="alert", tl="tl", lnN="lnN")
   if(reprep) {
     prep.ls <- map(responses, ~prep_recipe(train.ls[[s]], .x))
@@ -110,15 +110,16 @@ foreach(s=seq_along(train.ls),
                    "3"=list(hs1=5, hs2=0.5, b=0.5, de=0.05, i="3-tight"),
                    "4"=list(hs1=3, hs2=0.2, b=0.2, de=0.1, i="best")
   ) 
+  # R2D2 priors instead of horseshoe?
   priors <- list(
     HBL=c(prior_string(glue("horseshoe({priStr$hs1}, par_ratio={priStr$hs2})"), class="b"),
           prior(normal(0, 1), class="Intercept"),
           prior(normal(0, 0.1), class="sd"),
-          prior(normal(0, 1), class="sds", lb=0)),
+          prior(student_t(3, 0, 2.5), class="sds", lb=0)),
     HBN=c(
-      prior_string("normal(0,1)", class="b", nlpar="bIntercept"),
-      prior_string("normal(0,.5)", class="sd", nlpar="bIntercept", lb=0),
-      prior_string(glue("double_exponential(0,{priStr$de})"), class="sds", nlpar="bIntercept", lb=0),
+      prior(normal(0 ,1), class="b", nlpar="bIntercept"),
+      prior(normal(0, .5), class="sd", nlpar="bIntercept", lb=0),
+      prior(student_t(3, 0, 2.5), class="sds", nlpar="bIntercept", lb=0),
       map(c(covs$main, covs$interact), 
           ~c(prior_string(glue("beta({priStr$b},1)"), nlpar=paste0("p", .x), lb=0, ub=1),
              prior_string("normal(0,1)", class="b", nlpar=paste0("b", .x)),
@@ -140,8 +141,8 @@ foreach(s=seq_along(train.ls),
                    coefReg=seq(0.05, 0.8, by=0.05))
   )
   HB.i <- list(
-    iter=500,
-    warmup=200,
+    iter=1000,
+    warmup=500,
     refresh=1,
     chains=cores_per_model,
     cores=cores_per_model,

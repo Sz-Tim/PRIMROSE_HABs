@@ -584,13 +584,13 @@ make_HB_formula <- function(resp, covs, sTerms=NULL,
   library(tidyverse); library(brms); library(glue)
   
   splines_int <- switch(splinesInt,
-                        "time"="s(ydayCos, ydaySin)",
+                        "time"="s(yday, bs=('cc'))",
                         "space"="s(lon, lat)",
-                        "both"="t2(yday, lon, lat, bs=c('cc','ts'), d=c(1,2))")
+                        "both"="t2(yday, lon, lat, bs=c('cc','tp'), d=c(1,2))")
   splines_cov <- switch(splinesCovs,
-                        "time"="s(ydayCos, ydaySin)",
+                        "time"="s(yday, bs=('cc'))",
                         "space"="s(lon, lat)",
-                        "both"="t2(yday, lon, lat, bs=c('cc','ts'), d=c(1,2))")
+                        "both"="t2(yday, lon, lat, bs=c('cc','tp'), d=c(1,2))")
   
   if(is.null(sTerms)) {
     if(resp=="lnN") {
@@ -916,6 +916,7 @@ calc_null <- function(obs.ls, resp) {
   return(list(yday.df=temp.df,
               obs.df=left_join(out.df, temp.df) %>% select(-yday)))
 }
+
 
 
 
