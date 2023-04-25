@@ -7,7 +7,7 @@
 
 # setup -------------------------------------------------------------------
 pkgs <- c("tidyverse", "lubridate", "glue", "recipes", "brms", "caret", 
-          "neuralnet", "RRF", "glmnet", "doParallel", "foreach")
+          "nnet", "RRF", "glmnet", "doParallel", "foreach")
 lapply(pkgs, library, character.only=T)
 source("code/00_fn.R")
 
