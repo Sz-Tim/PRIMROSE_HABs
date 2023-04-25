@@ -105,10 +105,9 @@ foreach(s=seq_along(train.ls),
   
   # priors
   priStr <- switch(2,
-                   "1"=list(r1=0.5, r2=2, hs1=0.5, hs2=0.6, b=0.75, de=0.3, i="1-loose"),
-                   "2"=list(r1=0.3, r2=2, hs1=3, hs2=0.2, b=0.2, de=0.1, i="2-medium"),
-                   "3"=list(r1=0.1, r2=2, hs1=5, hs2=0.5, b=0.5, de=0.05, i="3-tight"),
-                   "4"=list(r1=0.3, r2=2, hs1=3, hs2=0.2, b=0.2, de=0.1, i="best")
+                   "1"=list(r1=0.5, r2=2, hs1=0.5, hs2=0.6, b=0.75, de=0.3, i=1),
+                   "2"=list(r1=0.3, r2=2, hs1=3, hs2=0.2, b=0.2, de=0.1, i=2),
+                   "3"=list(r1=0.1, r2=2, hs1=5, hs2=0.5, b=0.5, de=0.05, i=3)
   ) 
   priors <- map(responses, ~list(HBL=make_HB_priors(priStr, "HBL", .x, covs),
                                  HBN=make_HB_priors(priStr, "HBN", .x, covs)))

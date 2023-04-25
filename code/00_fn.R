@@ -710,7 +710,7 @@ fit_model <- function(mod, resp, form.ls, d.ls, opts, tunes, out.dir, sp, suffix
   # Fit Hierarchical Bayesian models
   if(mod %in% c("HBL", "HBN")) {
     library(brms)
-    dir.create(glue("{out.dir}/stan"), showWarnings=F)
+    dir.create(glue("{out.dir}/stan/{opts$prior_i}/"), showWarnings=F, recursive=T)
     HB.family <- switch(resp, 
                         lnN=hurdle_lognormal,
                         tl=cumulative,
@@ -726,9 +726,10 @@ fit_model <- function(mod, resp, form.ls, d.ls, opts, tunes, out.dir, sp, suffix
                control=opts$ctrl,
                chains=opts$chains,
                cores=opts$cores,
-               save_model=glue("{out.dir}/stan/{sp}_{resp}_{mod}{ifelse(is.null(suffix),'',suffix)}"))
+               save_model=glue("{out.dir}/stan/{opts$prior_i}/",
+                               "{sp}_{resp}_{mod}{ifelse(is.null(suffix),'',suffix)}"))
   }
-  saveRDS(out, glue("{out.dir}/{sp}_{resp}_{mod}{ifelse(is.null(suffix),'',suffix)}.rds"))
+  saveRDS(out, glue("{out.dir}/{sp}_{resp}_{mod}{opts$prior_i}{ifelse(is.null(suffix),'',suffix)}.rds"))
   cat("Saved ", sp, "_", resp, "_", mod, " as ", out.dir, "*", suffix, "\n", sep="")
 }
 
