@@ -97,7 +97,7 @@ foreach(s=seq_along(train.ls),
                   p=glue("p{c(covs$main, covs$interact)}"))
   form.ls <- map(
     responses,
-    ~list(HBL=make_HB_formula(.x, c(covs$main, covs$interact)),
+    ~list(HBL=make_HB_formula(.x, c(covs$main, covs$interact, covs$spacetime)),
           HBN=make_HB_formula(.x, c(covs$main, covs$interact), sTerms=smooths),
           ML=formula(glue("{.x} ~ {paste(unlist(covs), collapse='+')}"))
     )
@@ -105,39 +105,22 @@ foreach(s=seq_along(train.ls),
   
   # priors
   priStr <- switch(2,
-                   "1"=list(hs1=0.5, hs2=0.6, b=0.75, de=0.3, i="1-loose"),
-                   "2"=list(hs1=3, hs2=0.2, b=0.2, de=0.1, i="2-medium"),
-                   "3"=list(hs1=5, hs2=0.5, b=0.5, de=0.05, i="3-tight"),
-                   "4"=list(hs1=3, hs2=0.2, b=0.2, de=0.1, i="best")
+                   "1"=list(r1=0.5, r2=2, hs1=0.5, hs2=0.6, b=0.75, de=0.3, i="1-loose"),
+                   "2"=list(r1=0.3, r2=2, hs1=3, hs2=0.2, b=0.2, de=0.1, i="2-medium"),
+                   "3"=list(r1=0.1, r2=2, hs1=5, hs2=0.5, b=0.5, de=0.05, i="3-tight"),
+                   "4"=list(r1=0.3, r2=2, hs1=3, hs2=0.2, b=0.2, de=0.1, i="best")
   ) 
-  # R2D2 priors instead of horseshoe?
-  priors <- list(
-    HBL=c(prior_string(glue("horseshoe({priStr$hs1}, par_ratio={priStr$hs2})"), class="b"),
-          prior(normal(0, 1), class="Intercept"),
-          prior(normal(0, 0.1), class="sd"),
-          prior(student_t(3, 0, 2.5), class="sds", lb=0)),
-    HBN=c(
-      prior(normal(0 ,1), class="b", nlpar="bIntercept"),
-      prior(normal(0, .5), class="sd", nlpar="bIntercept", lb=0),
-      prior(student_t(3, 0, 2.5), class="sds", nlpar="bIntercept", lb=0),
-      map(c(covs$main, covs$interact), 
-          ~c(prior_string(glue("beta({priStr$b},1)"), nlpar=paste0("p", .x), lb=0, ub=1),
-             prior_string("normal(0,1)", class="b", nlpar=paste0("b", .x)),
-             prior_string("normal(0,.5)", class="sd", nlpar=paste0("b", .x), lb=0),
-             prior_string("normal(0,.5)", class="sd", nlpar=paste0("p", .x), lb=0),
-             prior_string(glue("double_exponential(0,{priStr$de})"), class="sds", nlpar=paste0("b", .x), lb=0))) %>%
-        do.call('c', .)
-    )
-  )
+  priors <- map(responses, ~list(HBL=make_HB_priors(.x, priStr, "HBL"),
+                                 HBN=make_HB_priors(.x, priStr, "HBN")))
   
-  # Tuning controls
+  # tuning controls
   folds <- map(d.sp$train, createFoldsByYear)
   ctrl <- map(folds, ~trainControl("cv", classProbs=T, number=length(.x$i.in),
                                    index=.x$i.in, indexOut=.x$i.out))
   grids <- list(
     ENet=expand.grid(alpha=seq(0, 1, length.out=51),
                       lambda=2^(seq(-15,-1,length.out=50))),
-    RRF=expand.grid(mtry=seq(1, min(4, length(unlist(covs))/10), by=1),
+    RRF=expand.grid(mtry=seq(1, min(3, length(unlist(covs))/10), by=1),
                    coefReg=seq(0.05, 0.8, by=0.05))
   )
   HB.i <- list(
@@ -146,7 +129,8 @@ foreach(s=seq_along(train.ls),
     refresh=1,
     chains=cores_per_model,
     cores=cores_per_model,
-    ctrl=list(adapt_delta=0.8, max_treedepth=10)
+    ctrl=list(adapt_delta=0.8, max_treedepth=10),
+    prior_i=priStr$i
   )
   
   

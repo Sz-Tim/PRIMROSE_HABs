@@ -631,6 +631,48 @@ make_HB_formula <- function(resp, covs, sTerms=NULL,
 
 
 
+
+make_HB_priors <- function(resp, prior_i, mod) {
+  library(tidyverse); library(brms)
+  if(mod=="HBL") {
+    p <- c(prior_string("R2D2({prior_i$r1},{prior_i$r2})", class="b"),
+           # prior_string(glue("horseshoe({prior_i$hs1}, par_ratio={prior_i$hs2})"), class="b"),
+           prior(normal(0, 1), class="Intercept"),
+           prior(normal(0, 0.1), class="sd"))
+  }
+  if(mod=="HBN") {
+    terms <- list(int="bIntercept",
+                  cov=c(covs$main, covs$interact))
+    if(resp=="lnN") {
+      terms <- map(terms, ~c(.x, paste0(.x, "Hu")))
+    }
+    p <- c(
+      map(terms$int, 
+          ~c(prior_string("normal(0,1)", class="b", nlpar=.x),
+             prior_string("normal(0,.5)", class="sd", nlpar=.x, lb=0),
+             prior_string("student_t(3,0,2.5)", class="sds", nlpar=.x, lb=0))) %>%
+        do.call('c', .),
+      map(terms$cov, 
+          ~c(prior_string(glue("beta({prior_i$b},1)"), 
+                          nlpar=paste0("p", .x), lb=0, ub=1),
+             prior_string("normal(0,1)", class="b", 
+                          nlpar=paste0("b", .x)),
+             prior_string("normal(0,.5)", class="sd", 
+                          nlpar=paste0("b", .x), lb=0),
+             prior_string("normal(0,.5)", class="sd", 
+                          nlpar=paste0("p", .x), lb=0),
+             prior_string(glue("double_exponential(0,{prior_i$de})"), class="sds", 
+                          nlpar=paste0("b", .x), lb=0))) %>%
+        do.call('c', .)
+    )
+  }
+  return(p)
+}
+
+
+
+
+
 createFoldsByYear <- function(data.df) {
   folds_out <- data.df %>% mutate(rowNum=row_number()) %>% 
     group_by(year) %>% group_split() %>% map(~.x$rowNum)
@@ -668,7 +710,7 @@ fit_model <- function(mod, resp, form.ls, d.ls, opts, tunes, out.dir, sp, suffix
     out <- brm(form.ls[[resp]][[mod]], 
                data=d.ls[[resp]], 
                family=HB.family,
-               prior=tunes[[mod]],
+               prior=tunes[[resp]][[mod]],
                init=0,
                iter=opts$iter,
                warmup=opts$warmup,
