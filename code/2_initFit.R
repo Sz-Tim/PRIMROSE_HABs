@@ -27,7 +27,8 @@ col_cmems <- readRDS("data/cmems_vars.rds")
 col_wrf <- readRDS("data/wrf_vars.rds")
 
 all_covs <- list(
-  date=c("ydayCos", "ydaySin"),
+  spacetime=c("ydayCos", "ydaySin", "ydaySinXydayCos", 
+              "latz", "lonz", "lonzXlatz"),
   main=c(
     "fetch", 
     "lnNWt1", "lnNAvg1", "prAlertAvg1", "alert1A1", 
@@ -39,8 +40,7 @@ all_covs <- list(
     paste("VWkXfetch", grep("Dir[NS]", col_cmems, value=T), sep="X"),
     paste("UWkXfetch", grep("^[Precip|Shortwave|sst].*Dir[EW]", col_wrf, value=T), sep="X"),
     paste("VWkXfetch", grep("^[Precip|Shortwave|sst].*Dir[EW]", col_wrf, value=T), sep="X")
-  ),
-  nonHB=c("ydaySinXydayCos", "lonz", "latz", "lonzXlatz")
+  )
 )
 
 obs.ls <- readRDS("data/0_init/data_full_allSpp.rds") %>%
@@ -187,7 +187,6 @@ foreach(s=seq_along(train.ls),
   }
   
   
-  
 
 # . ensemble --------------------------------------------------------------
   
@@ -198,21 +197,20 @@ foreach(s=seq_along(train.ls),
                 tl=map_dfr(cv.ls, ~.x$tl) %>% select(-ends_with("_A1")),
                 lnN=map_dfr(cv.ls, ~.x$lnN) %>% select(-ends_with("_A1")))
   wt.ls <- imap(cv.ls, ~calc_LL_wts(.x, .y))
+  
   fit.ls <- map(responses, ~calc_ensemble(fit.ls, wt.ls, .x, sp_i.i))
   fit.ls$alert <- fit.ls$alert %>%
     mutate(ens_tl_A1=fit.ls$tl$ens_tl_A1,
-           ens_lnN_A1=fit.ls$lnN$ens_lnN_A1,
-           ensAlt_lnN_A1=fit.ls$lnN$ensAlt_lnN_A1)
+           ens_lnN_A1=fit.ls$lnN$ens_lnN_A1)
+  
   oos.ls <- map(responses, ~calc_ensemble(oos.ls, wt.ls, .x, sp_i.i))
   oos.ls$alert <- oos.ls$alert %>%
     mutate(ens_tl_A1=oos.ls$tl$ens_tl_A1,
-           ens_lnN_A1=oos.ls$lnN$ens_lnN_A1,
-           ensAlt_lnN_A1=oos.ls$lnN$ensAlt_lnN_A1)
+           ens_lnN_A1=oos.ls$lnN$ens_lnN_A1)
+  
   saveRDS(fit.ls, glue("out/{sp}_fit_ls.rds"))
   saveRDS(oos.ls, glue("out/{sp}_oos_ls.rds"))
   saveRDS(wt.ls, glue("out/{sp}_wt_ls.rds"))
-  
-  
   
   
 
@@ -224,48 +222,16 @@ foreach(s=seq_along(train.ls),
   null.ls <- map(responses, ~calc_null(fit.ls, .x))
   fit.ls <- map(null.ls, ~.x$obs.df)
   oos.ls <- map2(oos.ls, null.ls, 
-                 ~left_join(.x %>% mutate(yday=yday(date)), .y$yday.df) %>% select(-yday))
+                 ~left_join(.x %>% mutate(yday=yday(date)), .y$yday.df) %>% select(-yday)) %>%
+    map2(., fit.ls, ~bind_cols(.x, .y %>% select(contains("nullGrand")) %>% slice_head(n=1)))
   
   saveRDS(fit.ls, glue("out/{sp}_fit_ls.rds"))
   saveRDS(oos.ls, glue("out/{sp}_oos_ls.rds"))
   saveRDS(map(null.ls, ~.x$yday.df), glue("out/{sp}_null_ls.rds"))
 
-  
-  
-  
-  
-  
-}
+  }
 
 closeAllConnections()
-
-
-
-
-# Load dataset
-# Identify predictors
-# For each species:
-# - scale variables that need it, storing the mean/sd 
-# - make directional wind variables
-# - make predictors factors that need it
-# - split into testing/training
-# - write_csv()
-# Generate model formulas
-# - lnN, alert
-# Generate model priors
-# Fit each model with training dataset
-# CV by year
-# Predict testing dataset
-# Calculate ensemble
-# Store predictions
-
-
-
-
-
-
-
-
 
 
 
@@ -274,9 +240,6 @@ closeAllConnections()
 
 # To Try ------------------------------------------------------------------
 
-# Responses: lnN, alertBinary
-# Interactions: cosDay:sinDay, lat:lon, fetch (?)
-# Autocorrelation lags: blnN1 ~ lnDayLag1 + s(cosDay,sinDay) + s(lat,lon)
 # Models: lnN
 # - Null: 4wk-historic domain
 # - Null: 4wk-historic site
