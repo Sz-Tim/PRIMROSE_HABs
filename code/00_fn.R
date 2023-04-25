@@ -595,14 +595,14 @@ make_HB_formula <- function(resp, covs, sTerms=NULL,
   if(is.null(sTerms)) {
     if(resp=="lnN") {
       form <- bf(glue("{resp} ~ 1 + {paste(covs, collapse='+')}", 
-                      "+ {splines_int}",
+                      # "+ {splines_int}",
                       "+ (1 + {paste(covs, collapse='+')} | siteid)"),
                  glue("hu ~ 1 + {paste(covs, collapse='+')}", 
-                      "+ {splines_int}",
+                      # "+ {splines_int}",
                       "+ (1 + {paste(covs, collapse='+')} | siteid)"))  
     } else {
       form <- bf(glue("{resp} ~ 1 + {paste(covs, collapse='+')}", 
-                      "+ {splines_int}",
+                      # "+ {splines_int}",
                       "+ (1 + {paste(covs, collapse='+')} | siteid)"))
     }
   } else {
@@ -612,9 +612,17 @@ make_HB_formula <- function(resp, covs, sTerms=NULL,
       map(1, ~glue("bIntercept ~ 1 + {splines_int} + (1|siteid)"))
     )
     if(resp=="lnN") {
+      sTerms$pHu <- paste0(sTerms$p, "Hu")
+      sTerms$bHu <- paste0(sTerms$b, "Hu")
+      flist <- c(
+        nlf(glue("hu ~ 1*bInterceptHu",
+                 "+ {paste(sTerms$pHu, sTerms$bHu, covs, sep='*', collapse='+')}")),
+        flist,
+        map(sTerms$bHu, ~as.formula(glue("{.x} ~ {splines_cov} + (1|siteid)"))),
+        map(sTerms$pHu, ~as.formula(glue("{.x} ~ 1 + (1|siteid)"))),
+        map(1, ~glue("bInterceptHu ~ 1 + {splines_int} + (1|siteid)"))
+      )
       form <- bf(glue("{resp} ~ 1*bIntercept",
-                      "+ {paste(sTerms$p, sTerms$b, covs, sep='*', collapse='+')}"),
-                 glue("hu ~ 1*bIntercept",
                       "+ {paste(sTerms$p, sTerms$b, covs, sep='*', collapse='+')}"),
                  flist=flist, nl=T) 
     } else {
