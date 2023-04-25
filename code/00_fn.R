@@ -696,21 +696,24 @@ createFoldsByYear <- function(data.df) {
 fit_model <- function(mod, resp, form.ls, d.ls, opts, tunes, out.dir, sp, suffix=NULL) {
   library(glue)
   # Fit ML models
-  if(mod %in% c("ENet", "RRF")) {
+  if(mod %in% c("ENet", "RRF", "NN")) {
     ML.method <- switch(mod,
                         ENet="glmnet",
-                        RRF="RRFglobal")
+                        RRF="RRFglobal",
+                        NN="nnet")
     out <- train(form.ls[[resp]]$ML, 
                  data=d.ls[[resp]],
                  method=ML.method,
                  trControl=opts[[resp]], 
                  tuneGrid=tunes[[mod]])
+    fit_ID <- glue("{sp}_{resp}_{mod}{ifelse(is.null(suffix),'',suffix)}")
   }
   
   # Fit Hierarchical Bayesian models
   if(mod %in% c("HBL", "HBN")) {
     library(brms)
     dir.create(glue("{out.dir}/stan/{opts$prior_i}/"), showWarnings=F, recursive=T)
+    fit_ID <- glue("{sp}_{resp}_{mod}{opts$prior_i}{ifelse(is.null(suffix),'',suffix)}")
     HB.family <- switch(resp, 
                         lnN=hurdle_lognormal,
                         tl=cumulative,
@@ -726,10 +729,9 @@ fit_model <- function(mod, resp, form.ls, d.ls, opts, tunes, out.dir, sp, suffix
                control=opts$ctrl,
                chains=opts$chains,
                cores=opts$cores,
-               save_model=glue("{out.dir}/stan/{opts$prior_i}/",
-                               "{sp}_{resp}_{mod}{ifelse(is.null(suffix),'',suffix)}"))
+               save_model=glue("{out.dir}/stan/{fit_ID}.stan"))
   }
-  saveRDS(out, glue("{out.dir}/{sp}_{resp}_{mod}{opts$prior_i}{ifelse(is.null(suffix),'',suffix)}.rds"))
+  saveRDS(out, glue("{out.dir}/{fit_ID}.rds"))
   cat("Saved ", sp, "_", resp, "_", mod, " as ", out.dir, "*", suffix, "\n", sep="")
 }
 
