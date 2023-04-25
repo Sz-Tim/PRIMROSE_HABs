@@ -110,8 +110,8 @@ foreach(s=seq_along(train.ls),
                    "3"=list(r1=0.1, r2=2, hs1=5, hs2=0.5, b=0.5, de=0.05, i="3-tight"),
                    "4"=list(r1=0.3, r2=2, hs1=3, hs2=0.2, b=0.2, de=0.1, i="best")
   ) 
-  priors <- map(responses, ~list(HBL=make_HB_priors(.x, priStr, "HBL"),
-                                 HBN=make_HB_priors(.x, priStr, "HBN")))
+  priors <- map(responses, ~list(HBL=make_HB_priors(priStr, "HBL", .x, covs),
+                                 HBN=make_HB_priors(priStr, "HBN", .x, covs)))
   
   # tuning controls
   folds <- map(d.sp$train, createFoldsByYear)

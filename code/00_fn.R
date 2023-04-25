@@ -640,7 +640,7 @@ make_HB_formula <- function(resp, covs, sTerms=NULL,
 
 
 
-make_HB_priors <- function(resp, prior_i, mod) {
+make_HB_priors <- function(prior_i, mod, resp, covs) {
   library(tidyverse); library(brms)
   if(mod=="HBL") {
     p <- c(prior_string("R2D2({prior_i$r1},{prior_i$r2})", class="b"),
