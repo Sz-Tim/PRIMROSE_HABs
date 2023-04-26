@@ -643,7 +643,7 @@ make_HB_formula <- function(resp, covs, sTerms=NULL,
 make_HB_priors <- function(prior_i, mod, resp, covs) {
   library(tidyverse); library(brms)
   if(mod=="HBL") {
-    p <- c(prior_string("R2D2({prior_i$r1},{prior_i$r2})", class="b"),
+    p <- c(prior_string(glue("R2D2({prior_i$r1},{prior_i$r2})"), class="b"),
            # prior_string(glue("horseshoe({prior_i$hs1}, par_ratio={prior_i$hs2})"), class="b"),
            prior(normal(0, 1), class="Intercept"),
            prior(normal(0, 0.1), class="sd"))
