@@ -6,8 +6,8 @@
 
 
 # setup -------------------------------------------------------------------
-pkgs <- c("tidyverse", "lubridate", "glue", "recipes", "brms", "caret", 
-          "nnet", "RRF", "glmnet", "doParallel", "foreach")
+pkgs <- c("tidyverse", "lubridate", "glue", "recipes", "RSNNS", "RRF", "glmnet", 
+          "brms", "caret", "doParallel", "foreach")
 lapply(pkgs, library, character.only=T)
 source("code/00_fn.R")
 
@@ -121,8 +121,9 @@ foreach(s=seq_along(train.ls),
                      lambda=2^(seq(-15,-1,length.out=50))),
     RRF=expand.grid(mtry=seq(1, min(3, length(unlist(covs))/10), by=1),
                     coefReg=seq(0.05, 0.8, by=0.05)),
-    NN=expand.grid(size=3:15,
-                   decay=seq(0, 1e-3, length.out=10))
+    NN=expand.grid(layer1=2:5,
+                   layer2=2:5,
+                   layer3=2:5)
   )
   HB.i <- list(
     iter=1000,

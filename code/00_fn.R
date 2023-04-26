@@ -694,13 +694,13 @@ createFoldsByYear <- function(data.df) {
 
 
 fit_model <- function(mod, resp, form.ls, d.ls, opts, tunes, out.dir, sp, suffix=NULL) {
-  library(glue)
+  library(glue); library(caret)
   # Fit ML models
   if(mod %in% c("ENet", "RRF", "NN")) {
     ML.method <- switch(mod,
                         ENet="glmnet",
                         RRF="RRFglobal",
-                        NN="nnet")
+                        NN="mlpML")
     out <- train(form.ls[[resp]]$ML, 
                  data=d.ls[[resp]],
                  method=ML.method,
