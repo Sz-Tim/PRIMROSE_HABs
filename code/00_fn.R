@@ -643,10 +643,19 @@ make_HB_formula <- function(resp, covs, sTerms=NULL,
 make_HB_priors <- function(prior_i, mod, resp, covs) {
   library(tidyverse); library(brms)
   if(mod=="HBL") {
-    p <- c(prior_string(glue("R2D2({prior_i$r1},{prior_i$r2}, cons_D2=1, autoscale=F)"), class="b"),
-           # prior_string(glue("horseshoe({prior_i$hs1}, par_ratio={prior_i$hs2})"), class="b"),
-           prior(normal(0, 1), class="Intercept"),
+    p <- c(prior(normal(0, 1), class="Intercept"),
            prior(normal(0, 0.1), class="sd"))
+    if(resp=="tl") {
+      p <- c(p,
+             prior_string(glue("horseshoe({prior_i$hs1}, par_ratio={prior_i$hs2})"), class="b"))
+    } else {
+      p <- c(p,
+             prior_string(glue("R2D2({prior_i$r1},{prior_i$r2})"), class="b"))
+    }
+    if(resp=="lnN") {
+      p <- c(p,
+             prior_string(glue("R2D2({prior_i$r1},{prior_i$r2})"), class="b", dpar="hu"))
+    }
   }
   if(mod=="HBN") {
     terms <- list(int="bIntercept",
