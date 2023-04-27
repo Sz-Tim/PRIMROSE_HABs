@@ -91,7 +91,7 @@ foreach(s=seq_along(train.ls),
     d.sp <- readRDS(glue("data/0_init/data_baked_{sp}_{ifelse(test_covs, 'test', 'full')}.rds"))
   }
   
-  covs <- filter_corr_covs(all_covs, d.sp, test_run=T)
+  covs <- filter_corr_covs(all_covs, d.sp, test_run=test_covs)
   
   # formulas
   smooths <- list(b=glue("b{c(covs$main, covs$interact)}"),
@@ -105,7 +105,7 @@ foreach(s=seq_along(train.ls),
   )
   
   # priors
-  priStr <- switch(2,
+  priStr <- switch(3,
                    "1"=list(r1=0.5, r2=2, hs1=0.5, hs2=0.6, b=0.75, de=0.3, i=1),
                    "2"=list(r1=0.3, r2=2, hs1=3, hs2=0.2, b=0.2, de=0.1, i=2),
                    "3"=list(r1=0.1, r2=2, hs1=5, hs2=0.5, b=0.5, de=0.05, i=3)
