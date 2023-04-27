@@ -11,7 +11,7 @@ pkgs <- c("tidyverse", "lubridate", "glue", "recipes", "RSNNS", "RRF", "glmnet",
 lapply(pkgs, library, character.only=T)
 source("code/00_fn.R")
 
-test_covs <- T
+test_covs <- F
 cores_per_model <- 4
 n_spp_parallel <- 7
 test_startDate <- "2021-01-01"
@@ -54,6 +54,7 @@ obs.ls <- readRDS("data/0_init/data_full_allSpp.rds") %>%
                         labels=c("TL0", "TL1", "TL2", "TL3")))) %>%
   mutate(year=year(date),
          yday=yday(date)) %>%
+  select(-contains("Dt")) %>%
   group_by(sp) %>%
   group_split()
 train.ls <- map(obs.ls, ~.x %>% filter(date < test_startDate))
@@ -78,16 +79,16 @@ foreach(s=seq_along(train.ls),
 # . prep ------------------------------------------------------------------
 
   # TODO: remove ifelse for final version
-  reprep <- F
+  reprep <- T
   responses <- c(alert="alert", tl="tl", lnN="lnN")
   if(reprep) {
     prep.ls <- map(responses, ~prep_recipe(train.ls[[s]], .x))
     d.sp <- list(train=map(prep.ls, ~bake(.x, train.ls[[s]])),
                     test=map(prep.ls, ~bake(.x, test.ls[[s]])))
-    saveRDS(prep.ls, glue("data/0_init/data_prep_{sp}.rds"))
-    saveRDS(d.sp, glue("data/0_init/data_baked_{sp}.rds"))
+    saveRDS(prep.ls, glue("data/0_init/data_prep_{sp}_{ifelse(test_covs, 'test', 'full')}.rds"))
+    saveRDS(d.sp, glue("data/0_init/data_baked_{sp}_{ifelse(test_covs, 'test', 'full')}.rds"))
   } else {
-    d.sp <- readRDS(glue("data/0_init/data_baked_{sp}.rds"))
+    d.sp <- readRDS(glue("data/0_init/data_baked_{sp}_{ifelse(test_covs, 'test', 'full')}.rds"))
   }
   
   covs <- filter_corr_covs(all_covs, d.sp, test_run=T)

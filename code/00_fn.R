@@ -721,7 +721,7 @@ fit_model <- function(mod, resp, form.ls, d.ls, opts, tunes, out.dir, sp, suffix
   # Fit Hierarchical Bayesian models
   if(mod %in% c("HBL", "HBN")) {
     library(brms)
-    dir.create(glue("{out.dir}/stan/{opts$prior_i}/"), showWarnings=F, recursive=T)
+    dir.create(glue("{out.dir}/stan/"), showWarnings=F, recursive=T)
     fit_ID <- glue("{sp}_{resp}_{mod}{opts$prior_i}{ifelse(is.null(suffix),'',suffix)}")
     HB.family <- switch(resp, 
                         lnN=hurdle_lognormal,
