@@ -59,6 +59,86 @@ get_CMEMS <- function(userid, pw, i.df, bbox, nDays_buffer, dateRng, out.dir) {
 
 
 
+extract_cmems_pts <- function(site.df, vars, cmems.df) {
+  library(tidyverse); library(zoo)
+  
+  cmems.site <- cmems.df %>% 
+    filter(cmems_id %in% site_hab.df$cmems_id) %>%
+    group_by(cmems_id) %>%
+    mutate(across(all_of(cmems_vars), 
+                  ~rollmean(.x, k=7, na.pad=T),
+                  .names="{.col}Wk")) %>%
+    mutate(across(any_of(paste0(cmems_vars, "Wk")),
+                  ~.x - lag(.x),
+                  .names="{.col}Delta")) %>%
+    ungroup %>%
+    mutate(yday=yday(date)) %>%
+    group_by(cmems_id) %>%
+    mutate(across(all_of(cmems_vars),
+                  ~detrend_loess(yday, .x, span=0.3), 
+                  .names="{.col}Dt")) %>%
+    ungroup
+  cmems.site <- cmems.site %>% 
+    select(cmems_id, date, 
+           all_of(paste0(cmems_vars, "Wk")),
+           all_of(paste0(cmems_vars, "WkDelta")),
+           all_of(paste0(cmems_vars, "Dt")))
+  return(cmems.site)
+}
+
+
+
+
+extract_cmems_buffers <- function(site.buffer, vars, cmems.df) {
+  library(tidyverse); library(zoo)
+  cmems.buffer <- expand_grid(siteid=unique(site.buffer$siteid),
+                              quadrant=unique(site.buffer$quadrant),
+                              date=unique(cmems.df$date)) %>%
+    bind_cols(as_tibble(setNames(map(cmems_vars, ~NA_real_), cmems_vars)))
+  
+  cmems_id.ls <- map(site.buffer$cmems_id, ~.x)
+  cmems_dates.ls <- map(unique(cmems.df$date), ~which(cmems.df$date==.x))
+  ij <- 1
+  for(i in 1:nrow(site.buffer)) {
+    for(j in 1:length(cmems_dates.ls)) {
+      if(length(cmems_id.ls[[i]]) > 0) {
+        for(k in cmems_vars) {
+          cmems.buffer[ij,k] <- mean(cmems.df[cmems_dates.ls[[j]],][cmems_id.ls[[i]],][[k]])
+        } 
+      }
+      ij <- ij+1
+      if(ij %% 1000 == 0) {cat(ij, "of", nrow(cmems.buffer), "\n")}
+    }
+  }
+  cmems.buffer <- cmems.buffer %>% 
+    group_by(siteid, quadrant) %>%
+    mutate(across(any_of(cmems_vars), 
+                  ~rollmean(.x, k=7, na.pad=T),
+                  .names="{.col}AvgWk")) %>%
+    mutate(across(any_of(paste0(cmems_vars, "AvgWk")),
+                  ~.x - lag(.x),
+                  .names="{.col}Delta")) %>%
+    ungroup %>%
+    mutate(yday=yday(date)) %>%
+    group_by(siteid, quadrant) %>%
+    mutate(across(any_of(cmems_vars),
+                  ~detrend_loess(yday, .x, span=0.3), 
+                  .names="{.col}AvgDt")) %>%
+    ungroup %>% 
+    select(siteid, quadrant, date, 
+           all_of(paste0(cmems_vars, "AvgWk")),
+           all_of(paste0(cmems_vars, "AvgWkDelta")),
+           all_of(paste0(cmems_vars, "AvgDt"))) %>%
+    group_by(siteid, date) %>%
+    mutate(across(where(is.numeric), na.aggregate)) %>%
+    ungroup
+  return(cmems.buffer)
+}
+
+
+
+
+
 
 
 get_WRF <- function(wrf.dir, nDays_buffer, dateRng, out.dir) {
