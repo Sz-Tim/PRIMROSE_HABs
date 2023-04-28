@@ -638,7 +638,7 @@ prep_recipe <- function(train.df, response, dimReduce=F) {
 
 
 
-filter_corr_covs <- function(all_covs, data.sp, test_run) {
+filter_corr_covs <- function(all_covs, data.sp, covsExclude="NA") {
   uncorr_covs <- unique(unlist(map(data.sp, ~unlist(map(.x, names)))))
   if(any(grepl("^PC", uncorr_covs))) {
     covs_incl <- list(main=grep("^PC", uncorr_covs, value=T),
@@ -648,10 +648,8 @@ filter_corr_covs <- function(all_covs, data.sp, test_run) {
     uncorr_covs <- unique(c(uncorr_covs, "ydayCos", "ydaySin", "lon", "lat"))
     covs_incl <- map(all_covs, ~.x[.x %in% uncorr_covs])
   }
-  if(test_run) {
-    covs_incl <- map(covs_incl, 
-                    ~grep("Xfetch|Delta|Dt|Avg", .x, value=T, invert=T))
-  }
+  
+  covs_incl <- map(covs_incl, ~grep(covsExclude, .x, value=T, invert=T))
   return(covs_incl)
 }
 

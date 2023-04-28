@@ -11,13 +11,16 @@ pkgs <- c("tidyverse", "lubridate", "glue", "recipes", "RSNNS", "RRF", "glmnet",
 lapply(pkgs, library, character.only=T)
 source("code/00_fn.R")
 
-test_covs <- F
-cores_per_model <- 4
+covSet <- c("test", "full", "noDt", 
+            "noDtDelta", "noInt", "noDtDeltaInt")[4]
+cores_per_model <- 3
 n_spp_parallel <- 7
 test_startDate <- "2021-01-01"
-fit.dir <- ifelse(test_covs, "out/model_fits/test_covs/", "out/model_fits/")
+fit.dir <- glue("out/model_fits/{covSet}/")
 cv.dir <- glue("{fit.dir}/cv/")
-out.dir <- ifelse(test_covs, "out/test/", "out/")
+out.dir <- glue("out/{covSet}/")
+dir.create(cv.dir, recursive=T, showWarnings=F)
+dir.create(out.dir, recursive=T, showWarnings=F)
 
 sp_i <- read_csv("data/sp_i.csv") %>% arrange(abbr)
 
@@ -43,6 +46,14 @@ all_covs <- list(
   )
 )
 
+covs_exclude <- switch(covSet,
+                       full="NA",
+                       test="Xfetch|Dt|Delta|Avg",
+                       noDt="Dt",
+                       noDtDelta="Dt|Delta",
+                       noInt="Xfetch",
+                       noDtDeltaInt="Xfetch|Dt|Delta")
+
 obs.ls <- readRDS("data/0_init/data_full_allSpp.rds") %>%
   select(all_of(col_metadata), all_of(col_resp), 
          "alert1", "alert2", any_of(unname(unlist(all_covs)))) %>%
@@ -54,7 +65,7 @@ obs.ls <- readRDS("data/0_init/data_full_allSpp.rds") %>%
                         labels=c("TL0", "TL1", "TL2", "TL3")))) %>%
   mutate(year=year(date),
          yday=yday(date)) %>%
-  select(-contains("Dt")) %>%
+  select(-matches(covs_exclude)) %>%
   group_by(sp) %>%
   group_split()
 train.ls <- map(obs.ls, ~.x %>% filter(date < test_startDate))
@@ -66,7 +77,8 @@ test.ls <- map(obs.ls, ~.x %>% filter(date >= test_startDate))
 
 registerDoParallel(n_spp_parallel)
 foreach(s=seq_along(train.ls),
-        .export=c("all_covs", "train.ls", "test.ls", "test_covs", "fit.dir", "out.dir", "cv.dir", "sp_i")
+        .export=c("all_covs", "train.ls", "test.ls", "covSet", "covs_exclude", 
+                  "fit.dir", "out.dir", "cv.dir", "sp_i")
 ) %dopar% {
   
   lapply(pkgs, library, character.only=T)
@@ -80,18 +92,18 @@ foreach(s=seq_along(train.ls),
 
   # TODO: remove ifelse for final version
   reprep <- T
-  responses <- c(alert="alert", tl="tl", lnN="lnN")
+  responses <- c(alert="alert", tl="tl", lnN="lnN")[-3]
   if(reprep) {
     prep.ls <- map(responses, ~prep_recipe(train.ls[[s]], .x))
     d.sp <- list(train=map(prep.ls, ~bake(.x, train.ls[[s]])),
                     test=map(prep.ls, ~bake(.x, test.ls[[s]])))
-    saveRDS(prep.ls, glue("data/0_init/data_prep_{sp}_{ifelse(test_covs, 'test', 'full')}.rds"))
-    saveRDS(d.sp, glue("data/0_init/data_baked_{sp}_{ifelse(test_covs, 'test', 'full')}.rds"))
+    saveRDS(prep.ls, glue("data/0_init/data_prep_{sp}_{covSet}.rds"))
+    saveRDS(d.sp, glue("data/0_init/data_baked_{sp}_{covSet}.rds"))
   } else {
-    d.sp <- readRDS(glue("data/0_init/data_baked_{sp}_{ifelse(test_covs, 'test', 'full')}.rds"))
+    d.sp <- readRDS(glue("data/0_init/data_baked_{sp}_{covSet}.rds"))
   }
   
-  covs <- filter_corr_covs(all_covs, d.sp, test_run=test_covs)
+  covs <- filter_corr_covs(all_covs, d.sp, covs_exclude)
   
   # formulas
   smooths <- list(b=glue("b{c(covs$main, covs$interact)}"),
@@ -105,10 +117,10 @@ foreach(s=seq_along(train.ls),
   )
   
   # priors
-  priStr <- switch(3,
-                   "1"=list(r1=0.5, r2=2, hs1=0.5, hs2=0.6, b=0.75, de=0.3, i=1),
-                   "2"=list(r1=0.3, r2=2, hs1=3, hs2=0.2, b=0.2, de=0.1, i=2),
-                   "3"=list(r1=0.1, r2=2, hs1=5, hs2=0.5, b=0.5, de=0.05, i=3)
+  priStr <- switch(1,
+                   "1"=list(r1=0.2, r2=2, hs1=0.5, hs2=0.6, b=0.75, de=0.3, i=1),
+                   "2"=list(r1=0.1, r2=2, hs1=3, hs2=0.2, b=0.2, de=0.1, i=2),
+                   "3"=list(r1=0.1, r2=1, hs1=5, hs2=0.5, b=0.5, de=0.05, i=3)
   ) 
   priors <- map(responses, ~list(HBL=make_HB_priors(priStr, "HBL", .x, covs),
                                  HBN=make_HB_priors(priStr, "HBN", .x, covs)))
