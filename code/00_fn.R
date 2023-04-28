@@ -7,6 +7,11 @@
 
 
 
+
+
+# Data preparation --------------------------------------------------------
+
+
 get_CMEMS <- function(userid, pw, i.df, bbox, nDays_buffer, dateRng, out.dir) {
   library(tidyverse); library(ncdf4); library(lubridate); library(glue)
   
@@ -90,14 +95,18 @@ extract_cmems_pts <- function(site.df, vars, cmems.df) {
 
 
 extract_cmems_buffers <- function(site.buffer, vars, cmems.df) {
+  
   library(tidyverse); library(zoo)
+  
   cmems.buffer <- expand_grid(siteid=unique(site.buffer$siteid),
                               quadrant=unique(site.buffer$quadrant),
                               date=unique(cmems.df$date)) %>%
     bind_cols(as_tibble(setNames(map(cmems_vars, ~NA_real_), cmems_vars)))
   
   cmems_id.ls <- map(site.buffer$cmems_id, ~.x)
-  cmems_dates.ls <- map(unique(cmems.df$date), ~which(cmems.df$date==.x))
+  cmems.df$date_id <- match(cmems.df$date, unique(cmems.df$date)) 
+  cmems_dates.ls <- map(1:n_distinct(cmems.df$date_id), ~which(cmems.df$date_id==.x))
+  
   ij <- 1
   for(i in 1:nrow(site.buffer)) {
     for(j in 1:length(cmems_dates.ls)) {
@@ -110,6 +119,7 @@ extract_cmems_buffers <- function(site.buffer, vars, cmems.df) {
       if(ij %% 1000 == 0) {cat(ij, "of", nrow(cmems.buffer), "\n")}
     }
   }
+  
   cmems.buffer <- cmems.buffer %>% 
     group_by(siteid, quadrant) %>%
     mutate(across(any_of(cmems_vars), 
@@ -132,6 +142,7 @@ extract_cmems_buffers <- function(site.buffer, vars, cmems.df) {
     group_by(siteid, date) %>%
     mutate(across(where(is.numeric), na.aggregate)) %>%
     ungroup
+  
   return(cmems.buffer)
 }
 
@@ -300,6 +311,120 @@ subset_WRF <- function(domain, wrf.out, v2_start=NULL) {
   return(wrf.ls)
 }
 
+
+
+
+extract_wrf_pts <- function(site.df, site.versions, wrf_i, wrf.df) {
+  library(tidyverse); library(zoo)
+  wrf.site <- wrf.df %>%
+    group_by(version) %>%
+    group_split() %>%
+    map2_dfr(., site.versions, 
+             ~.x %>% filter(wrf_id %in% site.df[[.y]])) %>%
+    arrange(wrf_id, date) %>%
+    group_by(wrf_id) %>%
+    mutate(across(any_of(wrf_i$var), 
+                  ~rollmean(.x, k=7, na.pad=T),
+                  .names="{.col}Wk")) %>%
+    mutate(across(any_of(paste0(wrf_i$var, "Wk")),
+                  ~.x - lag(.x),
+                  .names="{.col}Delta")) %>%
+    ungroup %>%
+    mutate(yday=yday(date)) %>%
+    group_by(wrf_id) %>%
+    mutate(across(any_of(wrf_i$var),
+                  ~detrend_loess(yday, .x, span=0.3), 
+                  .names="{.col}Dt")) %>%
+    ungroup
+  wrf.site <- wrf.site %>% 
+    select(wrf_id, version, date, 
+           all_of(paste0(wrf_i$vars, "Wk")),
+           all_of(paste0(wrf_i$vars, "WkDelta")),
+           all_of(paste0(wrf_i$vars, "Dt")))
+  return(wrf.site)
+}
+
+
+
+
+
+extract_wrf_buffers <- function(site.buffer, wrf_i, wrf.df) {
+  library(tidyverse); library(sf); library(zoo)
+  
+  wrf.buffer <- expand_grid(siteid=unique(site.buffer$siteid),
+                            quadrant=unique(site.buffer$quadrant),
+                            date=unique(wrf.df$date)) %>%
+    mutate(version=1 + (date >= "2019-04-01")) %>%
+    bind_cols(as_tibble(setNames(map(wrf_i$vars, ~NA_real_), wrf_i$vars)))
+  
+  wrf_id.ls <- list(v1=map(site.buffer$wrf_id.1, ~.x),
+                    v2=map(site.buffer$wrf_id.2, ~.x))
+  wrf.df$date_id <- match(wrf.df$date, unique(wrf.df$date)) 
+  wrf_dates.ls <- map(1:n_distinct(wrf.df$date_id), ~which(wrf.df$date_id==.x))
+  
+  ij <- 1
+  for(i in 1:nrow(site.buffer)) {
+    for(j in 1:length(wrf_dates.ls)) {
+      if(length(wrf_id.ls[[wrf.buffer$version[ij]]][[i]]) > 0) {
+        for(k in wrf_i$sea_vars) {
+          wrf.buffer[ij,k] <- mean(wrf.df[wrf_dates.ls[[j]],][wrf_id.ls[[wrf.buffer$version[ij]]][[i]],][[k]])
+        }
+        sst_ij <- wrf.df[wrf_dates.ls[[j]],][wrf_id.ls[[wrf.buffer$version[ij]]][[i]],][["sst"]]
+        elev_ij <- wrf.df[wrf_dates.ls[[j]],][wrf_id.ls[[wrf.buffer$version[ij]]][[i]],][["elev"]]
+        wrf.buffer[ij,"sst"] <- mean(sst_ij[elev_ij==0], na.rm=T) 
+      }
+      ij <- ij+1
+      if(ij %% 1000 == 0) {cat(ij, "of", nrow(wrf.buffer), "\n")}
+    }
+  }
+  wrf.buffer <- wrf.buffer %>% 
+    group_by(siteid, quadrant) %>%
+    mutate(across(any_of(wrf_i$vars), 
+                  ~rollmean(.x, k=7, na.pad=T),
+                  .names="{.col}AvgWk")) %>%
+    mutate(across(any_of(paste0(wrf_i$vars, "AvgWk")),
+                  ~.x - lag(.x),
+                  .names="{.col}Delta")) %>%
+    ungroup %>%
+    mutate(yday=yday(date)) %>%
+    group_by(siteid, quadrant) %>%
+    mutate(across(any_of(wrf_i$vars),
+                  ~detrend_loess(yday, .x, span=0.3), 
+                  .names="{.col}AvgDt")) %>%
+    ungroup %>% 
+    select(siteid, quadrant, date, 
+           all_of(paste0(wrf_i$vars, "AvgWk")),
+           all_of(paste0(wrf_i$vars, "AvgWkDelta")),
+           all_of(paste0(wrf_i$vars, "AvgDt"))) %>%
+    group_by(siteid, date) %>%
+    mutate(across(where(is.numeric), na.aggregate)) %>%
+    ungroup
+  return(wrf.buffer)
+}
+
+
+
+find_nearest_feature_id <- function(site.df, env.sf, id_col) {
+  site.df %>%
+    st_as_sf(coords=c("lon", "lat"), crs=27700, remove=F) %>%
+    st_transform(4326) %>%
+    mutate(new_id=st_nearest_feature(., env.sf)) %>%
+    rename_with(~id_col, new_id) %>%
+    st_drop_geometry()
+}
+
+
+
+
+find_buffer_intersect_ids <- function(site.sf, env.sf, id_col) {
+  site.sf %>%
+    select(siteid, quadrant, geom) %>%
+    st_transform(4326) %>%
+    st_make_valid() %>%
+    mutate(new_id=st_intersects(., env.sf)) %>%
+    rename_with(~id_col, new_id) %>%
+    st_drop_geometry()
+}
 
 
 
@@ -503,18 +628,6 @@ split_to_NSEW <- function(sf, radius=110e3) {
 
 
 
-get_trafficLights <- function(hab.df, N, tl.df) {
-  library(tidyverse)
-  hab.df %>%
-    rowwise() %>%
-    mutate(tl=tl.df$tl[max(which(sp==tl.df$sp & {{N}} >= tl.df$min_ge))],
-           alert=tl.df$alert[max(which(sp==tl.df$sp & {{N}} >= tl.df$min_ge))]) %>%
-    ungroup %>%
-    mutate(alert=c("0_none", "1_warn", "2_alert")[alert+1])
-}
-
-
-
 #' Lag multiple variables at once
 #'
 #' From https://stackoverflow.com/questions/55814028/multiple-lags-with-dplyr
@@ -539,6 +652,20 @@ get_lags <- function(data, ..., n=2){
     set_names(paste0(map_chr(combos$var, quo_text), combos$indices))
   mutate(data, !!!quosures )
   
+}
+
+
+
+
+
+get_trafficLights <- function(obs.df, N, tl.df) {
+  library(tidyverse)
+  obs.df %>%
+    rowwise() %>%
+    mutate(tl=tl.df$tl[max(which(sp==tl.df$sp & {{N}} >= tl.df$min_ge))],
+           alert=tl.df$alert[max(which(sp==tl.df$sp & {{N}} >= tl.df$min_ge))]) %>%
+    ungroup %>%
+    mutate(alert=c("0_none", "1_warn", "2_alert")[alert+1])
 }
 
 
@@ -595,12 +722,25 @@ detrend_loess <- function (x, y, span=0.75, robust=TRUE) {
 
 
 
-dirf <- function(...) {
-  dir(..., full.names=T)
+
+load_datasets <- function(sub.dir, target) {
+  d.ls <- list(
+    site=readRDS(glue("data/site_{target}_df.rds")),
+    obs=readRDS(glue("data/{sub.dir}/{target}_obs.rds")),
+    cmems.pt=readRDS(glue("data/{sub.dir}/cmems_sitePt_{target}.rds")),
+    cmems.buf=readRDS(glue("data/{sub.dir}/cmems_siteBufferNSEW_{target}.rds")),
+    wrf.pt=readRDS(glue("data/{sub.dir}/wrf_sitePt_{target}.rds")),
+    wrf.buf=readRDS(glue("data/{sub.dir}/wrf_siteBufferNSEW_{target}.rds"))
+  )
+  return(d.ls)
 }
 
 
 
+
+
+
+# Model preparation -------------------------------------------------------
 
 
 prep_recipe <- function(train.df, response, dimReduce=F) {
@@ -780,6 +920,8 @@ createFoldsByYear <- function(data.df) {
 
 
 
+
+
 fit_model <- function(mod, resp, form.ls, d.ls, opts, tunes, out.dir, sp, suffix=NULL) {
   library(glue); library(caret)
   # Fit ML models
@@ -821,6 +963,15 @@ fit_model <- function(mod, resp, form.ls, d.ls, opts, tunes, out.dir, sp, suffix
   saveRDS(out, glue("{out.dir}/{fit_ID}.rds"))
   cat("Saved ", sp, "_", resp, "_", mod, " as ", out.dir, "*", suffix, "\n", sep="")
 }
+
+
+
+
+
+
+
+# Model output ------------------------------------------------------------
+
 
 
 
@@ -1055,6 +1206,23 @@ calc_null <- function(obs.ls, resp) {
   }
   return(list(yday.df=temp.df,
               obs.df=left_join(out.df, temp.df) %>% select(-yday)))
+}
+
+
+
+
+
+
+
+
+
+# Miscellaneous -----------------------------------------------------------
+
+
+
+
+dirf <- function(...) {
+  dir(..., full.names=T)
 }
 
 

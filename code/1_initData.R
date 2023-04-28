@@ -279,7 +279,6 @@ st_write(site_tox.sf, "data/site_tox_sf.gpkg")
 # N: reported density
 # lnN: ln(N + 1)
 # tl: HABReports traffic light for density N
-# cat: HABReports label category for density N
 # alert: HABReports action (0_none, 1_warn, 2_alert)
 # lnNAvg: regional average of lnN within previous week
 # prAlertAvg: regional average of alerting sites within previous week
@@ -287,20 +286,19 @@ st_write(site_tox.sf, "data/site_tox_sf.gpkg")
 hab.df <- calc_hab_features(readRDS("data/0_init/fsa_df.rds"),
                             sp_i, hab.tl,
                             readRDS("data/site_hab_neighbors_100km.rds"))
-saveRDS(hab.df, "data/0_init/hab_densities.rds")
+saveRDS(hab.df, "data/0_init/hab_obs.rds")
 
 
 
 # toxin concentrations ----------------------------------------------------
 
-# Observed densities and bloom states for focal taxa
+# Observed concentrations and alert states for focal toxins
 # * = [t]
 # *1 = [t-1]
 # *2 = [t-2]
-# N: reported density
+# N: reported concentration
 # lnN: ln(N + 1)
-# tl: HABReports traffic light for density N
-# cat: HABReports label category for density N
+# tl: HABReports traffic light for concentration N
 # alert: HABReports action (0_none, 1_warn, 2_alert)
 # lnNAvg: regional average of lnN within previous week
 # prAlertAvg: regional average of alerting sites within previous week
@@ -308,7 +306,7 @@ saveRDS(hab.df, "data/0_init/hab_densities.rds")
 tox.df <- calc_toxin_features(readRDS("data/0_init/cefas_df.rds"),
                               sp_i, tox.tl,
                               readRDS("data/site_tox_neighbors_100km.rds"))
-saveRDS(tox.df, "data/0_init/toxin_concentrations.rds")
+saveRDS(tox.df, "data/0_init/tox_obs.rds")
 
 
 
@@ -323,31 +321,21 @@ cmems.sf <- cmems.df %>% select(date, lon, lat, cmems_id) %>%
 
 # HABs
 site_hab.df <- readRDS("data/site_hab_df.rds")
-site_hab.df <- site_hab.df %>%
-  st_as_sf(coords=c("lon", "lat"), crs=27700, remove=F) %>%
-  st_transform(4326) %>%
-  mutate(cmems_id=st_nearest_feature(., cmems.sf)) %>%
-  st_drop_geometry()
+site_hab.df <- site_hab.df %>% find_nearest_feature_id(cmems.sf, "cmems_id")
 saveRDS(site_hab.df, "data/site_hab_df.rds")
 cmems.site_hab <- extract_cmems_pts(site_hab.df, cmems_vars, cmems.df)
 saveRDS(cmems.site_hab, "data/0_init/cmems_sitePt_hab.rds")
 
 # toxins
-site_tox.df <- readRDS("data/site_hab_df.rds")
-site_tox.df <- site_tox.df %>%
-  st_as_sf(coords=c("lon", "lat"), crs=27700, remove=F) %>%
-  st_transform(4326) %>%
-  mutate(cmems_id=st_nearest_feature(., cmems.sf)) %>%
-  st_drop_geometry()
+site_tox.df <- readRDS("data/site_tox_df.rds")
+site_tox.df <- site_tox.df %>% find_nearest_feature_id(cmems.sf, "cmems_id")
 saveRDS(site_tox.df, "data/site_tox_df.rds")
 cmems.site_tox <- extract_cmems_pts(site_tox.df, cmems_vars, cmems.df)
 saveRDS(cmems.site_hab, "data/0_init/cmems_sitePt_tox.rds")
 
 
 
-
 # . CMEMS  buffer:date ----------------------------------------------------
-
 cmems_vars <- c("chl", "kd", "no3", "o2", "ph", "phyc", "po4", "pp")
 cmems.df <- readRDS(dirf("data/0_init", "cmems_end.*rds"))
 cmems.sf <- cmems.df %>% select(date, lon, lat, cmems_id) %>% 
@@ -356,19 +344,13 @@ cmems.sf <- cmems.df %>% select(date, lon, lat, cmems_id) %>%
 
 # HABs
 site.buffer_hab <- st_read("data/site_hab_sf.gpkg") %>%
-  st_transform(4326) %>%
-  st_make_valid() %>%
-  mutate(cmems_id=st_intersects(., cmems.sf)) %>%
-  st_drop_geometry()
+  find_buffer_intersect_ids(., cmems.sf, "cmems_id")
 cmems.buffer_hab <- extract_cmems_buffers(site.buffer_hab, cmems_vars, cmems.df)
 saveRDS(cmems.buffer_hab, "data/0_init/cmems_siteBufferNSEW_hab.rds")
 
 # toxins
 site.buffer_tox <- st_read("data/site_tox_sf.gpkg") %>%
-  st_transform(4326) %>%
-  st_make_valid() %>%
-  mutate(cmems_id=st_intersects(., cmems.sf)) %>%
-  st_drop_geometry()
+  find_buffer_intersect_ids(., cmems.sf, "cmems_id")
 cmems.buffer_tox <- extract_cmems_buffers(site.buffer_tox, cmems_vars, cmems.df)
 saveRDS(cmems.buffer_tox, "data/0_init/cmems_siteBufferNSEW_tox.rds")
 
@@ -379,164 +361,110 @@ saveRDS(cmems.buffer_tox, "data/0_init/cmems_siteBufferNSEW_tox.rds")
 wrf_i <- list(vars=c("U", "V", "UV", "Shortwave", "Precip", "sst"),
               sea_vars=c("U", "V", "UV", "Shortwave", "Precip"),
               land_vars=c("sst"))
-site_hab.df <- readRDS("data/site_hab_df.rds") %>% select(-starts_with("wrf_id"))
 wrf_versions <- map(seq_along(dir("data/0_init/wrf", "^domain_d01")), 
                     ~map_dfr(dirf("data/0_init/wrf", glue("domain_d0._{.x}")), readRDS) %>%
                       arrange(res, i) %>%
                       mutate(wrf_id=row_number()) %>%
                       st_as_sf(coords=c("lon", "lat"), remove=F, crs=4326))
-site_hab.df <- map(wrf_versions,
-               ~site_hab.df %>%
-                 st_as_sf(coords=c("lon", "lat"), crs=27700, remove=F) %>%
-                 st_transform(4326) %>%
-                 mutate(wrf_id=st_nearest_feature(., .x)) %>%
-                 st_drop_geometry) %>%
-  reduce(full_join, 
-         by=names(site_hab.df), suffix=paste0(".", seq_along(wrf_versions)))
-# saveRDS(site_hab.df, "data/site_hab_df.rds")
-site.versions <- grep("wrf_id", names(site_hab.df), value=T)
 wrf.df <- readRDS(dirf("data/0_init/", "wrf_end_.*rds")) %>%
   mutate(sst=if_else(sst > -100, sst, NA_real_))
-wrf.site <- wrf.df %>%
-  group_by(version) %>%
-  group_split() %>%
-  map2_dfr(., site.versions, 
-           ~.x %>% filter(wrf_id %in% site_hab.df[[.y]])) %>%
-  arrange(wrf_id, date) %>%
-  group_by(wrf_id) %>%
-  mutate(across(any_of(wrf_i$var), 
-                ~zoo::rollmean(.x, k=7, na.pad=T),
-                .names="{.col}Wk")) %>%
-  mutate(across(any_of(paste0(wrf_i$var, "Wk")),
-                ~.x - lag(.x),
-                .names="{.col}Delta")) %>%
-  ungroup %>%
-  mutate(yday=yday(date)) %>%
-  group_by(wrf_id) %>%
-  mutate(across(any_of(wrf_i$var),
-                ~detrend_loess(yday, .x, span=0.3), 
-                .names="{.col}Dt")) %>%
-  ungroup
-wrf.site <- wrf.site %>% 
-  select(wrf_id, version, date, 
-         all_of(paste0(wrf_i$vars, "Wk")),
-         all_of(paste0(wrf_i$vars, "WkDelta")),
-         all_of(paste0(wrf_i$vars, "Dt")))
-saveRDS(wrf.site, "data/0_init/wrf_sitePt.rds")
+
+# HABs
+site_hab.df <- readRDS("data/site_hab_df.rds") %>% select(-starts_with("wrf_id"))
+site_hab.df <- map(wrf_versions, ~site_hab.df %>% find_nearest_feature(., .x, "wrf_id")) %>%
+  reduce(full_join, by=names(site_hab.df), suffix=paste0(".", seq_along(wrf_versions)))
+saveRDS(site_hab.df, "data/site_hab_df.rds")
+site_hab.versions <- grep("wrf_id", names(site_hab.df), value=T)
+wrf.site_hab <- extract_wrf_pts(site_hab.df, site_hab.versions, wrf_i, wrf.df)
+saveRDS(wrf.site_hab, "data/0_init/wrf_sitePt_hab.rds")
+
+# toxins
+site_tox.df <- readRDS("data/site_tox_df.rds") %>% select(-starts_with("wrf_id"))
+site_tox.df <- map(wrf_versions, ~site_tox.df %>% find_nearest_feature(., .x, "wrf_id")) %>%
+  reduce(full_join, by=names(site_tox.df), suffix=paste0(".", seq_along(wrf_versions)))
+saveRDS(site_tox.df, "data/site_tox_df.rds")
+site_tox.versions <- grep("wrf_id", names(site_tox.df), value=T)
+wrf.site_tox <- extract_wrf_pts(site_tox.df, site_tox.versions, wrf_i, wrf.df)
+saveRDS(wrf.site_tox, "data/0_init/wrf_sitePt_tox.rds")
 
 
 
 # . WRF  buffer:date ------------------------------------------------------
-site.buffer <- map(wrf_versions,
-                   ~st_read("data/site_sf.gpkg") %>%
-                     select(siteid, quadrant, geom) %>%
-                     st_transform(4326) %>%
-                     st_make_valid() %>%
-                     mutate(wrf_id=st_intersects(., .x)) %>%
-                     st_drop_geometry()) %>%
-  reduce(full_join, 
-         by=c("siteid", "quadrant"), 
-         suffix=paste0(".", seq_along(wrf_versions)))
-wrf.buffer <- expand_grid(siteid=site_hab.df$siteid,
-                          quadrant=unique(site.buffer$quadrant),
-                          date=unique(wrf.df$date)) %>%
-  mutate(version=1 + (date >= "2019-04-01")) %>%
-  bind_cols(as_tibble(setNames(map(wrf_i$vars, ~NA_real_), wrf_i$vars)))
+wrf_i <- list(vars=c("U", "V", "UV", "Shortwave", "Precip", "sst"),
+              sea_vars=c("U", "V", "UV", "Shortwave", "Precip"),
+              land_vars=c("sst"))
+wrf_versions <- map(seq_along(dir("data/0_init/wrf", "^domain_d01")), 
+                    ~map_dfr(dirf("data/0_init/wrf", glue("domain_d0._{.x}")), readRDS) %>%
+                      arrange(res, i) %>%
+                      mutate(wrf_id=row_number()) %>%
+                      st_as_sf(coords=c("lon", "lat"), remove=F, crs=4326))
+wrf.df <- readRDS(dirf("data/0_init/", "wrf_end_.*rds")) %>%
+  mutate(sst=if_else(sst > -100, sst, NA_real_))
 
-wrf_id.ls <- list(v1=map(site.buffer$wrf_id.1, ~.x),
-                  v2=map(site.buffer$wrf_id.2, ~.x))
-wrf_dates.ls <- map(unique(wrf.df$date), ~which(wrf.df$date==.x))
-ij <- 1
-for(i in 1:nrow(site.buffer)) {
-  for(j in 1:length(wrf_dates.ls)) {
-    if(length(wrf_id.ls[[wrf.buffer$version[ij]]][[i]]) > 0) {
-      for(k in wrf_i$sea_vars) {
-        wrf.buffer[ij,k] <- mean(wrf.df[wrf_dates.ls[[j]],][wrf_id.ls[[wrf.buffer$version[ij]]][[i]],][[k]])
-      }
-      sst_ij <- wrf.df[wrf_dates.ls[[j]],][wrf_id.ls[[wrf.buffer$version[ij]]][[i]],][["sst"]]
-      elev_ij <- wrf.df[wrf_dates.ls[[j]],][wrf_id.ls[[wrf.buffer$version[ij]]][[i]],][["elev"]]
-      wrf.buffer[ij,"sst"] <- mean(sst_ij[elev_ij==0], na.rm=T) 
-    }
-    ij <- ij+1
-    if(ij %% 1000 == 0) {cat(ij, "of", nrow(wrf.buffer), "\n")}
-  }
-}
-wrf.buffer <- wrf.buffer %>% 
-  group_by(siteid, quadrant) %>%
-  mutate(across(any_of(wrf_i$vars), 
-                ~zoo::rollmean(.x, k=7, na.pad=T),
-                .names="{.col}AvgWk")) %>%
-  mutate(across(any_of(paste0(wrf_i$vars, "AvgWk")),
-                ~.x - lag(.x),
-                .names="{.col}Delta")) %>%
-  ungroup %>%
-  mutate(yday=yday(date)) %>%
-  group_by(siteid, quadrant) %>%
-  mutate(across(any_of(wrf_i$vars),
-                ~detrend_loess(yday, .x, span=0.3), 
-                .names="{.col}AvgDt")) %>%
-  ungroup %>% 
-  select(siteid, quadrant, date, 
-         all_of(paste0(wrf_i$vars, "AvgWk")),
-         all_of(paste0(wrf_i$vars, "AvgWkDelta")),
-         all_of(paste0(wrf_i$vars, "AvgDt"))) %>%
-  group_by(siteid, date) %>%
-  mutate(across(where(is.numeric), zoo::na.aggregate)) %>%
-  ungroup
-saveRDS(wrf.buffer, "data/0_init/wrf_siteBufferNSEW.rds")
+# HABs
+site.buffer_hab <- map(wrf_versions, 
+                       ~st_read("data/site_hab_sf.gpkg") %>% 
+                         find_buffer_intersect_ids(., .x, "wrf_id")) %>%
+  reduce(full_join, by=c("siteid", "quadrant"), suffix=paste0(".", seq_along(wrf_versions)))
+wrf.buffer_hab <- extract_wrf_buffers(site.buffer_hab, wrf_i, wrf.df)
+saveRDS(wrf.buffer_hab, "data/0_init/wrf_siteBufferNSEW_hab.rds")
+
+# toxins
+site.buffer_tox <- map(wrf_versions, 
+                       ~st_read("data/site_tox_sf.gpkg") %>% 
+                         find_buffer_intersect_ids(., .x, "wrf_id")) %>%
+  reduce(full_join, by=c("siteid", "quadrant"), suffix=paste0(".", seq_along(wrf_versions)))
+wrf.buffer_tox <- extract_wrf_buffers(site.buffer_tox, wrf_i, wrf.df)
+saveRDS(wrf.buffer_tox, "data/0_init/wrf_siteBufferNSEW_tox.rds")
 
 
 
 # Compile -----------------------------------------------------------------
 
-# Load all datasets and merge
-site_hab.df <- readRDS("data/site_hab_df.rds") %>% select(-sin)
-hab.df <- readRDS("data/0_init/hab_densities.rds")
-cmems.site <- readRDS("data/0_init/cmems_sitePt.rds")
-cmems.buffer <- readRDS("data/0_init/cmems_siteBufferNSEW.rds") %>% 
-  pivot_wider(names_from="quadrant", values_from=-(1:3), names_sep="Dir")
-wrf.site <- readRDS("data/0_init/wrf_sitePt.rds") %>% select(-version, -contains("sst"))
-wrf.buffer <- readRDS("data/0_init/wrf_siteBufferNSEW.rds") %>% 
-  pivot_wider(names_from="quadrant", values_from=-(1:3), names_sep="Dir")
-
-# load, extract, and compile
-# - Algal densities
-# - CMEMS
-# - WRF
-# - fetch & bearing
-# - calculate cos(dir)'s
-obs.df <- site_hab.df %>%
-  right_join(hab.df, by="siteid", multiple="all") %>%
-  left_join(cmems.site, by=c("cmems_id", "date")) %>%
-  left_join(cmems.buffer, by=c("siteid", "date")) %>%
+# HABs
+hab.ls <- load_datasets("0_init", "hab")
+hab.df <- hab.ls$site %>% select(-sin) %>%
+  right_join(hab.ls$obs, by="siteid", multiple="all") %>%
+  left_join(hab.ls$cmems.pt, by=c("cmems_id", "date")) %>%
+  left_join(hab.ls$cmems.buf %>% 
+              pivot_wider(names_from="quadrant", values_from=-(1:3), names_sep="Dir"),
+            by=c("siteid", "date")) %>%
   mutate(wrf_id=if_else(date < "2019-04-01", wrf_id.1, wrf_id.2)) %>%
   select(-wrf_id.1, wrf_id.2) %>%
-  left_join(wrf.site, by=c("wrf_id", "date")) %>%
-  left_join(wrf.buffer, by=c("siteid", "date")) %>%
+  left_join(hab.ls$wrf.pt, by=c("wrf_id", "date")) %>%
+  left_join(hab.ls$wrf.buf %>% 
+              pivot_wider(names_from="quadrant", values_from=-(1:3), names_sep="Dir"),
+            by=c("siteid", "date")) %>%
   na.omit()
-saveRDS(obs.df, "data/0_init/data_full_allSpp.rds")
+saveRDS(hab.df, "data/0_init/data_hab_all.rds")
 
-cmems_vars <- grep("cmems_id|date|siteid", 
-                   unique(c(names(cmems.site), names(cmems.buffer))),
-                   value=T, invert=T) %>% sort
-saveRDS(cmems_vars, "data/cmems_vars.rds")
+# toxins
+tox.ls <- load_datasets("0_init", "tox")
+tox.df <- tox.ls$site %>% select(-sin) %>%
+  right_join(tox.ls$obs, by="siteid", multiple="all") %>%
+  left_join(tox.ls$cmems.pt, by=c("cmems_id", "date")) %>%
+  left_join(tox.ls$cmems.buf %>% 
+              pivot_wider(names_from="quadrant", values_from=-(1:3), names_sep="Dir"),
+            by=c("siteid", "date")) %>%
+  mutate(wrf_id=if_else(date < "2019-04-01", wrf_id.1, wrf_id.2)) %>%
+  select(-wrf_id.1, wrf_id.2) %>%
+  left_join(tox.ls$wrf.pt, by=c("wrf_id", "date")) %>%
+  left_join(tox.ls$wrf.buf %>% 
+              pivot_wider(names_from="quadrant", values_from=-(1:3), names_sep="Dir"),
+            by=c("siteid", "date")) %>%
+  na.omit()
+saveRDS(tox.df, "data/0_init/data_tox_all.rds")
 
-wrf_vars <- grep("wrf_id|date|siteid", 
-                   unique(c(names(wrf.site), names(wrf.buffer))),
-                   value=T, invert=T) %>% sort
-saveRDS(wrf_vars, "data/wrf_vars.rds")
-
-
-# Reduce highly correlated predictors
-corrplot::corrplot(cor(obs.df[,wrf_vars], use="pairwise"), diag=F, method="number", 
-                   order="alphabet", number.cex=0.7, tl.cex=0.6)
-corrplot::corrplot(abs(cor(obs.df[,wrf_vars], use="pairwise"))>0.9, is.corr=F, diag=F,
-                   order="alphabet", number.cex=0.7, tl.cex=0.8)
-corrplot::corrplot(cor(obs.df[,cmems_vars], use="pairwise"), diag=F, method="number", 
-                   order="alphabet", number.cex=0.7, tl.cex=0.6)
-corrplot::corrplot(abs(cor(obs.df[,cmems_vars], use="pairwise"))>0.9, is.corr=F, diag=F,
-                   order="alphabet", number.cex=0.7, tl.cex=0.8)
-
-
+# variable names
+grep("cmems_id|date|siteid", 
+     unique(c(names(hab.ls$cmems.pt), names(hab.ls$cmems.buf))),
+     value=T, invert=T) %>% 
+  sort %>%
+  saveRDS("data/cmems_vars.rds")
+grep("wrf_id|date|siteid", 
+     unique(c(names(hab.ls$wrf.pt), names(hab.ls$wrf.buf))),
+     value=T, invert=T) %>% 
+  sort %>%
+  saveRDS("data/wrf_vars.rds")
 
 
