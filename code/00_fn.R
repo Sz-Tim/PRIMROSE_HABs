@@ -280,27 +280,22 @@ subset_WRF <- function(domain, wrf.out, v2_start=NULL) {
 #' @param site.df 
 #' @param env_vars 
 #' @param env.df 
-#' @param id_col 
+#' @param id_env 
 #' @param site.v 
 #'
 #' @return
 #' @export
 #'
 #' @examples
-extract_env_pts <- function(site.df, env_vars, env.df, id_col, site.v=NULL) {
+extract_env_pts <- function(site.df, env_vars, env.df, id_env, site.v) {
   library(tidyverse); library(zoo)
-  
-  if(is.null(site.versions)) {
-    env.df$version <- 1
-    site.v <- 1
-  }
   
   env.site <- env.df %>%
     group_by(version) %>%
     group_split() %>%
-    map2_dfr(., site.v, ~.x %>% filter({{id_col}} %in% site.df[[.y]])) %>%
-    arrange({{id_col}}, date) %>%
-    group_by({{id_col}}) %>%
+    map2_dfr(., site.v, ~.x %>% filter({{id_env}} %in% site.df[[.y]])) %>%
+    arrange({{id_env}}, date) %>%
+    group_by({{id_env}}) %>%
     mutate(across(any_of(env_vars), 
                   ~rollmean(.x, k=7, na.pad=T),
                   .names="{.col}Wk")) %>%
@@ -309,13 +304,13 @@ extract_env_pts <- function(site.df, env_vars, env.df, id_col, site.v=NULL) {
                   .names="{.col}Delta")) %>%
     ungroup %>%
     mutate(yday=yday(date)) %>%
-    group_by({{id_col}}) %>%
+    group_by({{id_env}}) %>%
     mutate(across(any_of(env_vars),
                   ~detrend_loess(yday, .x, span=0.3), 
                   .names="{.col}Dt")) %>%
     ungroup
   env.site <- env.site %>% 
-    select({{id_col}}, version, date, 
+    select({{id_env}}, version, date, 
            all_of(paste0(env_vars, "Wk")),
            all_of(paste0(env_vars, "WkDelta")),
            all_of(paste0(env_vars, "Dt")))
@@ -329,7 +324,7 @@ extract_env_pts <- function(site.df, env_vars, env.df, id_col, site.v=NULL) {
 
 
 
-extract_env_buffers <- function(site.buffer, vars, env.df, id_col) {
+extract_env_buffers <- function(site.buffer, vars, env.df, id_env) {
   
   library(tidyverse); library(zoo)
   
@@ -337,13 +332,12 @@ extract_env_buffers <- function(site.buffer, vars, env.df, id_col) {
   env.buffer <- expand_grid(siteid=unique(site.buffer$siteid),
                             quadrant=unique(site.buffer$quadrant),
                             date=unique(env.df$date)) %>%
-    mutate(v=1 + ((date >= "2019-04-01")*(length(id_col)>1))) %>%
+    mutate(v=1 + ((date >= "2019-04-01")*(length(id_env)>1))) %>%
     bind_cols(as_tibble(setNames(map(vars$all, ~NA_real_), vars$all)))
 
-  env_id.ls <- map(id_col, ~map(site.buffer[[.x]], ~.x))
+  env_id.ls <- map(id_env, ~map(site.buffer[[.x]], ~.x))
   env.df$date_id <- match(env.df$date, unique(env.df$date)) 
-  env_dates.ls <- split(env.df$date_id, env.df$date)
-  # env_dates.ls <- map(1:n_distinct(env.df$date_id), ~which(env.df$date_id==.x))
+  env_dates.ls <- split(1:nrow(env.df), env.df$date_id)
   
   ij <- 1
   if(is.null(vars$sea)) {
@@ -411,18 +405,18 @@ extract_env_buffers <- function(site.buffer, vars, env.df, id_col) {
 #'
 #' @param site.df 
 #' @param env.sf 
-#' @param id_col 
+#' @param id_env 
 #'
 #' @return
 #' @export
 #'
 #' @examples
-find_nearest_feature_id <- function(site.df, env.sf, id_col) {
+find_nearest_feature_id <- function(site.df, env.sf, id_env) {
   site.df %>%
     st_as_sf(coords=c("lon", "lat"), crs=27700, remove=F) %>%
     st_transform(4326) %>%
     mutate(new_id=st_nearest_feature(., env.sf)) %>%
-    rename_with(~id_col, new_id) %>%
+    rename_with(~id_env, new_id) %>%
     st_drop_geometry()
 }
 
@@ -433,19 +427,19 @@ find_nearest_feature_id <- function(site.df, env.sf, id_col) {
 #'
 #' @param site.sf 
 #' @param env.sf 
-#' @param id_col 
+#' @param id_env 
 #'
 #' @return
 #' @export
 #'
 #' @examples
-find_buffer_intersect_ids <- function(site.sf, env.sf, id_col) {
+find_buffer_intersect_ids <- function(site.sf, env.sf, id_env) {
   site.sf %>%
     select(siteid, quadrant, geom) %>%
     st_transform(4326) %>%
     st_make_valid() %>%
     mutate(new_id=st_intersects(., env.sf)) %>%
-    rename_with(~id_col, new_id) %>%
+    rename_with(~id_env, new_id) %>%
     st_drop_geometry()
 }
 
@@ -464,7 +458,7 @@ find_buffer_intersect_ids <- function(site.sf, env.sf, id_col) {
 #' @export
 #'
 #' @examples
-get_shortestPaths <- function(ocean.path, site.df, transMx.path=NULL, recalc_transMx=T) {
+get_shortestPaths <- function(ocean.path, site.df, transMx.path=NULL, recalc_transMx=T, site2.df=NULL) {
   library(tidyverse); library(sf); library(glue);
   library(raster); library(gdistance)
   
@@ -473,6 +467,7 @@ get_shortestPaths <- function(ocean.path, site.df, transMx.path=NULL, recalc_tra
   
   # load ocean raster and calculate transition matrix
   mesh.r <- raster(ocean.path)
+  crs(mesh.r) <- CRS("+init=epsg:27700")
   if(is.null(transMx.path) | recalc_transMx) {
     mesh.tmx <- transition(mesh.r, mean, 16)
     mesh.tmx <- geoCorrection(mesh.tmx)
@@ -480,7 +475,6 @@ get_shortestPaths <- function(ocean.path, site.df, transMx.path=NULL, recalc_tra
   } else {
     mesh.tmx <- readRDS(transMx.path)
   }
-  
   
   # locate sites in mesh
   set_ll_warn(TRUE)
@@ -490,20 +484,44 @@ get_shortestPaths <- function(ocean.path, site.df, transMx.path=NULL, recalc_tra
     points2nearestcell(., mesh.r) %>%
     as.data.frame
   site.df_new <- site.df %>% select(siteid, sin) %>% left_join(site.spdf)
+  if(!is.null(site2.df)) {
+    site2.spdf <- SpatialPointsDataFrame(site2.df[,c("lon", "lat")],
+                                         data=site2.df[,"siteid"], 
+                                         proj4string=CRS("+init=epsg:27700")) %>%
+      points2nearestcell(., mesh.r) %>%
+      as.data.frame
+    site2.df_new <- site2.df %>% select(siteid, sin) %>% left_join(site2.spdf)
+  } else {
+    site2.df_new <- NULL
+  }
   
-  # find pairwise shortest paths within ocean
-  dist.df <- map_dfr(1:nrow(site.spdf),
-                     ~shortestPath(mesh.tmx,
-                                   as.matrix(site.spdf[.x, c("lon", "lat")]),
-                                   as.matrix(site.spdf[-.x, c("lon", "lat")]),
-                                   output="SpatialLines") %>%
-                       st_as_sf %>%
-                       mutate(origin=site.spdf$siteid[.x],
-                              destination=site.spdf$siteid[-.x],
-                              distance=st_length(.)) %>%
-                       st_drop_geometry)
+  if(is.null(site2.df)) {
+    # Pairwise each i to all others within site.df
+    dist.df <- map_dfr(1:nrow(site.spdf),
+                       ~shortestPath(mesh.tmx,
+                                     as.matrix(site.spdf[.x, c("lon", "lat")]),
+                                     as.matrix(site.spdf[-.x, c("lon", "lat")]),
+                                     output="SpatialLines") %>%
+                         st_as_sf %>%
+                         mutate(origin=site.spdf$siteid[.x],
+                                destination=site.spdf$siteid[-.x],
+                                distance=st_length(.)) %>%
+                         st_drop_geometry) 
+  } else {
+    # Pairwise each i in site.df to each within site2.df
+    dist.df <- map_dfr(1:nrow(site.spdf),
+                       ~shortestPath(mesh.tmx,
+                                     as.matrix(site.spdf[.x, c("lon", "lat")]),
+                                     as.matrix(site2.spdf[, c("lon", "lat")]),
+                                     output="SpatialLines") %>%
+                         st_as_sf %>%
+                         mutate(origin=site.spdf$siteid[.x],
+                                destination=site2.spdf$siteid,
+                                distance=st_length(.)) %>%
+                         st_drop_geometry)
+  }
   
-  return(list(site.df=site.df_new, dist.df=dist.df))
+  return(list(site.df=site.df_new, dist.df=dist.df, site2.df=site2.df_new))
 }
 
 
@@ -761,10 +779,10 @@ get_trafficLights <- function(y.df, N, tl_i) {
   library(tidyverse)
   y.df %>%
     rowwise() %>%
-    mutate(tl=tl_i$tl[max(which(abbr==tl_i$abbr & {{N}} >= tl_i$min_ge))],
-           alert=tl_i$alert[max(which(abbr==tl_i$abbr & {{N}} >= tl_i$min_ge))]) %>%
-    ungroup %>%
-    mutate(alert=c("0_none", "1_warn", "2_alert")[alert+1])
+    mutate(tl=tl_i$tl[max(which(y==tl_i$abbr & {{N}} >= tl_i$min_ge))],
+           alert=tl_i$A[max(which(y==tl_i$abbr & {{N}} >= tl_i$min_ge))]) %>%
+    ungroup# %>%
+    # mutate(alert=c("0_none", "1_warn", "2_alert")[alert+1])
 }
 
 
@@ -782,33 +800,83 @@ get_trafficLights <- function(y.df, N, tl_i) {
 #' @export
 #'
 #' @examples
-calc_y_features <- function(yRaw.df, y_i, tl_i, site.100km) {
-  y.df <- yRaw.df %>% 
-    pivot_longer(any_of(y_i$abbr), names_to="abbr", values_to="N") %>%
+calc_y_features <- function(yRaw.df, y_i, tl_i, dist.df=NULL) {
+  y.ls <- yRaw.df %>% 
+    pivot_longer(any_of(y_i$abbr), names_to="y", values_to="N") %>%
     filter(!is.na(N)) %>%
     mutate(lnN=log1p(N)) %>%
     get_trafficLights(N, tl_i) %>%
-    arrange(abbr, siteid, date) %>%
-    group_by(abbr, siteid) %>%
+    arrange(y, siteid, date) %>%
+    group_by(y, siteid) %>%
     get_lags(lnN, alert, date, n=2) %>%
     ungroup %>%
     mutate(lnNWt1=lnN1/log1p(as.numeric(date-date1)), 
            lnNWt2=lnN2/log1p(as.numeric(date-date2)),
-           lnNAvg1=0, lnNAvg2=0, prAlertAvg1=0, prAlertAvg2=0)
-  for(j in 1:nrow(y.df)) {
-    site_j <- y.df$siteid[j]
-    date_j <- y.df$date[j]
-    sp_j <- y.df$abbr[j]
-    wk.df <- y.df %>% select(abbr, siteid, date, lnN1, lnN2, alert1, alert2) %>%
-      filter(siteid %in% site.100km$dest_c[site.100km$origin==site_j][[1]]) %>%
-      filter(date <= date_j & date > date_j-7 & abbr==sp_j) 
-    y.df$lnNAvg1[j] <- mean(wk.df$lnN1, na.rm=T)
-    y.df$lnNAvg2[j] <- mean(wk.df$lnN2, na.rm=T)
-    y.df$prAlertAvg1[j] <- mean(wk.df$alert1 != "0_none", na.rm=T)
-    y.df$prAlertAvg2[j] <- mean(wk.df$alert2 != "0_none", na.rm=T)
-    if(j %% 1000 == 0) {cat(j, "of", nrow(y.df), "\n")}
+           lnNAvg1=0, lnNAvg2=0, prAlertAvg1=0, prAlertAvg2=0) %>%
+    group_by(y) %>%
+    group_split()
+  
+  for(i in seq_along(y.ls)) {
+    y.df_i <- y.ls[[i]] %>% select(siteid, date, lnN1, lnN2, alert1, alert2)
+    for(j in 1:nrow(y.ls[[i]])) {
+      site_j <- y.df_i$siteid[j]
+      date_j <- y.df_i$date[j]
+      wk.df <- y.df_i %>%
+        filter(siteid %in% dist.df$dest_c[dist.df$origin==site_j][[1]] &
+                 date <= date_j & 
+                 date > date_j-7) 
+      y.ls[[i]]$lnNAvg1[j] <- mean(wk.df$lnN1, na.rm=T)
+      y.ls[[i]]$lnNAvg2[j] <- mean(wk.df$lnN2, na.rm=T)
+      y.ls[[i]]$prAlertAvg1[j] <- mean(wk.df$alert1 == "A1", na.rm=T)
+      y.ls[[i]]$prAlertAvg2[j] <- mean(wk.df$alert2 == "A1", na.rm=T)
+      if(j %% 1000 == 0) {cat(i, ":", j, "of", nrow(y.ls[[i]]), "\n")}
+    }
   }
+  y.df <- do.call('rbind', y.ls)
   return(y.df)
+}
+
+
+
+
+#' Summarise HAB states for each toxin observation
+#'
+#' @param site_tox.sf 
+#' @param site_hab.sf 
+#' @param tox.obs 
+#' @param hab.df 
+#'
+#' @return
+#' @export
+#'
+#' @examples
+summarise_hab_states <- function(site_tox.sf, site_hab.sf, tox.obs, hab.df) {
+  library(tidyverse); library(sf)
+  
+  # identify hab sites within each toxin site buffer
+  hab_ids <- site_tox.sf %>%
+    select(siteid, geom) %>%
+    mutate(hab_id=st_intersects(., site_hab.sf)) %>%
+    st_drop_geometry()
+  
+  # match hab observations to toxin observations
+  hab.df <- hab.df %>%
+    mutate(prA=as.numeric(alert=="A1")) %>%
+    select(siteid, date, y, lnN, prA) %>% 
+    rename(hab_id=siteid, lnNAvg=lnN) %>%
+    pivot_wider(names_from=y, values_from=c(lnNAvg, prA), names_glue="{y}{.value}")
+  hab_y_names <- names(hab.df)[-(1:2)]
+  habSums <- vector("list", nrow(tox.obs))
+  for(i in 1:nrow(tox.obs)) {
+    hab_sites <- filter(hab_ids, siteid==tox.obs$siteid[i])$hab_id[[1]]
+    habSums[[i]] <- hab.df %>% 
+      filter(hab_id %in% hab_sites & 
+               date <= tox.obs$date[i] - 7*1 &
+               date >= tox.obs$date[i] - 7*5) %>%
+      summarise(across(all_of(hab_y_names), ~mean(.x, na.rm=T)))
+  }
+  out.df <- tox.obs %>% bind_cols(do.call('rbind', habSums))
+  return(out.df)
 }
 
 
@@ -862,6 +930,9 @@ load_datasets <- function(sub.dir, target) {
     wrf.pt=readRDS(glue("data/{sub.dir}/wrf_sitePt_{target}.rds")),
     wrf.buf=readRDS(glue("data/{sub.dir}/wrf_siteBufferNSEW_{target}.rds"))
   )
+  if(target=="tox") {
+    d.ls$habAvg <- readRDS(glue("data/{sub.dir}/tox_habAvg.rds"))
+  }
   return(d.ls)
 }
 
@@ -883,17 +954,18 @@ load_datasets <- function(sub.dir, target) {
 #' @export
 #'
 #' @examples
-prep_recipe <- function(train.df, response) {
-  exclude_vars <- grep(response, c("lnN", "tl", "alert"), value=T, invert=T)
+prep_recipe <- function(train.df, response, covsExclude="NA") {
+  respExclude <- grep(response, c("lnN", "tl", "alert"), value=T, invert=T)
   pred_vars <- names(train.df)
   recipe(train.df) %>%
     update_role(all_of(pred_vars), new_role="predictor") %>%
     update_role(all_of(response), new_role="outcome") %>%
-    update_role(obsid, sp, date, siteid, year, new_role="ID") %>%
+    update_role(obsid, y, date, siteid, year, new_role="ID") %>%
     update_role(lon, lat, new_role="RE") %>%
-    step_select(-any_of(exclude_vars)) %>%
+    step_select(-any_of(respExclude)) %>%
     step_dummy(all_factor_predictors()) %>%
     step_logit(starts_with("prAlert"), offset=0.01) %>%
+    step_logit(ends_with("A1"), offset=0.01) %>%
     step_harmonic(yday, frequency=1, cycle_size=365, keep_original_cols=T) %>%
     update_role(yday, new_role="RE") %>%
     step_rename(ydayCos=yday_cos_1, ydaySin=yday_sin_1) %>%
@@ -904,9 +976,10 @@ prep_recipe <- function(train.df, response) {
     step_interact(terms=~lon_z:lat_z, sep="X") %>%
     step_YeoJohnson(all_predictors()) %>%
     step_normalize(all_predictors()) %>%
-    step_corr(all_predictors(), threshold=0.9) %>%
     step_lincomb(all_predictors()) %>%
     step_rename_at(contains("_"), fn=~str_remove_all(.x, "_")) %>%
+    step_select(-matches(covsExclude)) %>%
+    step_corr(all_predictors(), threshold=0.9) %>%
     prep(training=train.df)
 }
 

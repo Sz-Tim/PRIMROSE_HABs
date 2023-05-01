@@ -12,9 +12,9 @@ lapply(pkgs, library, character.only=T)
 source("code/00_fn.R")
 
 covSet <- c("test", "full", "noDt", 
-            "noDtDelta", "noInt", "noDtDeltaInt")[4]
+            "noDtDelta", "noInt", "noDtDeltaInt")[1]
 cores_per_model <- 3
-n_spp_parallel <- 7
+n_spp_parallel <- 2
 test_startDate <- "2021-01-01"
 fit.dir <- glue("out/model_fits/{covSet}/")
 cv.dir <- glue("{fit.dir}/cv/")
@@ -22,9 +22,10 @@ out.dir <- glue("out/{covSet}/")
 dir.create(cv.dir, recursive=T, showWarnings=F)
 dir.create(out.dir, recursive=T, showWarnings=F)
 
-sp_i <- read_csv("data/sp_i.csv") %>% arrange(abbr)
+y_i <- bind_rows(read_csv("data/hab_i.csv") %>% arrange(abbr) %>% mutate(type="hab"),
+                 read_csv("data/tox_i.csv") %>% arrange(abbr) %>% mutate(type="tox"))
 
-col_metadata <- c("obsid", "sp", "date", "siteid", "lon", "lat")
+col_metadata <- c("obsid", "abbr", "date", "siteid", "lon", "lat")
 col_resp <- c("lnN", "tl", "alert")
 col_cmems <- readRDS("data/cmems_vars.rds")
 col_wrf <- readRDS("data/wrf_vars.rds")
@@ -43,7 +44,8 @@ all_covs <- list(
     paste("VWkXfetch", grep("Dir[NS]", col_cmems, value=T), sep="X"),
     paste("UWkXfetch", grep("^[Precip|Shortwave|sst].*Dir[EW]", col_wrf, value=T), sep="X"),
     paste("VWkXfetch", grep("^[Precip|Shortwave|sst].*Dir[EW]", col_wrf, value=T), sep="X")
-  )
+  ),
+  hab=c(outer(filter(y_i, type=="hab")$abbr, c("lnNAvg", "prA"), "paste0"))
 )
 
 covs_exclude <- switch(covSet,
@@ -54,37 +56,39 @@ covs_exclude <- switch(covSet,
                        noInt="Xfetch",
                        noDtDeltaInt="Xfetch|Dt|Delta")
 
-obs.ls <- readRDS("data/0_init/data_full_allSpp.rds") %>%
+obs_hab.ls <- readRDS("data/0_init/data_hab_all.rds") %>%
   select(all_of(col_metadata), all_of(col_resp), 
          "alert1", "alert2", any_of(unname(unlist(all_covs)))) %>%
-  mutate(across(starts_with("alert"), 
-                ~factor(as.numeric(.x!="0_none"), labels=c("A0", "A1"))),
-         across(starts_with("tl"), 
-                ~factor(.x, ordered=T, 
-                        levels=c("0_green", "1_yellow", "2_orange", "3_red"),
-                        labels=c("TL0", "TL1", "TL2", "TL3")))) %>%
-  mutate(year=year(date),
-         yday=yday(date)) %>%
-  select(-matches(covs_exclude)) %>%
-  group_by(sp) %>%
+  mutate(across(starts_with("alert"), ~factor(.x)),
+         across(starts_with("tl"), ~factor(.x, ordered=T))) %>%
+  group_by(y) %>%
   group_split()
-train.ls <- map(obs.ls, ~.x %>% filter(date < test_startDate))
-test.ls <- map(obs.ls, ~.x %>% filter(date >= test_startDate))
+obs_tox.ls <- readRDS("data/0_init/data_tox_all.rds") %>%
+  select(all_of(col_metadata), all_of(col_resp),
+         "alert1", "alert2", any_of(unname(unlist(all_covs)))) %>%
+  mutate(across(starts_with("alert"), ~factor(.x)),
+         across(starts_with("tl"), ~factor(.x, ordered=T))) %>%
+  group_by(y) %>%
+  group_split()
+train.ls <- c(map(obs_hab.ls, ~.x %>% filter(date < test_startDate)),
+              map(obs_tox.ls, ~.x %>% filter(date < test_startDate)))
+test.ls <- c(map(obs_hab.ls, ~.x %>% filter(date >= test_startDate)),
+             map(obs_tox.ls, ~.x %>% filter(date >= test_startDate)))
 
 
 
 # runs by taxon -----------------------------------------------------------
 
 registerDoParallel(n_spp_parallel)
-foreach(s=seq_along(train.ls),
+foreach(i=seq_along(train.ls),
         .export=c("all_covs", "train.ls", "test.ls", "covSet", "covs_exclude", 
-                  "fit.dir", "out.dir", "cv.dir", "sp_i")
+                  "fit.dir", "out.dir", "cv.dir", "y_i")
 ) %dopar% {
   
   lapply(pkgs, library, character.only=T)
   source("code/00_fn.R")
-  sp <- train.ls[[s]]$sp[1]
-  sp_i.i <- filter(sp_i, abbr==sp)
+  y <- train.ls[[i]]$y[1]
+  y_i.i <- filter(y_i, y==y)
   
   
 
@@ -92,18 +96,18 @@ foreach(s=seq_along(train.ls),
 
   # TODO: remove ifelse for final version
   reprep <- T
-  responses <- c(alert="alert", tl="tl", lnN="lnN")[-3]
+  responses <- c(alert="alert", tl="tl", lnN="lnN")
   if(reprep) {
-    prep.ls <- map(responses, ~prep_recipe(train.ls[[s]], .x))
-    d.sp <- list(train=map(prep.ls, ~bake(.x, train.ls[[s]])),
-                    test=map(prep.ls, ~bake(.x, test.ls[[s]])))
+    prep.ls <- map(responses, ~prep_recipe(train.ls[[i]], .x, covs_exclude))
+    d.y <- list(train=map(prep.ls, ~bake(.x, train.ls[[i]])),
+                    test=map(prep.ls, ~bake(.x, test.ls[[i]])))
     saveRDS(prep.ls, glue("data/0_init/data_prep_{sp}_{covSet}.rds"))
-    saveRDS(d.sp, glue("data/0_init/data_baked_{sp}_{covSet}.rds"))
+    saveRDS(d.y, glue("data/0_init/data_baked_{sp}_{covSet}.rds"))
   } else {
-    d.sp <- readRDS(glue("data/0_init/data_baked_{sp}_{covSet}.rds"))
+    d.y <- readRDS(glue("data/0_init/data_baked_{sp}_{covSet}.rds"))
   }
   
-  covs <- filter_corr_covs(all_covs, d.sp, covs_exclude)
+  covs <- filter_corr_covs(all_covs, d.y, covs_exclude)
   
   # formulas
   smooths <- list(b=glue("b{c(covs$main, covs$interact)}"),
@@ -126,7 +130,7 @@ foreach(s=seq_along(train.ls),
                                  HBN=make_HB_priors(priStr, "HBN", .x, covs)))
   
   # tuning controls
-  folds <- map(d.sp$train, createFoldsByYear)
+  folds <- map(d.y$train, createFoldsByYear)
   ctrl <- map(folds, ~trainControl("cv", classProbs=T, number=length(.x$i.in),
                                    index=.x$i.in, indexOut=.x$i.out))
   grids <- list(
@@ -152,36 +156,35 @@ foreach(s=seq_along(train.ls),
   
 # . train: fit models -----------------------------------------------------
   
-  walk(responses, ~fit_model("ENet", .x, form.ls, d.sp$train, ctrl, grids, fit.dir, sp))
-  walk(responses, ~fit_model("RRF", .x, form.ls, d.sp$train, ctrl, grids, fit.dir, sp))
-  walk(responses, ~fit_model("NN", .x, form.ls, d.sp$train, ctrl, grids, fit.dir, sp))
-  walk(responses, ~fit_model("HBL", .x, form.ls, d.sp$train, HB.i, priors, fit.dir, sp))
-  walk(responses, ~fit_model("HBN", .x, form.ls, d.sp$train, HB.i, priors, fit.dir, sp))
+  walk(responses, ~fit_model("ENet", .x, form.ls, d.y$train, ctrl, grids, fit.dir, sp))
+  walk(responses, ~fit_model("RRF", .x, form.ls, d.y$train, ctrl, grids, fit.dir, sp))
+  walk(responses, ~fit_model("NN", .x, form.ls, d.y$train, ctrl, grids, fit.dir, sp))
+  walk(responses, ~fit_model("HBL", .x, form.ls, d.y$train, HB.i, priors, fit.dir, sp))
+  walk(responses, ~fit_model("HBN", .x, form.ls, d.y$train, HB.i, priors, fit.dir, sp))
 
-  fit.ls <- map(responses, ~summarise_predictions(d.sp, "train", .x, fit.dir, sp_i.i))
+  fit.ls <- map(responses, ~summarise_predictions(d.y, "train", .x, fit.dir, y_i.i))
   fit.ls$alert <- fit.ls$alert %>%
     full_join(fit.ls$tl %>% select(sp, obsid, ends_with("_A1"))) %>%
     full_join(fit.ls$lnN %>% select(sp, obsid, ends_with("_A1")))
   saveRDS(fit.ls, glue("{out.dir}/{sp}_fit_ls.rds"))
 
-  oos.ls <- map(responses, ~summarise_predictions(d.sp, "test", .x, fit.dir, sp_i.i))
+  oos.ls <- map(responses, ~summarise_predictions(d.y, "test", .x, fit.dir, y_i.i))
   oos.ls$alert <- oos.ls$alert %>%
     full_join(oos.ls$tl %>% select(sp, obsid, ends_with("_A1"))) %>%
     full_join(oos.ls$lnN %>% select(sp, obsid, ends_with("_A1")))
   saveRDS(oos.ls, glue("{out.dir}/{sp}_oos_ls.rds"))
   
   
-  
 
 # . cross validation by year ----------------------------------------------
 
-  yrCV <- unique(d.sp$train$alert$year)
+  yrCV <- unique(d.y$train$alert$year)
   for(k in 1:length(yrCV)) {
     yr <- yrCV[k]
     y_ <- paste0("_", yr)
     
-    d.cv <- list(train=map(d.sp$train, ~.x %>% filter(year!=yr)),
-                 test=map(d.sp$train, ~.x %>% filter(year==yr)))
+    d.cv <- list(train=map(d.y$train, ~.x %>% filter(year!=yr)),
+                 test=map(d.y$train, ~.x %>% filter(year==yr)))
     
     # tuning controls
     folds <- map(d.cv$train, createFoldsByYear)
@@ -196,7 +199,7 @@ foreach(s=seq_along(train.ls),
     walk(responses, ~fit_model("HBN", .x, form.ls, d.cv$train, HB.i, priors, cv.dir, sp, y_))
     
     # predict
-    cv.ls <- map(responses, ~summarise_predictions(d.cv, "test", .x, cv.dir, sp_i.i, y_))
+    cv.ls <- map(responses, ~summarise_predictions(d.cv, "test", .x, cv.dir, y_i.i, y_))
     cv.ls$alert <- cv.ls$alert %>%
       full_join(cv.ls$tl %>% select(sp, obsid, ends_with("_A1"))) %>%
       full_join(cv.ls$lnN %>% select(sp, obsid, ends_with("_A1")))
@@ -215,12 +218,12 @@ foreach(s=seq_along(train.ls),
                 lnN=map_dfr(cv.ls, ~.x$lnN) %>% select(-ends_with("_A1")))
   wt.ls <- imap(cv.ls, ~calc_LL_wts(.x, .y))
   
-  fit.ls <- map(responses, ~calc_ensemble(fit.ls, wt.ls, .x, sp_i.i))
+  fit.ls <- map(responses, ~calc_ensemble(fit.ls, wt.ls, .x, y_i.i))
   fit.ls$alert <- fit.ls$alert %>%
     mutate(ens_tl_A1=fit.ls$tl$ens_tl_A1,
            ens_lnN_A1=fit.ls$lnN$ens_lnN_A1)
   
-  oos.ls <- map(responses, ~calc_ensemble(oos.ls, wt.ls, .x, sp_i.i))
+  oos.ls <- map(responses, ~calc_ensemble(oos.ls, wt.ls, .x, y_i.i))
   oos.ls$alert <- oos.ls$alert %>%
     mutate(ens_tl_A1=oos.ls$tl$ens_tl_A1,
            ens_lnN_A1=oos.ls$lnN$ens_lnN_A1)
@@ -249,31 +252,4 @@ foreach(s=seq_along(train.ls),
   }
 
 closeAllConnections()
-
-
-
-
-
-
-# To Try ------------------------------------------------------------------
-
-# Models: lnN
-# - Null: 4wk-historic domain
-# - Null: 4wk-historic site
-# - ENetGLM (hurdle log-normal)
-# - HB-int (hurdle log-normal)
-# - HB-smooth (hurdle log-normal)
-# - RRF
-# Models: alertBinary
-# - Null: 4wk-historic domain
-# - Null: 4wk-historic site
-# - ENetGLM
-# - HB-int (ordinal)
-# - HB-int (logistic)
-# - HB-smooth (ordinal)
-# - HB-smooth (logistic)
-# - RRF
-# - SVM
-# - XGBoost
-# - ANN
 
