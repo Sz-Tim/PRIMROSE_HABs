@@ -315,7 +315,6 @@ extract_env_pts <- function(site.df, env_vars, env.df, id_env, site.v) {
            all_of(paste0(env_vars, "WkDelta")),
            all_of(paste0(env_vars, "Dt")))
   return(env.site)
-  
 }
 
 
@@ -324,6 +323,17 @@ extract_env_pts <- function(site.df, env_vars, env.df, id_env, site.v) {
 
 
 
+#' Extract CMEMS or WRF data within site buffer quadrants
+#'
+#' @param site.buffer 
+#' @param vars 
+#' @param env.df 
+#' @param id_env 
+#'
+#' @return
+#' @export
+#'
+#' @examples
 extract_env_buffers <- function(site.buffer, vars, env.df, id_env) {
   
   library(tidyverse); library(zoo)
