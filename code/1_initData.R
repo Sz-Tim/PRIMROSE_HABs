@@ -18,7 +18,13 @@ library(WeStCOMS)
 source("code/00_fn.R")
 
 nDays_avg <- 14
+dateStart <- "2016-01-01"
 UK_bbox <- list(xmin=-11, xmax=3, ymin=49, ymax=61.5)
+urls <- c(fsa="fsa_counts", 
+          cefas="cefas_counts",
+          sites="all_sites") %>%
+  map(~glue("http://varro:3001/{.x}"))
+
 hab_i <- read_csv("data/i_hab.csv")
 tox_i <- read_csv("data/i_tox.csv")
 tl_hab <- read_csv("data/tl_thresholds_hab.csv") %>%
@@ -64,16 +70,29 @@ tl_tox <- read_csv("data/tl_thresholds_tox.csv") %>%
 
 # sampling locations and dates --------------------------------------------
 
-fsa.df <- fromJSON("data/0_init/copy_fsa.txt") %>% as_tibble %>% 
+sites <- fromJSON(readLines(url(urls$sites), warn=F)) %>% as_tibble %>%
+  filter(east < 2e6) %>%
+  mutate(fromdate=date(fromdate), todate=date(todate)) %>%
+  rowwise() %>%
+  mutate(date=list(seq(fromdate, todate, by=1))) %>%
+  ungroup %>%
+  select(sin, east, north, date) %>%
+  unnest(date)
+
+fsa.df <- fromJSON(readLines(url(urls$fsa), warn=F)) %>% as_tibble %>% 
   filter(!is.na(date_collected)) %>%
   mutate(datetime_collected=as_datetime(date_collected),
          date=date(datetime_collected)) %>%
+  filter(date > dateStart) %>%
   mutate(across(any_of(hab_i$full), ~na_if(.x, -99))) %>%
-  filter(datetime_collected >= "2013-07-20") %>%
-  group_by(sin) %>% mutate(N=n()) %>% filter(N > 2) %>% ungroup %>%
-  mutate(siteid=as.numeric(factor(sin))) %>%
+  group_by(sin) %>% mutate(N=n()) %>% ungroup %>% filter(N > 2) %>%
+  select(oid, sin, date, easting, northing, all_of(hab_i$full)) %>%
+  left_join(sites, by=c("sin", "date")) %>%
+  mutate(east=if_else(is.na(east), easting, east),
+         north=if_else(is.na(north), northing, north)) %>%
   rename(obsid=oid) %>%
-  group_by(sin) %>% mutate(lon=median(easting), lat=median(northing)) %>% ungroup %>%
+  group_by(sin) %>% mutate(lon=median(east), lat=median(north)) %>% ungroup %>%
+  mutate(siteid=as.numeric(factor(sin))) %>%
   rename(all_of(setNames(hab_i$full, hab_i$abbr))) %>%
   select(obsid, lon, lat, sin, siteid, date, all_of(hab_i$abbr)) %>%
   arrange(siteid, date)
@@ -84,19 +103,23 @@ saveRDS(site_hab.df, "data/site_hab_df.rds")
 fsa.df <- fsa.df %>% select(-lon, -lat, -sin)
 saveRDS(fsa.df, "data/0_init/fsa_df.rds")
 
-cefas.df <- fromJSON("data/0_init/copy_cefas.txt") %>% as_tibble %>%
-  filter(sin != "-99", !is.na(date_collected)) %>%
+cefas.df <- fromJSON(readLines(url(urls$cefas), warn=F)) %>% as_tibble %>% 
+  filter(!is.na(date_collected) & sin != "-99") %>%
   mutate(datetime_collected=as_datetime(date_collected),
-         date=date(datetime_collected),
-         across(one_of("psp", "oa_dtxs_ptxs", "azas", "ytxs", "asp"),
-                ~if_else(.x == -99, NA_real_, .x)),
-         across(one_of("psp", "oa_dtxs_ptxs", "azas", "ytxs", "asp"),
-                ~if_else(.x < 0, 0, .x))) %>%
-  group_by(sin) %>% mutate(N=n()) %>% filter(N > 2) %>% ungroup %>%
-  mutate(siteid=as.numeric(factor(sin))) %>%
+         date=date(datetime_collected)) %>%
+  filter(date > dateStart) %>%
+  mutate(across(any_of(tox_i$full), ~if_else(.x == -99, NA_real_, .x)),
+         across(any_of(tox_i$full), ~if_else(.x < 0, 0, .x))) %>%
+  group_by(sin, date) %>% slice_head(n=1) %>% ungroup %>%
+  group_by(sin) %>% mutate(N=n()) %>% ungroup %>% filter(N > 2) %>%
+  select(oid, sin, date, easting, northing, all_of(tox_i$full)) %>%
+  left_join(sites, by=c("sin", "date")) %>%
+  mutate(east=if_else(is.na(east), easting, east),
+         north=if_else(is.na(north), northing, north)) %>%
   rename(obsid=oid) %>%
-  group_by(sin) %>% mutate(lon=median(easting), lat=median(northing)) %>% ungroup %>%
-  filter(lat > 500000) %>% # Scotland  
+  group_by(sin) %>% mutate(lon=median(east), lat=median(north)) %>% ungroup %>%
+  filter(lat > 500000) %>%
+  mutate(siteid=as.numeric(factor(sin))) %>%
   rename(all_of(setNames(tox_i$full, tox_i$abbr))) %>%
   select(obsid, lon, lat, sin, siteid, date, all_of(tox_i$abbr)) %>%
   arrange(siteid, date)
@@ -139,7 +162,7 @@ write_csv(cmems_i, "data/cmems_i.csv")
 cmems_cred <- readRDS("data/cmems_cred.rds")
 get_CMEMS(userid=cmems_cred$userid, pw=cmems_cred$pw, 
           i.df=cmems_i, bbox=UK_bbox, 
-          nDays_buffer=nDays_avg, dateRng=range(fsa.df$date), 
+          nDays_buffer=nDays_avg, dateRng=range(c(fsa.df$date, cefas.df$date)), 
           out.dir="data/0_init/cmems/")
 
 rean.f <- dirf("data/0_init/cmems", "cmems.*Reanalysis.rds")
@@ -181,7 +204,7 @@ wrf.dir <- ifelse(.Platform$OS.type=="unix",
                   "/media/archiver/common/sa01da-work/WRF/Archive/",
                   "D:/hydroOut/WRF/Archive/")
 get_WRF(wrf.dir=wrf.dir, nDays_buffer=nDays_avg, 
-        dateRng=c(ymd("2016-01-07"), max(fsa.df$date)), 
+        dateRng=c(ymd("2016-01-07"), max(c(fsa.df$date, cefas.df$date))), 
         out.dir="data/0_init/")
 
 # read and subset WRF domains to nest higher res within lower res
@@ -386,7 +409,7 @@ wrf.df <- readRDS(dirf("data/0_init/", "wrf_end_.*rds")) %>%
 
 # HABs
 site_hab.df <- readRDS("data/site_hab_df.rds") %>% select(-starts_with("wrf_id"))
-site_hab.df <- map(wrf_versions, ~site_hab.df %>% find_nearest_feature(., .x, "wrf_id")) %>%
+site_hab.df <- map(wrf_versions, ~site_hab.df %>% find_nearest_feature_id(., .x, "wrf_id")) %>%
   reduce(full_join, by=names(site_hab.df), suffix=paste0(".", seq_along(wrf_versions)))
 saveRDS(site_hab.df, "data/site_hab_df.rds")
 site_hab.versions <- grep("wrf_id", names(site_hab.df), value=T)
@@ -395,7 +418,7 @@ saveRDS(wrf.site_hab, "data/0_init/wrf_sitePt_hab.rds")
 
 # toxins
 site_tox.df <- readRDS("data/site_tox_df.rds") %>% select(-starts_with("wrf_id"))
-site_tox.df <- map(wrf_versions, ~site_tox.df %>% find_nearest_feature(., .x, "wrf_id")) %>%
+site_tox.df <- map(wrf_versions, ~site_tox.df %>% find_nearest_feature_id(., .x, "wrf_id")) %>%
   reduce(full_join, by=names(site_tox.df), suffix=paste0(".", seq_along(wrf_versions)))
 saveRDS(site_tox.df, "data/site_tox_df.rds")
 site_tox.versions <- grep("wrf_id", names(site_tox.df), value=T)
@@ -440,15 +463,15 @@ hab.ls <- load_datasets("0_init", "hab")
 hab.df <- hab.ls$site %>% select(-sin) %>%
   right_join(hab.ls$obs, by="siteid", multiple="all") %>%
   left_join(hab.ls$cmems.pt, by=c("cmems_id", "date")) %>%
-  left_join(hab.ls$cmems.buf %>% 
-              pivot_wider(names_from="quadrant", values_from=-(1:3), names_sep="Dir"),
-            by=c("siteid", "date")) %>%
+  # left_join(hab.ls$cmems.buf %>% 
+  #             pivot_wider(names_from="quadrant", values_from=-(1:3), names_sep="Dir"),
+            # by=c("siteid", "date")) %>%
   mutate(wrf_id=if_else(date < "2019-04-01", wrf_id.1, wrf_id.2)) %>%
-  select(-wrf_id.1, wrf_id.2) %>%
-  left_join(hab.ls$wrf.pt, by=c("wrf_id", "date")) %>%
-  left_join(hab.ls$wrf.buf %>% 
-              pivot_wider(names_from="quadrant", values_from=-(1:3), names_sep="Dir"),
-            by=c("siteid", "date")) %>%
+  select(-wrf_id.1, -wrf_id.2, -version) %>%
+  left_join(hab.ls$wrf.pt %>% select(-version), by=c("wrf_id", "date")) %>%
+  # left_join(hab.ls$wrf.buf %>% 
+  #             pivot_wider(names_from="quadrant", values_from=-(1:3), names_sep="Dir"),
+  #           by=c("siteid", "date")) %>%
   na.omit() %>%
   mutate(year=year(date),
          yday=yday(date))
@@ -458,29 +481,29 @@ saveRDS(hab.df, "data/0_init/data_hab_all.rds")
 tox.ls <- load_datasets("0_init", "tox")
 tox.df <- tox.ls$site %>% select(-sin) %>%
   right_join(tox.ls$obs, by="siteid", multiple="all") %>%
-  left_join(tox.ls$habAvg, by="obsid") %>%
+  left_join(tox.ls$habAvg %>% select(-date, -siteid), by="obsid") %>%
   left_join(tox.ls$cmems.pt, by=c("cmems_id", "date")) %>%
-  left_join(tox.ls$cmems.buf %>% 
-              pivot_wider(names_from="quadrant", values_from=-(1:3), names_sep="Dir"),
-            by=c("siteid", "date")) %>%
+  # left_join(tox.ls$cmems.buf %>% 
+  #             pivot_wider(names_from="quadrant", values_from=-(1:3), names_sep="Dir"),
+  #           by=c("siteid", "date")) %>%
   mutate(wrf_id=if_else(date < "2019-04-01", wrf_id.1, wrf_id.2)) %>%
-  select(-wrf_id.1, wrf_id.2) %>%
-  left_join(tox.ls$wrf.pt, by=c("wrf_id", "date")) %>%
-  left_join(tox.ls$wrf.buf %>% 
-              pivot_wider(names_from="quadrant", values_from=-(1:3), names_sep="Dir"),
-            by=c("siteid", "date")) %>%
+  select(-wrf_id.1, -wrf_id.2, -version) %>%
+  left_join(tox.ls$wrf.pt %>% select(-version), by=c("wrf_id", "date")) %>%
+  # left_join(tox.ls$wrf.buf %>% 
+  #             pivot_wider(names_from="quadrant", values_from=-(1:3), names_sep="Dir"),
+  #           by=c("siteid", "date")) %>%
   na.omit() %>%
   mutate(year=year(date),
          yday=yday(date))
 saveRDS(tox.df, "data/0_init/data_tox_all.rds")
 
 # variable names
-grep("cmems_id|date|siteid", 
+grep("cmems_id|date|siteid|version", 
      unique(c(names(hab.ls$cmems.pt), names(hab.ls$cmems.buf))),
      value=T, invert=T) %>% 
   sort %>%
   saveRDS("data/cmems_vars.rds")
-grep("wrf_id|date|siteid", 
+grep("wrf_id|date|siteid|version", 
      unique(c(names(hab.ls$wrf.pt), names(hab.ls$wrf.buf))),
      value=T, invert=T) %>% 
   sort %>%
