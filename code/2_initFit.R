@@ -22,10 +22,10 @@ out.dir <- glue("out/{covSet}/")
 dir.create(cv.dir, recursive=T, showWarnings=F)
 dir.create(out.dir, recursive=T, showWarnings=F)
 
-y_i <- bind_rows(read_csv("data/hab_i.csv") %>% arrange(abbr) %>% mutate(type="hab"),
-                 read_csv("data/tox_i.csv") %>% arrange(abbr) %>% mutate(type="tox"))
+y_i <- bind_rows(read_csv("data/i_hab.csv") %>% arrange(abbr) %>% mutate(type="hab"),
+                 read_csv("data/i_tox.csv") %>% arrange(abbr) %>% mutate(type="tox"))
 
-col_metadata <- c("obsid", "abbr", "date", "siteid", "lon", "lat")
+col_metadata <- c("obsid", "y", "date", "year", "yday", "siteid", "lon", "lat")
 col_resp <- c("lnN", "tl", "alert")
 col_cmems <- readRDS("data/cmems_vars.rds")
 col_wrf <- readRDS("data/wrf_vars.rds")
@@ -88,7 +88,7 @@ foreach(i=seq_along(train.ls),
   lapply(pkgs, library, character.only=T)
   source("code/00_fn.R")
   y <- train.ls[[i]]$y[1]
-  y_i.i <- filter(y_i, y==y)
+  y_i.i <- filter(y_i, abbr==y)
   
   
 
@@ -100,11 +100,11 @@ foreach(i=seq_along(train.ls),
   if(reprep) {
     prep.ls <- map(responses, ~prep_recipe(train.ls[[i]], .x, covs_exclude))
     d.y <- list(train=map(prep.ls, ~bake(.x, train.ls[[i]])),
-                    test=map(prep.ls, ~bake(.x, test.ls[[i]])))
-    saveRDS(prep.ls, glue("data/0_init/data_prep_{sp}_{covSet}.rds"))
-    saveRDS(d.y, glue("data/0_init/data_baked_{sp}_{covSet}.rds"))
+                test=map(prep.ls, ~bake(.x, test.ls[[i]])))
+    saveRDS(prep.ls, glue("data/0_init/data_prep_{y}_{covSet}.rds"))
+    saveRDS(d.y, glue("data/0_init/data_baked_{y}_{covSet}.rds"))
   } else {
-    d.y <- readRDS(glue("data/0_init/data_baked_{sp}_{covSet}.rds"))
+    d.y <- readRDS(glue("data/0_init/data_baked_{y}_{covSet}.rds"))
   }
   
   covs <- filter_corr_covs(all_covs, d.y, covs_exclude)
@@ -156,23 +156,23 @@ foreach(i=seq_along(train.ls),
   
 # . train: fit models -----------------------------------------------------
   
-  walk(responses, ~fit_model("ENet", .x, form.ls, d.y$train, ctrl, grids, fit.dir, sp))
-  walk(responses, ~fit_model("RRF", .x, form.ls, d.y$train, ctrl, grids, fit.dir, sp))
-  walk(responses, ~fit_model("NN", .x, form.ls, d.y$train, ctrl, grids, fit.dir, sp))
-  walk(responses, ~fit_model("HBL", .x, form.ls, d.y$train, HB.i, priors, fit.dir, sp))
-  walk(responses, ~fit_model("HBN", .x, form.ls, d.y$train, HB.i, priors, fit.dir, sp))
+  walk(responses, ~fit_model("ENet", .x, form.ls, d.y$train, ctrl, grids, fit.dir, y))
+  walk(responses, ~fit_model("RRF", .x, form.ls, d.y$train, ctrl, grids, fit.dir, y))
+  walk(responses, ~fit_model("NN", .x, form.ls, d.y$train, ctrl, grids, fit.dir, y))
+  walk(responses, ~fit_model("HBL", .x, form.ls, d.y$train, HB.i, priors, fit.dir, y))
+  walk(responses, ~fit_model("HBN", .x, form.ls, d.y$train, HB.i, priors, fit.dir, y))
 
   fit.ls <- map(responses, ~summarise_predictions(d.y, "train", .x, fit.dir, y_i.i))
   fit.ls$alert <- fit.ls$alert %>%
-    full_join(fit.ls$tl %>% select(sp, obsid, ends_with("_A1"))) %>%
-    full_join(fit.ls$lnN %>% select(sp, obsid, ends_with("_A1")))
-  saveRDS(fit.ls, glue("{out.dir}/{sp}_fit_ls.rds"))
+    full_join(fit.ls$tl %>% select(y, obsid, ends_with("_A1"))) %>%
+    full_join(fit.ls$lnN %>% select(y, obsid, ends_with("_A1")))
+  saveRDS(fit.ls, glue("{out.dir}/{y}_fit_ls.rds"))
 
   oos.ls <- map(responses, ~summarise_predictions(d.y, "test", .x, fit.dir, y_i.i))
   oos.ls$alert <- oos.ls$alert %>%
-    full_join(oos.ls$tl %>% select(sp, obsid, ends_with("_A1"))) %>%
-    full_join(oos.ls$lnN %>% select(sp, obsid, ends_with("_A1")))
-  saveRDS(oos.ls, glue("{out.dir}/{sp}_oos_ls.rds"))
+    full_join(oos.ls$tl %>% select(y, obsid, ends_with("_A1"))) %>%
+    full_join(oos.ls$lnN %>% select(y, obsid, ends_with("_A1")))
+  saveRDS(oos.ls, glue("{out.dir}/{y}_oos_ls.rds"))
   
   
 
@@ -181,7 +181,7 @@ foreach(i=seq_along(train.ls),
   yrCV <- unique(d.y$train$alert$year)
   for(k in 1:length(yrCV)) {
     yr <- yrCV[k]
-    y_ <- paste0("_", yr)
+    yr_ <- paste0("_", yr)
     
     d.cv <- list(train=map(d.y$train, ~.x %>% filter(year!=yr)),
                  test=map(d.y$train, ~.x %>% filter(year==yr)))
@@ -192,27 +192,27 @@ foreach(i=seq_along(train.ls),
                                      index=.x$i.in, indexOut=.x$i.out))
     
     # fit models
-    walk(responses, ~fit_model("ENet", .x, form.ls, d.cv$train, ctrl, grids, cv.dir, sp, y_))
-    walk(responses, ~fit_model("RRF", .x, form.ls, d.cv$train, ctrl, grids, cv.dir, sp, y_))
-    walk(responses, ~fit_model("NN", .x, form.ls, d.cv$train, ctrl, grids, cv.dir, sp, y_))
-    walk(responses, ~fit_model("HBL", .x, form.ls, d.cv$train, HB.i, priors, cv.dir, sp, y_))
-    walk(responses, ~fit_model("HBN", .x, form.ls, d.cv$train, HB.i, priors, cv.dir, sp, y_))
+    walk(responses, ~fit_model("ENet", .x, form.ls, d.cv$train, ctrl, grids, cv.dir, y, yr_))
+    walk(responses, ~fit_model("RRF", .x, form.ls, d.cv$train, ctrl, grids, cv.dir, y, yr_))
+    walk(responses, ~fit_model("NN", .x, form.ls, d.cv$train, ctrl, grids, cv.dir, y, yr_))
+    walk(responses, ~fit_model("HBL", .x, form.ls, d.cv$train, HB.i, priors, cv.dir, y, yr_))
+    walk(responses, ~fit_model("HBN", .x, form.ls, d.cv$train, HB.i, priors, cv.dir, y, yr_))
     
     # predict
-    cv.ls <- map(responses, ~summarise_predictions(d.cv, "test", .x, cv.dir, y_i.i, y_))
+    cv.ls <- map(responses, ~summarise_predictions(d.cv, "test", .x, cv.dir, y_i.i, yr_))
     cv.ls$alert <- cv.ls$alert %>%
-      full_join(cv.ls$tl %>% select(sp, obsid, ends_with("_A1"))) %>%
-      full_join(cv.ls$lnN %>% select(sp, obsid, ends_with("_A1")))
-    saveRDS(cv.ls, glue("{cv.dir}/{sp}_CV{y_}.rds"))
+      full_join(cv.ls$tl %>% select(y, obsid, ends_with("_A1"))) %>%
+      full_join(cv.ls$lnN %>% select(y, obsid, ends_with("_A1")))
+    saveRDS(cv.ls, glue("{cv.dir}/{y}_CV{yr_}.rds"))
   }
   
   
 
 # . ensemble --------------------------------------------------------------
   
-  fit.ls <- readRDS(glue("{out.dir}/{sp}_fit_ls.rds"))
-  oos.ls <- readRDS(glue("{out.dir}/{sp}_oos_ls.rds"))
-  cv.ls <- map(dirf(cv.dir, glue("{sp}_CV")), readRDS)
+  fit.ls <- readRDS(glue("{out.dir}/{y}_fit_ls.rds"))
+  oos.ls <- readRDS(glue("{out.dir}/{y}_oos_ls.rds"))
+  cv.ls <- map(dirf(cv.dir, glue("{y}_CV")), readRDS)
   cv.ls <- list(alert=map_dfr(cv.ls, ~.x$alert),
                 tl=map_dfr(cv.ls, ~.x$tl) %>% select(-ends_with("_A1")),
                 lnN=map_dfr(cv.ls, ~.x$lnN) %>% select(-ends_with("_A1")))
@@ -228,16 +228,16 @@ foreach(i=seq_along(train.ls),
     mutate(ens_tl_A1=oos.ls$tl$ens_tl_A1,
            ens_lnN_A1=oos.ls$lnN$ens_lnN_A1)
   
-  saveRDS(fit.ls, glue("{out.dir}/{sp}_fit_ls.rds"))
-  saveRDS(oos.ls, glue("{out.dir}/{sp}_oos_ls.rds"))
-  saveRDS(wt.ls, glue("{out.dir}/{sp}_wt_ls.rds"))
+  saveRDS(fit.ls, glue("{out.dir}/{y}_fit_ls.rds"))
+  saveRDS(oos.ls, glue("{out.dir}/{y}_oos_ls.rds"))
+  saveRDS(wt.ls, glue("{out.dir}/{y}_wt_ls.rds"))
   
   
 
 # . null ------------------------------------------------------------------
 
-  fit.ls <- readRDS(glue("{out.dir}/{sp}_fit_ls.rds")) 
-  oos.ls <- readRDS(glue("{out.dir}/{sp}_oos_ls.rds"))
+  fit.ls <- readRDS(glue("{out.dir}/{y}_fit_ls.rds")) 
+  oos.ls <- readRDS(glue("{out.dir}/{y}_oos_ls.rds"))
   
   null.ls <- map(responses, ~calc_null(fit.ls, .x))
   fit.ls <- map(null.ls, ~.x$obs.df)
@@ -245,9 +245,9 @@ foreach(i=seq_along(train.ls),
                  ~left_join(.x %>% mutate(yday=yday(date)), .y$yday.df) %>% select(-yday)) %>%
     map2(., fit.ls, ~bind_cols(.x, .y %>% select(contains("nullGrand")) %>% slice_head(n=1)))
   
-  saveRDS(fit.ls, glue("{out.dir}/{sp}_fit_ls.rds"))
-  saveRDS(oos.ls, glue("{out.dir}/{sp}_oos_ls.rds"))
-  saveRDS(map(null.ls, ~.x$yday.df), glue("{out.dir}/{sp}_null_ls.rds"))
+  saveRDS(fit.ls, glue("{out.dir}/{y}_fit_ls.rds"))
+  saveRDS(oos.ls, glue("{out.dir}/{y}_oos_ls.rds"))
+  saveRDS(map(null.ls, ~.x$yday.df), glue("{out.dir}/{y}_null_ls.rds"))
 
   }
 
