@@ -340,6 +340,7 @@ extract_env_buffers <- function(site.buffer, vars, env.df, id_env) {
   env_dates.ls <- split(1:nrow(env.df), env.df$date_id)
   
   ij <- 1
+  startTime <- Sys.time()
   if(is.null(vars$sea)) {
     for(i in 1:nrow(site.buffer)) {
       for(j in 1:length(env_dates.ls)) {
@@ -349,8 +350,8 @@ extract_env_buffers <- function(site.buffer, vars, env.df, id_env) {
           }
         }
         ij <- ij+1
-        if(ij %% 1000 == 0) {cat(ij, "of", nrow(env.buffer), "\n")}
       }
+      if(i %% 10 == 0) {cat(i, "of", nrow(site.buffer), "--", Sys.time()-startTime, "\n")}
     }
   } else {
     for(i in 1:nrow(site.buffer)) {
@@ -364,8 +365,8 @@ extract_env_buffers <- function(site.buffer, vars, env.df, id_env) {
           env.buffer[ij,"sst"] <- mean(sst_ij[elev_ij==0], na.rm=T) 
         }
         ij <- ij+1
-        if(ij %% 1000 == 0) {cat(ij, "of", nrow(env.buffer), "\n")}
       }
+      if(i %% 10 == 0) {cat(i, "of", nrow(site.buffer), "--", Sys.time()-startTime, "\n")}
     }
   }
   
