@@ -152,7 +152,7 @@ cmems_i <- expand_grid(
         "spco2" # Surface partial pressure of carbon dioxide
   ),
   source=c("Reanalysis", "Analysis&Forecast")) %>%
-  mutate(server=if_else(source=="Reanalysis", "@my.cmems-du.eu", "@nrt.cmems-du.eu"), 
+  mutate(server=if_else(source=="Reanalysis", "my.cmems-du.eu", "nrt.cmems-du.eu"), 
          doi=glue("https://doi.org/10.48670/moi-0005{if_else(source=='Reanalysis', 8, 6)}"),
          ID=glue("cmems_mod_nws_bgc-{var}_", 
                  "{if_else(source=='Reanalysis', 'my', 'anfc')}_7km-",
@@ -160,6 +160,8 @@ cmems_i <- expand_grid(
 write_csv(cmems_i, "data/cmems_i.csv")
 
 cmems_cred <- readRDS("data/cmems_cred.rds")
+fsa.df <- readRDS("data/0_init/fsa_df.rds")
+cefas.df <- readRDS("data/0_init/cefas_df.rds")
 get_CMEMS(userid=cmems_cred$userid, pw=cmems_cred$pw, 
           i.df=cmems_i, bbox=UK_bbox, 
           nDays_buffer=nDays_avg, dateRng=range(c(fsa.df$date, cefas.df$date)), 
@@ -227,6 +229,7 @@ saveRDS(wrf.df, glue("data/0_init/wrf_end_{max(wrf.df$date)}.rds"))
 # pairwise distances ------------------------------------------------------
 
 # HABs
+site_hab.df <- readRDS("data/site_hab_df.rds")
 path.ls <- get_shortestPaths(ocean.path="data/northAtlantic_footprint.tif", 
                              site.df=site_hab.df, 
                              transMx.path="data/mesh_tmx.rds", recalc_transMx=F)
@@ -247,6 +250,7 @@ path.ls$dist.df %>%
   saveRDS("data/site_hab_neighbors_100km.rds")
 
 # toxins
+site_tox.df <- readRDS("data/site_tox_df.rds")
 path.ls <- get_shortestPaths(ocean.path="data/northAtlantic_footprint.tif", 
                              site.df=site_tox.df, 
                              transMx.path="data/mesh_tmx.rds", recalc_transMx=F)
