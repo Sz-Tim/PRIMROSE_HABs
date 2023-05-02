@@ -328,7 +328,7 @@ extract_env_buffers <- function(site.buffer, vars, env.df, id_env) {
   
   library(tidyverse); library(zoo)
   
-  env.df <- env.df %>% arrange(date, i)
+  env.df <- env.df %>% arrange(date, pick(one_of("i", id_env)))
   env.buffer <- expand_grid(siteid=unique(site.buffer$siteid),
                             quadrant=unique(site.buffer$quadrant),
                             date=unique(env.df$date)) %>%
