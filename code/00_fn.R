@@ -803,6 +803,9 @@ get_trafficLights <- function(y.df, N, tl_i) {
 #' @examples
 calc_y_features <- function(yRaw.df, y_i, tl_i, dist.df=NULL) {
   y.ls <- yRaw.df %>% 
+    group_by(siteid, date) %>%
+    slice_head(n=1) %>%
+    ungroup %>%
     pivot_longer(any_of(y_i$abbr), names_to="y", values_to="N") %>%
     filter(!is.na(N)) %>%
     mutate(lnN=log1p(N)) %>%
