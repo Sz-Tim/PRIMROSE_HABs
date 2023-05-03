@@ -329,7 +329,7 @@ site_hab.sf <- site_hab.df %>%
   select(-sin) %>%
   st_buffer(dist=100e3) %>%
   split_to_NSEW()
-st_write(site_hab.sf, "data/site_hab_sf.gpkg")
+st_write(site_hab.sf, "data/site_hab_sf.gpkg", append=F)
 
 site_tox.df <- readRDS("data/site_tox_df.rds")
 site_tox.sf <- site_tox.df %>% 
@@ -337,7 +337,7 @@ site_tox.sf <- site_tox.df %>%
   select(-sin) %>%
   st_buffer(dist=100e3) %>%
   split_to_NSEW()
-st_write(site_tox.sf, "data/site_tox_sf.gpkg")
+st_write(site_tox.sf, "data/site_tox_sf.gpkg", append=F)
 
 
 
