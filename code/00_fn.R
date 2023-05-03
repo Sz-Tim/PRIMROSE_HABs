@@ -109,7 +109,7 @@ get_WRF <- function(wrf.dir, nDays_buffer, dateRng, out.dir) {
                        magrittr::extract(,2)) %>%
       do.call('c', .)
     wrf_i <- tibble(fname=wrf_links)
-    wrf_base <- "https://thredds.sams.ac.uk/thredds/dodsC/scoats-wrf/Archive/netcdf_"
+    wrf_base <- "https://thredds.sams.ac.uk/thredds/dodsC/scoats-wrf/Archive/"
   } else {
     wrf_i <- tibble(fname=dir(wrf.dir, ".nc$", recursive=T))
     wrf_base <- wrf.dir
@@ -956,9 +956,9 @@ load_datasets <- function(sub.dir, target) {
     site=readRDS(glue("data/site_{target}_df.rds")),
     obs=readRDS(glue("data/{sub.dir}/{target}_obs.rds")),
     cmems.pt=readRDS(glue("data/{sub.dir}/cmems_sitePt_{target}.rds")),
-    cmems.buf=readRDS(glue("data/{sub.dir}/cmems_siteBufferNSEW_{target}.rds")),
-    wrf.pt=readRDS(glue("data/{sub.dir}/wrf_sitePt_{target}.rds")),
-    wrf.buf=readRDS(glue("data/{sub.dir}/wrf_siteBufferNSEW_{target}.rds"))
+    # cmems.buf=readRDS(glue("data/{sub.dir}/cmems_siteBufferNSEW_{target}.rds")),
+    wrf.pt=readRDS(glue("data/{sub.dir}/wrf_sitePt_{target}.rds"))#,
+    # wrf.buf=readRDS(glue("data/{sub.dir}/wrf_siteBufferNSEW_{target}.rds"))
   )
   if(target=="tox") {
     d.ls$habAvg <- readRDS(glue("data/{sub.dir}/tox_habAvg.rds"))
@@ -1001,8 +1001,8 @@ prep_recipe <- function(train.df, response, covsExclude="NA") {
     step_rename(ydayCos=yday_cos_1, ydaySin=yday_sin_1) %>%
     step_mutate_at(lon, lat, fn=list(z=~.)) %>%
     step_interact(term=~ydaySin:ydayCos, sep="X") %>%
-    step_interact(terms=~UWk:fetch:matches("Dir[EW]"), sep="X") %>%
-    step_interact(terms=~VWk:fetch:matches("Dir[NS]"), sep="X") %>%
+    # step_interact(terms=~UWk:fetch:matches("Dir[EW]"), sep="X") %>%
+    # step_interact(terms=~VWk:fetch:matches("Dir[NS]"), sep="X") %>%
     step_interact(terms=~lon_z:lat_z, sep="X") %>%
     step_YeoJohnson(all_predictors()) %>%
     step_normalize(all_predictors()) %>%
