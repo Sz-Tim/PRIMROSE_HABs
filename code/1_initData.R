@@ -148,8 +148,7 @@ cmems_i <- expand_grid(
         "ph", # Sea water ph reported on total scale
         "phyc", # Mole concentration of phytoplankton expressed as carbon
         "po4", # Mole concentration of phosphate
-        "pp", # Net primary production of biomass expressed as carbon per unit volume
-        "spco2" # Surface partial pressure of carbon dioxide
+        "pp" # Net primary production of biomass expressed as carbon per unit volume
   ),
   source=c("Reanalysis", "Analysis&Forecast")) %>%
   mutate(server=if_else(source=="Reanalysis", "my.cmems-du.eu", "nrt.cmems-du.eu"), 
@@ -279,11 +278,13 @@ path.ls$dist.df %>%
 # Wave fetch and bearing with the most open water
 # https://doi.org/10.6084/m9.figshare.12029682.v1
 
+site_hab.df <- readRDS("data/site_hab_df.rds")
 site_hab.df <- site_hab.df %>%
   get_fetch(., "data/log10_eu200m1a.tif") %>%
   get_openBearing(., "data/northAtlantic_footprint.gpkg", buffer=200e3)
 saveRDS(site_hab.df, "data/site_hab_df.rds")
 
+site_tox.df <- readRDS("data/site_tox_df.rds")
 site_tox.df <- site_tox.df %>%
   get_fetch(., "data/log10_eu200m1a.tif") %>%
   get_openBearing(., "data/northAtlantic_footprint.gpkg", buffer=200e3)
@@ -361,29 +362,29 @@ saveRDS(habAvg_tox.df, "data/0_init/tox_habAvg.rds")
 
 # . CMEMS  site:date ------------------------------------------------------
 cmems_i <- list(all=c("chl", "kd", "no3", "o2", "ph", "phyc", "po4", "pp"))
-cmems.df <- readRDS(dirf("data/0_init", "cmems_end.*rds"))
+cmems.df <- readRDS(last(dirf("data/0_init", "cmems_end.*rds")))
 cmems.sf <- cmems.df %>% select(date, lon, lat, cmems_id) %>% 
   filter(date==min(date)) %>%
   st_as_sf(., coords=c("lon", "lat"), crs=4326)
 
 # HABs
-site_hab.df <- readRDS("data/site_hab_df.rds")
+site_hab.df <- readRDS("data/site_hab_df.rds") %>% select(-cmems_id)
 site_hab.df <- site_hab.df %>% find_nearest_feature_id(cmems.sf, "cmems_id")
 saveRDS(site_hab.df, "data/site_hab_df.rds")
 cmems.site_hab <- extract_env_pts(site_hab.df, cmems_i$all, cmems.df %>% mutate(version=1), cmems_id, "cmems_id")
 saveRDS(cmems.site_hab, "data/0_init/cmems_sitePt_hab.rds")
 
 # toxins
-site_tox.df <- readRDS("data/site_tox_df.rds")
+site_tox.df <- readRDS("data/site_tox_df.rds") %>% select(-cmems_id)
 site_tox.df <- site_tox.df %>% find_nearest_feature_id(cmems.sf, "cmems_id")
 saveRDS(site_tox.df, "data/site_tox_df.rds")
 cmems.site_tox <- extract_env_pts(site_tox.df, cmems_i$all, cmems.df %>% mutate(version=1), cmems_id, "cmems_id")
-saveRDS(cmems.site_hab, "data/0_init/cmems_sitePt_tox.rds")
+saveRDS(cmems.site_tox, "data/0_init/cmems_sitePt_tox.rds")
 
 
 # . CMEMS  buffer:date ----------------------------------------------------
 cmems_i <- list(all=c("chl", "kd", "no3", "o2", "ph", "phyc", "po4", "pp"))
-cmems.df <- readRDS(dirf("data/0_init", "cmems_end.*rds"))
+cmems.df <- readRDS(last(dirf("data/0_init", "cmems_end.*rds")))
 cmems.sf <- cmems.df %>% select(date, lon, lat, cmems_id) %>% 
   filter(date==min(date)) %>%
   st_as_sf(., coords=c("lon", "lat"), crs=4326)
@@ -411,7 +412,8 @@ wrf_versions <- map(seq_along(dir("data/0_init/wrf", "^domain_d01")),
                       mutate(wrf_id=row_number()) %>%
                       st_as_sf(coords=c("lon", "lat"), remove=F, crs=4326))
 wrf.df <- readRDS(dirf("data/0_init/", "wrf_end_.*rds")) %>%
-  mutate(sst=if_else(sst > -100, sst, NA_real_))
+  mutate(sst=if_else(sst > -100, sst, NA_real_)) %>%
+  rename(U=U_mn, V=V_mn, UV=UV_mn)
 
 # HABs
 site_hab.df <- readRDS("data/site_hab_df.rds") %>% select(-starts_with("wrf_id"))
@@ -442,7 +444,8 @@ wrf_versions <- map(seq_along(dir("data/0_init/wrf", "^domain_d01")),
                       mutate(wrf_id=row_number()) %>%
                       st_as_sf(coords=c("lon", "lat"), remove=F, crs=4326))
 wrf.df <- readRDS(dirf("data/0_init/", "wrf_end_.*rds")) %>%
-  mutate(sst=if_else(sst > -100, sst, NA_real_))
+  mutate(sst=if_else(sst > -100, sst, NA_real_)) %>%
+  rename(U=U_mn, V=V_mn, UV=UV_mn)
 
 # HABs
 site.buffer_hab <- map(wrf_versions, 
