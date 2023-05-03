@@ -94,11 +94,27 @@ get_CMEMS <- function(userid, pw, i.df, bbox, nDays_buffer, dateRng, out.dir) {
 #'
 #' @examples
 get_WRF <- function(wrf.dir, nDays_buffer, dateRng, out.dir) {
-  library(tidyverse); library(ncdf4); library(lubridate); library(glue)
+  library(tidyverse); library(ncdf4); library(lubridate); library(glue); 
+  library(xml2); library(rvest)
   dir.create(glue("{out.dir}/wrf"), showWarnings=F)
   
   # metadata for all WRF files within timespan
-  wrf_i <- tibble(fname=dir(wrf.dir, ".nc$", recursive=T)) %>%
+  if(grepl("https", wrf.dir)) {
+    thredds_head <- "https://thredds.sams.ac.uk/thredds/catalog/scoats-wrf/Archive/netcdf_"
+    wrf_links <- map(seq(year(dateRng[1]), year(dateRng[2]), by=1), 
+                     ~glue("{thredds_head}{.x}/catalog.html") %>%
+                       read_html() %>% html_nodes("a") %>% html_attr("href") %>% 
+                       grep("netcdf_20../wrf_", ., value=T) %>%
+                       str_split_fixed(., "Archive/", 2) %>% 
+                       magrittr::extract(,2)) %>%
+      do.call('c', .)
+    wrf_i <- tibble(fname=wrf_links)
+    wrf_base <- "https://thredds.sams.ac.uk/thredds/dodsC/scoats-wrf/Archive/netcdf_"
+  } else {
+    wrf_i <- tibble(fname=dir(wrf.dir, ".nc$", recursive=T))
+    wrf_base <- wrf.dir
+  }
+  wrf_i <- wrf_i %>%
     mutate(res=str_sub(fname, -6, -4),
            day_0=str_sub(fname, 23, 24),
            month_0=str_sub(fname, 21, 22),
@@ -116,7 +132,7 @@ get_WRF <- function(wrf.dir, nDays_buffer, dateRng, out.dir) {
   
   for(i in 1:length(wrf_dates)) {
     wrf_i.i <- filter(wrf_i, date_0==wrf_dates[i])
-    nc_f.i <- map(wrf_i.i$fname, ~glue("{wrf.dir}/{.x}")) %>% 
+    nc_f.i <- map(wrf_i.i$fname, ~glue("{wrf_base}/{.x}")) %>% 
       set_names(wrf_i.i$res)
     nc.ls <- map(nc_f.i, nc_open)
     time.ls <- map(nc.ls, 
@@ -150,7 +166,7 @@ get_WRF <- function(wrf.dir, nDays_buffer, dateRng, out.dir) {
                     Precip=sum(Precipitation),
                     sst=mean(sst)) %>%
           ungroup %>%
-          rename(U=U_mn, V=V_mn, UV=UV_mn) %>%
+          # rename(U=U_mn, V=V_mn, UV=UV_mn) %>%
           saveRDS(j.fname)
       }
     }

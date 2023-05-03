@@ -194,8 +194,9 @@ saveRDS(cmems.df, glue("data/0_init/cmems_end_{max(cmems.df$date)}.rds"))
 # WeStCOMS-WRF ------------------------------------------------------------
 
 # There are three different resolutions / domains, from coarse but expansive
-# (d01) to finer but restricted (d03). The getWRF() function has an argument to
-# nest all three, or select just one. WeStCOMS-WRF
+# (d01) to finer but restricted (d03). The getWRF() function nests all three, 
+# selecting the highest resolution. Setting wrf.dir="https" will download the
+# files from the public SAMS THREDDS server.
 #  - Wind speed
 #  - Wind direction
 #  - Shortwave radiation
@@ -203,10 +204,11 @@ saveRDS(cmems.df, glue("data/0_init/cmems_end_{max(cmems.df$date)}.rds"))
 #  - Sea surface temperature
 
 wrf.dir <- ifelse(.Platform$OS.type=="unix",
-                  "/media/archiver/common/sa01da-work/WRF/Archive/",
+                  "https",#"/media/archiver/common/sa01da-work/WRF/Archive/",
                   "D:/hydroOut/WRF/Archive/")
 get_WRF(wrf.dir=wrf.dir, nDays_buffer=nDays_avg, 
-        dateRng=c(ymd("2016-01-07"), max(c(fsa.df$date, cefas.df$date))), 
+        # dateRng=c(ymd("2016-01-07"), max(c(fsa.df$date, cefas.df$date))),
+        dateRng=c(ymd("2022-10-05"), max(c(fsa.df$date, cefas.df$date))), 
         out.dir="data/0_init/")
 
 # read and subset WRF domains to nest higher res within lower res
