@@ -109,7 +109,7 @@ get_WRF <- function(wrf.dir, nDays_buffer, dateRng, out.dir) {
                        magrittr::extract(,2)) %>%
       do.call('c', .)
     wrf_i <- tibble(fname=wrf_links)
-    wrf_base <- "https://thredds.sams.ac.uk/thredds/dodsC/scoats-wrf/Archive/"
+    wrf_base <- "https://thredds.sams.ac.uk/thredds/dodsC/scoats-wrf/Archive"
   } else {
     wrf_i <- tibble(fname=dir(wrf.dir, ".nc$", recursive=T))
     wrf_base <- wrf.dir
