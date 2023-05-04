@@ -158,6 +158,7 @@ get_WRF <- function(wrf.dir, nDays_buffer, dateRng, out.dir) {
       j.fname <- glue("{out.dir}/wrf/wrf_{var.ls[[j]]$date[1]}_{var.ls[[j]]$res[1]}.rds")
       if(!file.exists(j.fname)) {
         var.ls[[j]] %>% 
+          mutate(sst=if_else(sst > -100, sst, NA_real_)) %>%
           group_by(i, lat_i, lon_i, date) %>%
           summarise(U_mn=mean(U),
                     V_mn=mean(V),
@@ -166,7 +167,7 @@ get_WRF <- function(wrf.dir, nDays_buffer, dateRng, out.dir) {
                     Precip=sum(Precipitation),
                     sst=mean(sst)) %>%
           ungroup %>%
-          # rename(U=U_mn, V=V_mn, UV=UV_mn) %>%
+          rename(U=U_mn, V=V_mn, UV=UV_mn) %>%
           saveRDS(j.fname)
       }
     }

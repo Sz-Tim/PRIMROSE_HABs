@@ -154,8 +154,7 @@ cmems_i <- expand_grid(
   mutate(server=if_else(source=="Reanalysis", "my.cmems-du.eu", "nrt.cmems-du.eu"), 
          doi=glue("https://doi.org/10.48670/moi-0005{if_else(source=='Reanalysis', 8, 6)}"),
          ID=glue("cmems_mod_nws_bgc-{var}_", 
-                 "{if_else(source=='Reanalysis', 'my', 'anfc')}_7km-",
-                 "{if_else(var=='spco2', '2D', '3D')}_P1D-m"))
+                 "{if_else(source=='Reanalysis', 'my', 'anfc')}_7km-3D_P1D-m"))
 write_csv(cmems_i, "data/cmems_i.csv")
 
 cmems_cred <- readRDS("data/cmems_cred.rds")
@@ -170,22 +169,22 @@ rean.f <- dirf("data/0_init/cmems", "cmems.*Reanalysis.rds")
 anfo.f <- dirf("data/0_init/cmems", "cmems.*Forecast.rds")
 cmems.df <- bind_rows(
   readRDS(rean.f[1]) %>%
-    bind_cols(map_dfc(rean.f[-1], ~readRDS(.x) %>% select(5))) %>%
-    filter(date < "2019-05-01"),
+    bind_cols(map_dfc(rean.f[-1], ~readRDS(.x) %>% select(5))),
   readRDS(anfo.f[1]) %>%
     bind_cols(map_dfc(anfo.f[-1], ~readRDS(.x) %>% select(5)))
   ) %>%
-  na.omit() %>%
+  arrange(date, lon, lat) %>%
+  group_by(date, source) %>%
+  mutate(cmems_id=row_number()) %>%
+  group_by(date, cmems_id, lon, lat) %>%
+  summarise(across(any_of(cmems_i$var), ~mean(.x, na.rm=T))) %>%
+  ungroup
   mutate(chl=log1p(chl),
          kd=log(kd),
          no3=log1p(no3),
          o2=log(o2),
          phyc=log1p(phyc),
-         po4=log1p(po4)) %>%
-  arrange(date, lon, lat) %>%
-  group_by(date) %>%
-  mutate(cmems_id=row_number()) %>%
-  ungroup
+         po4=log1p(po4)) 
 saveRDS(cmems.df, glue("data/0_init/cmems_end_{max(cmems.df$date)}.rds"))
 
 
@@ -200,7 +199,7 @@ saveRDS(cmems.df, glue("data/0_init/cmems_end_{max(cmems.df$date)}.rds"))
 #  - Wind direction
 #  - Shortwave radiation
 #  - Precipitation
-#  - Sea surface temperature
+#  - Sea surface temperature (not used due to extensive NAs)
 
 fsa.df <- readRDS("data/0_init/fsa_df.rds")
 cefas.df <- readRDS("data/0_init/cefas_df.rds")
@@ -209,7 +208,7 @@ wrf.dir <- ifelse(.Platform$OS.type=="unix",
                   "D:/hydroOut/WRF/Archive/")
 get_WRF(wrf.dir=wrf.dir, nDays_buffer=nDays_avg, 
         # dateRng=c(ymd("2016-01-07"), max(c(fsa.df$date, cefas.df$date))),
-        dateRng=c(ymd("2022-10-05"), max(c(fsa.df$date, cefas.df$date))), 
+        dateRng=range(c(fsa.df$date, cefas.df$date)), 
         out.dir="data/0_init/")
 
 # read and subset WRF domains to nest higher res within lower res
@@ -223,9 +222,8 @@ wrf.df <- subset_WRF("d01", wrf.out, v2_start="2019-04-01") %>%
   mutate(wrf_id=row_number()) %>%
   ungroup %>%
   mutate(Shortwave=log1p(Shortwave),
-         UV_mn=log1p(UV_mn),
          Precip=log1p(pmax(Precip, 0)*3600*24*1000), # m/s to mm/day
-         sst=if_else(sst > -100, sst, NA_real_))
+         UV=log1p(UV))
 saveRDS(wrf.df, glue("data/0_init/wrf_end_{max(wrf.df$date)}.rds"))
 
 
@@ -484,10 +482,10 @@ hab.df <- hab.ls$site %>% select(-sin) %>%
   left_join(hab.ls$wrf.buf %>%
               pivot_wider(names_from="quadrant", values_from=-(1:3), names_sep="Dir"),
             by=c("siteid", "date")) %>%
-  na.omit() %>%
   mutate(year=year(date),
-         yday=yday(date))
-saveRDS(hab.df, "data/0_init/data_hab_all.rds")
+         yday=yday(date)) %>%
+  select(-contains("sst")) 
+saveRDS(hab.df, "data/0_init/data_hab_all_withNA.rds")
 
 # toxins
 tox.ls <- load_datasets("0_init", "tox")
@@ -504,19 +502,23 @@ tox.df <- tox.ls$site %>% select(-sin) %>%
   left_join(tox.ls$wrf.buf %>%
               pivot_wider(names_from="quadrant", values_from=-(1:3), names_sep="Dir"),
             by=c("siteid", "date")) %>%
-  na.omit() %>%
   mutate(year=year(date),
-         yday=yday(date))
-saveRDS(tox.df, "data/0_init/data_tox_all.rds")
+         yday=yday(date)) %>%
+  select(-contains("sst")) 
+saveRDS(tox.df, "data/0_init/data_tox_all_withNA.rds")
 
 # variable names
 grep("cmems_id|date|siteid|version", 
-     unique(c(names(hab.ls$cmems.pt), names(hab.ls$cmems.buf))),
+     unique(c(names(hab.ls$cmems.pt), 
+              names(hab.ls$cmems.buf %>%
+                pivot_wider(names_from="quadrant", values_from=-(1:3), names_sep="Dir")))),
      value=T, invert=T) %>% 
   sort %>%
   saveRDS("data/cmems_vars.rds")
 grep("wrf_id|date|siteid|version", 
-     unique(c(names(hab.ls$wrf.pt), names(hab.ls$wrf.buf))),
+     unique(c(names(hab.ls$wrf.pt), 
+              names(hab.ls$wrf.buf %>%
+                pivot_wider(names_from="quadrant", values_from=-(1:3), names_sep="Dir")))),
      value=T, invert=T) %>% 
   sort %>%
   saveRDS("data/wrf_vars.rds")
