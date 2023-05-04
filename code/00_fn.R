@@ -1060,23 +1060,23 @@ make_HB_formula <- function(resp, covs, sTerms=NULL,
   splines_int <- switch(splinesInt,
                         "time"="s(yday, bs=('cc'))",
                         "space"="s(lon, lat)",
-                        "both"="t2(yday, lon, lat, bs=c('cc','tp'), d=c(1,2))")
+                        "both"="t2(yday, lon, lat, bs=c('cc','ts'), d=c(1,2))")
   splines_cov <- switch(splinesCovs,
                         "time"="s(yday, bs=('cc'))",
                         "space"="s(lon, lat)",
-                        "both"="t2(yday, lon, lat, bs=c('cc','tp'), d=c(1,2))")
+                        "both"="t2(yday, lon, lat, bs=c('cc','ts'), d=c(1,2))")
   
   if(is.null(sTerms)) {
     if(resp=="lnN") {
       form <- bf(glue("{resp} ~ 1 + {paste(covs, collapse='+')}", 
-                      # "+ {splines_int}",
+                      "+ {splines_int}",
                       "+ (1 + {paste(covs, collapse='+')} | siteid)"),
                  glue("hu ~ 1 + {paste(covs, collapse='+')}", 
-                      # "+ {splines_int}",
+                      "+ {splines_int}",
                       "+ (1 + {paste(covs, collapse='+')} | siteid)"))  
     } else {
       form <- bf(glue("{resp} ~ 1 + {paste(covs, collapse='+')}", 
-                      # "+ {splines_int}",
+                      "+ {splines_int}",
                       "+ (1 + {paste(covs, collapse='+')} | siteid)"))
     }
   } else {
@@ -1135,11 +1135,11 @@ make_HB_priors <- function(prior_i, mod, resp, covs) {
              prior_string(glue("horseshoe({prior_i$hs1}, par_ratio={prior_i$hs2})"), class="b"))
     } else {
       p <- c(p,
-             prior_string(glue("R2D2({prior_i$r1},{prior_i$r2})"), class="b"))
+             prior_string(glue("R2D2({prior_i$r1}, {prior_i$r2})"), class="b"))
     }
     if(resp=="lnN") {
       p <- c(p,
-             prior_string(glue("R2D2({prior_i$r1},{prior_i$r2})"), class="b", dpar="hu"))
+             prior_string(glue("R2D2({prior_i$r1}, {prior_i$r2})"), class="b", dpar="hu"))
     }
   }
   if(mod=="HBN") {
