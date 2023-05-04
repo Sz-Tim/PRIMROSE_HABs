@@ -956,7 +956,7 @@ load_datasets <- function(sub.dir, target) {
     obs=readRDS(glue("data/{sub.dir}/{target}_obs.rds")),
     cmems.pt=readRDS(glue("data/{sub.dir}/cmems_sitePt_{target}.rds")),
     cmems.buf=readRDS(glue("data/{sub.dir}/cmems_siteBufferNSEW_{target}.rds")),
-    wrf.pt=readRDS(glue("data/{sub.dir}/wrf_sitePt_{target}.rds"))#,
+    wrf.pt=readRDS(glue("data/{sub.dir}/wrf_sitePt_{target}.rds")),
     wrf.buf=readRDS(glue("data/{sub.dir}/wrf_siteBufferNSEW_{target}.rds"))
   )
   if(target=="tox") {
