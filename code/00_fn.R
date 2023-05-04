@@ -49,13 +49,8 @@ get_CMEMS <- function(userid, pw, i.df, bbox, nDays_buffer, dateRng, out.dir) {
     lon_i <- which(between(nc.lon, bbox$xmin, bbox$xmax))
     lat_i <- which(between(nc.lat, bbox$ymin, bbox$ymax))
     time_i <- which(between(nc.date, dateRng[1]-nDays_buffer, dateRng[2]+nDays_buffer))
-    if(i.df$var[i]=="spco2") {
-      var.start <- c(lon_i[1], lat_i[1], time_i[1])
-      var.count <- c(length(lon_i), length(lat_i), length(time_i)) 
-    } else {
-      var.start <- c(lon_i[1], lat_i[1], 1, time_i[1])
-      var.count <- c(length(lon_i), length(lat_i), 1, length(time_i)) 
-    }
+    var.start <- c(lon_i[1], lat_i[1], 1, time_i[1])
+    var.count <- c(length(lon_i), length(lat_i), 1, length(time_i)) 
     
     # extract variable
     if(length(names(nc$var)) > 1) { cat("Too many vars in nc:", names(nc$var))}
