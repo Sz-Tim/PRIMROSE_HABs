@@ -174,7 +174,6 @@ get_WRF <- function(wrf.dir, nDays_buffer, dateRng, out.dir) {
     if(length(nc_f.i)==3 & all(c("d01", "d02", "d03") %in% names(nc_f.i))) {
       nest_WRF_domains(nc.ls) %>%
         walk(~saveRDS(.x, glue("{out.dir}/wrf/wrfDomains_{wrf_dates[i]}_{.x$res[1]}.rds")))
-      
     }
     walk(nc.ls, nc_close)
   }
@@ -956,9 +955,9 @@ load_datasets <- function(sub.dir, target) {
     site=readRDS(glue("data/site_{target}_df.rds")),
     obs=readRDS(glue("data/{sub.dir}/{target}_obs.rds")),
     cmems.pt=readRDS(glue("data/{sub.dir}/cmems_sitePt_{target}.rds")),
-    # cmems.buf=readRDS(glue("data/{sub.dir}/cmems_siteBufferNSEW_{target}.rds")),
+    cmems.buf=readRDS(glue("data/{sub.dir}/cmems_siteBufferNSEW_{target}.rds")),
     wrf.pt=readRDS(glue("data/{sub.dir}/wrf_sitePt_{target}.rds"))#,
-    # wrf.buf=readRDS(glue("data/{sub.dir}/wrf_siteBufferNSEW_{target}.rds"))
+    wrf.buf=readRDS(glue("data/{sub.dir}/wrf_siteBufferNSEW_{target}.rds"))
   )
   if(target=="tox") {
     d.ls$habAvg <- readRDS(glue("data/{sub.dir}/tox_habAvg.rds"))
@@ -988,6 +987,7 @@ prep_recipe <- function(train.df, response, covsExclude="NA") {
   respExclude <- grep(response, c("lnN", "tl", "alert"), value=T, invert=T)
   pred_vars <- names(train.df)
   recipe(train.df) %>%
+    step_mutate(prevAlert=alert1, role="ID") %>%
     update_role(all_of(pred_vars), new_role="predictor") %>%
     update_role(all_of(response), new_role="outcome") %>%
     update_role(obsid, y, date, siteid, year, new_role="ID") %>%
@@ -1019,15 +1019,15 @@ prep_recipe <- function(train.df, response, covsExclude="NA") {
 #' Filter list of covariates following recipe thinning
 #'
 #' @param all_covs 
-#' @param data.sp 
+#' @param data.y 
 #' @param covsExclude 
 #'
 #' @return
 #' @export
 #'
 #' @examples
-filter_corr_covs <- function(all_covs, data.sp, covsExclude="NA") {
-  uncorr_covs <- unique(unlist(map(data.sp, ~unlist(map(.x, names)))))
+filter_corr_covs <- function(all_covs, data.y, covsExclude="NA") {
+  uncorr_covs <- unique(unlist(map(data.y, ~unlist(map(.x, names)))))
   if(any(grepl("^PC", uncorr_covs))) {
     covs_incl <- list(main=grep("^PC", uncorr_covs, value=T),
                       interact=NULL,
@@ -1210,14 +1210,14 @@ createFoldsByYear <- function(data.df) {
 #' @param opts 
 #' @param tunes 
 #' @param out.dir 
-#' @param sp 
+#' @param y 
 #' @param suffix 
 #'
 #' @return
 #' @export
 #'
 #' @examples
-fit_model <- function(mod, resp, form.ls, d.ls, opts, tunes, out.dir, sp, suffix=NULL) {
+fit_model <- function(mod, resp, form.ls, d.ls, opts, tunes, out.dir, y, suffix=NULL) {
   library(glue); library(caret)
   # Fit ML models
   if(mod %in% c("ENet", "RRF", "NN")) {
@@ -1230,14 +1230,14 @@ fit_model <- function(mod, resp, form.ls, d.ls, opts, tunes, out.dir, sp, suffix
                  method=ML.method,
                  trControl=opts[[resp]], 
                  tuneGrid=tunes[[mod]])
-    fit_ID <- glue("{sp}_{resp}_{mod}{ifelse(is.null(suffix),'',suffix)}")
+    fit_ID <- glue("{y}_{resp}_{mod}{ifelse(is.null(suffix),'',suffix)}")
   }
   
   # Fit Hierarchical Bayesian models
   if(mod %in% c("HBL", "HBN")) {
     library(brms)
     dir.create(glue("{out.dir}/stan/"), showWarnings=F, recursive=T)
-    fit_ID <- glue("{sp}_{resp}_{mod}{opts$prior_i}{ifelse(is.null(suffix),'',suffix)}")
+    fit_ID <- glue("{y}_{resp}_{mod}{opts$prior_i}{ifelse(is.null(suffix),'',suffix)}")
     HB.family <- switch(resp, 
                         lnN=hurdle_lognormal,
                         tl=cumulative,
@@ -1256,7 +1256,7 @@ fit_model <- function(mod, resp, form.ls, d.ls, opts, tunes, out.dir, sp, suffix
                save_model=glue("{out.dir}/stan/{fit_ID}.stan"))
   }
   saveRDS(out, glue("{out.dir}/{fit_ID}.rds"))
-  cat("Saved ", sp, "_", resp, "_", mod, " as ", out.dir, "*", suffix, "\n", sep="")
+  cat("Saved ", y, "_", resp, "_", mod, " as ", out.dir, "*", suffix, "\n", sep="")
 }
 
 
@@ -1273,26 +1273,26 @@ fit_model <- function(mod, resp, form.ls, d.ls, opts, tunes, out.dir, sp, suffix
 
 #' Summarise and aggregate predictions for a set of models
 #'
-#' @param d.sp 
+#' @param d.y 
 #' @param set 
 #' @param resp 
 #' @param fit.dir 
-#' @param sp_i.i 
+#' @param y_i.i 
 #' @param suffix 
 #'
 #' @return
 #' @export
 #'
 #' @examples
-summarise_predictions <- function(d.sp, set, resp, fit.dir, sp_i.i, suffix=NULL) {
+summarise_predictions <- function(d.y, set, resp, fit.dir, y_i.i, suffix=NULL) {
   library(tidyverse); library(glue)
-  fits.f <- dirf(fit.dir, glue("{sp_i.i$abbr[1]}_{resp}.*{ifelse(is.null(suffix),'',suffix)}"))
+  fits.f <- dirf(fit.dir, glue("{y_i.i$abbr[1]}_{resp}.*{ifelse(is.null(suffix),'',suffix)}"))
   names(fits.f) <- str_split_fixed(str_split_fixed(fits.f, glue("{resp}_"), 2)[,2], "_|\\.", 2)[,1]
   fits <- map(fits.f, readRDS)
-  preds <- imap_dfc(fits, ~get_predictions(.x, .y, resp, set, d.sp[[set]], sp_i.i))
+  preds <- imap_dfc(fits, ~get_predictions(.x, .y, resp, set, d.y[[set]], y_i.i))
   
-  out.df <- d.sp[[set]][[resp]] %>%
-    select(sp, obsid, siteid, date, {{resp}}) %>%
+  out.df <- d.y[[set]][[resp]] %>%
+    select(y, obsid, siteid, date, {{resp}}) %>%
     bind_cols(preds)
   return(out.df)
 }
@@ -1308,18 +1308,18 @@ summarise_predictions <- function(d.sp, set, resp, fit.dir, sp_i.i, suffix=NULL)
 #' @param resp 
 #' @param set 
 #' @param d.df 
-#' @param sp_i.i 
+#' @param y_i.i 
 #'
 #' @return
 #' @export
 #'
 #' @examples
-get_predictions <- function(fit, mod, resp, set, d.df, sp_i.i) {
+get_predictions <- function(fit, mod, resp, set, d.df, y_i.i) {
   library(tidyverse); library(glue); library(caret); library(brms)
   
   if(grepl("HB", mod)) {
     pred <- posterior_epred(fit, d.df[[resp]], allow_new_levels=T) %>%
-      summarise_post_preds(., resp, sp_i.i)
+      summarise_post_preds(., resp, y_i.i)
   } else {
     pred_type <- ifelse(resp=="lnN", "raw", "prob")
     if(set=="train") {
@@ -1327,7 +1327,7 @@ get_predictions <- function(fit, mod, resp, set, d.df, sp_i.i) {
     } else {
       preds <- predict(fit, d.df[[resp]], pred_type)
     }
-    pred <- summarise_ML_preds(preds, resp, sp_i.i)
+    pred <- summarise_ML_preds(preds, resp, y_i.i)
   }
   pred.df <- as_tibble(pred) %>% 
     rename_with(~glue("{mod}_{resp}_{.x}"))
@@ -1341,24 +1341,24 @@ get_predictions <- function(fit, mod, resp, set, d.df, sp_i.i) {
 #'
 #' @param preds 
 #' @param resp 
-#' @param sp_i.i 
+#' @param y_i.i 
 #'
 #' @return
 #' @export
 #'
 #' @examples
-summarise_ML_preds <- function(preds, resp, sp_i.i) {
+summarise_ML_preds <- function(preds, resp, y_i.i) {
   if(resp=="alert") {
     pred <- cbind(A1=preds[,2])
   }
   if(resp=="tl") {
-    thresh <- as.numeric(str_sub(sp_i.i$tl_thresh, -1, -1)) + 1
+    thresh <- as.numeric(str_sub(y_i.i$tl_thresh, -1, -1)) + 1
     pred <- cbind(preds, 
                   rowSums(preds[,thresh:4]))
     colnames(pred) <- c(paste0("TL", 0:3), "A1")
   }
   if(resp=="lnN") {
-    thresh <- log1p(sp_i.i$N_thresh)
+    thresh <- log1p(y_i.i$N_thresh)
     pred <- cbind(lnN=preds,
                   A1=preds>=thresh)
   }
@@ -1372,26 +1372,26 @@ summarise_ML_preds <- function(preds, resp, sp_i.i) {
 #'
 #' @param post 
 #' @param resp 
-#' @param sp_i.i 
+#' @param y_i.i 
 #'
 #' @return
 #' @export
 #'
 #' @examples
-summarise_post_preds <- function(post, resp, sp_i.i) {
+summarise_post_preds <- function(post, resp, y_i.i) {
   if(resp=="alert") {
     pred <- cbind(A1=colMeans(post))
   }
   
   if(resp=="tl") {
-    thresh <- as.numeric(str_sub(sp_i.i$tl_thresh, -1, -1)) + 1
+    thresh <- as.numeric(str_sub(y_i.i$tl_thresh, -1, -1)) + 1
     pred <- cbind(apply(post, 2:3, mean),
                   colMeans(apply(post[,,(thresh):4], 1:2, sum)))
     colnames(pred) <- c(paste0("TL", 0:3), "A1")
   }
   
   if(resp=="lnN") {
-    thresh <- log1p(sp_i.i$N_thresh)
+    thresh <- log1p(y_i.i$N_thresh)
     pred <- cbind(lnN=colMeans(post),
                   A1=colMeans(post>=thresh))
   }
@@ -1450,13 +1450,13 @@ calc_LL_wts <- function(cv.df, resp, wt.penalty=1) {
 #' @param out.ls 
 #' @param wt.ls 
 #' @param resp 
-#' @param sp_i.i 
+#' @param y_i.i 
 #'
 #' @return
 #' @export
 #'
 #' @examples
-calc_ensemble <- function(out.ls, wt.ls, resp, sp_i.i) {
+calc_ensemble <- function(out.ls, wt.ls, resp, y_i.i) {
   library(tidyverse)
   if(resp=="alert") {
     out <- left_join(
@@ -1469,7 +1469,7 @@ calc_ensemble <- function(out.ls, wt.ls, resp, sp_i.i) {
       ungroup
   }
   if(resp=="tl") {
-    thresh <- as.numeric(str_sub(sp_i.i$tl_thresh, -1, -1))
+    thresh <- as.numeric(str_sub(y_i.i$tl_thresh, -1, -1))
     alert_cols <- paste0("ens_tl_TL", thresh:3)
     out <- left_join(
       out.ls[[resp]] %>%
@@ -1486,7 +1486,7 @@ calc_ensemble <- function(out.ls, wt.ls, resp, sp_i.i) {
       mutate(ens_tl_A1=rowSums(pick(all_of(alert_cols))))
   }
   if(resp=="lnN") {
-    thresh <- log1p(sp_i.i$N_thresh)
+    thresh <- log1p(y_i.i$N_thresh)
     out <- left_join(
       out.ls[[resp]] %>%
         select(-ends_with("_A1")) %>%

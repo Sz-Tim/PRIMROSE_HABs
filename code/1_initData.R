@@ -202,6 +202,8 @@ saveRDS(cmems.df, glue("data/0_init/cmems_end_{max(cmems.df$date)}.rds"))
 #  - Precipitation
 #  - Sea surface temperature
 
+fsa.df <- readRDS("data/0_init/fsa_df.rds")
+cefas.df <- readRDS("data/0_init/cefas_df.rds")
 wrf.dir <- ifelse(.Platform$OS.type=="unix",
                   "https",#"/media/archiver/common/sa01da-work/WRF/Archive/",
                   "D:/hydroOut/WRF/Archive/")
@@ -215,6 +217,7 @@ wrf.out <- "data/0_init/wrf/"
 wrf.df <- subset_WRF("d01", wrf.out, v2_start="2019-04-01") %>%
   bind_rows(subset_WRF("d02", wrf.out, v2_start="2019-04-01")) %>%
   bind_rows(subset_WRF("d03", wrf.out, v2_start="2019-04-01")) %>%
+  filter(!is.na(date)) %>%
   arrange(date, res, i) %>%
   group_by(date) %>%
   mutate(wrf_id=row_number()) %>%
@@ -411,7 +414,7 @@ wrf_versions <- map(seq_along(dir("data/0_init/wrf", "^domain_d01")),
                       arrange(res, i) %>%
                       mutate(wrf_id=row_number()) %>%
                       st_as_sf(coords=c("lon", "lat"), remove=F, crs=4326))
-wrf.df <- readRDS(dirf("data/0_init/", "wrf_end_.*rds")) %>%
+wrf.df <- readRDS(last(dirf("data/0_init/", "wrf_end_.*rds"))) %>%
   mutate(sst=if_else(sst > -100, sst, NA_real_)) %>%
   rename(U=U_mn, V=V_mn, UV=UV_mn)
 
@@ -443,7 +446,7 @@ wrf_versions <- map(seq_along(dir("data/0_init/wrf", "^domain_d01")),
                       arrange(res, i) %>%
                       mutate(wrf_id=row_number()) %>%
                       st_as_sf(coords=c("lon", "lat"), remove=F, crs=4326))
-wrf.df <- readRDS(dirf("data/0_init/", "wrf_end_.*rds")) %>%
+wrf.df <- readRDS(last(dirf("data/0_init/", "wrf_end_.*rds"))) %>%
   mutate(sst=if_else(sst > -100, sst, NA_real_)) %>%
   rename(U=U_mn, V=V_mn, UV=UV_mn)
 
@@ -472,15 +475,15 @@ hab.ls <- load_datasets("0_init", "hab")
 hab.df <- hab.ls$site %>% select(-sin) %>%
   right_join(hab.ls$obs, by="siteid", multiple="all") %>%
   left_join(hab.ls$cmems.pt, by=c("cmems_id", "date")) %>%
-  # left_join(hab.ls$cmems.buf %>% 
-  #             pivot_wider(names_from="quadrant", values_from=-(1:3), names_sep="Dir"),
-            # by=c("siteid", "date")) %>%
+  left_join(hab.ls$cmems.buf %>%
+              pivot_wider(names_from="quadrant", values_from=-(1:3), names_sep="Dir"),
+            by=c("siteid", "date")) %>%
   mutate(wrf_id=if_else(date < "2019-04-01", wrf_id.1, wrf_id.2)) %>%
   select(-wrf_id.1, -wrf_id.2, -version) %>%
   left_join(hab.ls$wrf.pt %>% select(-version), by=c("wrf_id", "date")) %>%
-  # left_join(hab.ls$wrf.buf %>% 
-  #             pivot_wider(names_from="quadrant", values_from=-(1:3), names_sep="Dir"),
-  #           by=c("siteid", "date")) %>%
+  left_join(hab.ls$wrf.buf %>%
+              pivot_wider(names_from="quadrant", values_from=-(1:3), names_sep="Dir"),
+            by=c("siteid", "date")) %>%
   na.omit() %>%
   mutate(year=year(date),
          yday=yday(date))
@@ -492,15 +495,15 @@ tox.df <- tox.ls$site %>% select(-sin) %>%
   right_join(tox.ls$obs, by="siteid", multiple="all") %>%
   left_join(tox.ls$habAvg %>% select(-date, -siteid), by="obsid") %>%
   left_join(tox.ls$cmems.pt, by=c("cmems_id", "date")) %>%
-  # left_join(tox.ls$cmems.buf %>% 
-  #             pivot_wider(names_from="quadrant", values_from=-(1:3), names_sep="Dir"),
-  #           by=c("siteid", "date")) %>%
+  left_join(tox.ls$cmems.buf %>%
+              pivot_wider(names_from="quadrant", values_from=-(1:3), names_sep="Dir"),
+            by=c("siteid", "date")) %>%
   mutate(wrf_id=if_else(date < "2019-04-01", wrf_id.1, wrf_id.2)) %>%
   select(-wrf_id.1, -wrf_id.2, -version) %>%
   left_join(tox.ls$wrf.pt %>% select(-version), by=c("wrf_id", "date")) %>%
-  # left_join(tox.ls$wrf.buf %>% 
-  #             pivot_wider(names_from="quadrant", values_from=-(1:3), names_sep="Dir"),
-  #           by=c("siteid", "date")) %>%
+  left_join(tox.ls$wrf.buf %>%
+              pivot_wider(names_from="quadrant", values_from=-(1:3), names_sep="Dir"),
+            by=c("siteid", "date")) %>%
   na.omit() %>%
   mutate(year=year(date),
          yday=yday(date))
