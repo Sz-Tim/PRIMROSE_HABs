@@ -641,20 +641,37 @@ points2nearestcell <- function (locs=NULL, ras=NULL, layer=1,
 #'
 #' @param site.df 
 #' @param fetch.path 
-#' @param small 
-#' @param buffer 
-#' @param fun 
 #'
 #' @return
 #' @export
 #'
 #' @examples
-get_fetch <- function(site.df, fetch.path, small=T, buffer=5e2, fun=mean) {
+get_fetch <- function(site.df, fetch.path) {
   library(tidyverse); library(sf)
   site.df %>%
     st_as_sf(coords=c("lon", "lat"), crs=27700, remove=F) %>%
     mutate(fetch=raster::extract(raster(fetch.path), ., 
-                                 small=small, buffer=buffer, fun=fun)) %>%
+                                 small=T, buffer=1e2, fun=mean)) %>%
+    mutate(fetch=if_else(is.na(fetch),
+                         raster::extract(raster(fetch.path), ., 
+                                         small=T, buffer=5e2, fun=mean),
+                         fetch)) %>%
+    mutate(fetch=if_else(is.na(fetch),
+                         raster::extract(raster(fetch.path), ., 
+                                         small=T, buffer=1e3, fun=mean),
+                         fetch)) %>%
+    mutate(fetch=if_else(is.na(fetch),
+                         raster::extract(raster(fetch.path), ., 
+                                         small=T, buffer=5e3, fun=mean),
+                         fetch)) %>%
+    mutate(fetch=if_else(is.na(fetch),
+                         raster::extract(raster(fetch.path), ., 
+                                         small=T, buffer=10e3, fun=mean),
+                         fetch)) %>%
+    mutate(fetch=if_else(is.na(fetch),
+                         raster::extract(raster(fetch.path), ., 
+                                         small=T, buffer=50e3, fun=mean),
+                         fetch)) %>%
     st_drop_geometry()
 }
 
