@@ -167,18 +167,15 @@ get_CMEMS(userid=cmems_cred$userid, pw=cmems_cred$pw,
 
 rean.f <- dirf("data/0_init/cmems", "cmems.*Reanalysis.rds")
 anfo.f <- dirf("data/0_init/cmems", "cmems.*Forecast.rds")
-cmems.df <- bind_rows(
-  readRDS(rean.f[1]) %>%
-    bind_cols(map_dfc(rean.f[-1], ~readRDS(.x) %>% select(5))),
-  readRDS(anfo.f[1]) %>%
-    bind_cols(map_dfc(anfo.f[-1], ~readRDS(.x) %>% select(5)))
-  ) %>%
+cmems.df <- bind_rows(map(rean.f, readRDS) %>% reduce(full_join),
+                      map(anfo.f, readRDS) %>% reduce(full_join)) %>%
   arrange(date, lon, lat) %>%
-  group_by(date, source) %>%
-  mutate(cmems_id=row_number()) %>%
-  group_by(date, cmems_id, lon, lat) %>%
+  group_by(date, lon, lat) %>%
   summarise(across(any_of(cmems_i$var), ~mean(.x, na.rm=T))) %>%
-  ungroup
+  na.omit() %>%
+  group_by(date) %>%
+  mutate(cmems_id=row_number()) %>%
+  ungroup %>%
   mutate(chl=log1p(chl),
          kd=log(kd),
          no3=log1p(no3),
@@ -364,8 +361,9 @@ saveRDS(habAvg_tox.df, "data/0_init/tox_habAvg.rds")
 # . CMEMS  site:date ------------------------------------------------------
 cmems_i <- list(all=c("chl", "kd", "no3", "o2", "ph", "phyc", "po4", "pp"))
 cmems.df <- readRDS(last(dirf("data/0_init", "cmems_end.*rds")))
-cmems.sf <- cmems.df %>% select(date, lon, lat, cmems_id) %>% 
+cmems.sf <- cmems.df %>% 
   filter(date==min(date)) %>%
+  select(date, lon, lat, cmems_id) %>%
   st_as_sf(., coords=c("lon", "lat"), crs=4326)
 
 # HABs
