@@ -503,7 +503,7 @@ find_nearest_feature_id <- function(site.df, env.sf, id_env) {
   site.df %>%
     st_as_sf(coords=c("lon", "lat"), crs=27700, remove=F) %>%
     st_transform(4326) %>%
-    mutate(new_id=env.sf[[id_env]][st_nearest_feature(., env.sf)]) %>%
+    mutate(new_id=st_nearest_feature(., env.sf)) %>%
     rename_with(~id_env, new_id) %>%
     st_drop_geometry()
 }
@@ -526,7 +526,7 @@ find_buffer_intersect_ids <- function(site.sf, env.sf, id_env) {
     select(siteid, quadrant, geom) %>%
     st_transform(4326) %>%
     st_make_valid() %>%
-    mutate(new_id=env.sf[[id_env]][st_intersects(., env.sf)]) %>%
+    mutate(new_id=st_intersects(., env.sf)) %>%
     rename_with(~id_env, new_id) %>%
     st_drop_geometry()
 }
