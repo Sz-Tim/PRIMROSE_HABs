@@ -168,13 +168,18 @@ get_WRF(wrf.dir=wrf.dir, nDays_buffer=nDays_avg,
 
 # read and subset WRF domains to nest higher res within lower res
 wrf.out <- "data/0_init/wrf/"
-wrf.df <- subset_WRF("d01", wrf.out, v2_start="2019-04-01") %>%
-  bind_rows(subset_WRF("d02", wrf.out, v2_start="2019-04-01")) %>%
-  bind_rows(subset_WRF("d03", wrf.out, v2_start="2019-04-01")) %>%
+wrf.df <- subset_WRF("d01", wrf.out, v2_start=ymd("2019-04-01")) %>%
+  bind_rows(subset_WRF("d02", wrf.out, v2_start=ymd("2019-04-01"))) %>%
+  bind_rows(subset_WRF("d03", wrf.out, v2_start=ymd("2019-04-01"))) %>%
   filter(!is.na(date)) %>%
   arrange(date, res, i) %>%
   group_by(date) %>%
   mutate(wrf_id=row_number()) %>%
+  ungroup %>%
+  mutate(across(where(is.numeric), ~if_else(.x > 1e30, NA, .x))) %>%
+  mutate(yday=yday(date)) %>%
+  group_by(wrf_id, version, yday) %>%
+  mutate(across(where(is.numeric), zoo::na.aggregate)) %>%
   ungroup %>%
   mutate(Shortwave=log1p(Shortwave),
          Precip=log1p(pmax(Precip, 0)*3600*24*1000), # m/s to mm/day
@@ -368,9 +373,7 @@ wrf_versions <- map(seq_along(dir("data/0_init/wrf", "^domain_d01")),
                       arrange(res, i) %>%
                       mutate(wrf_id=row_number()) %>%
                       st_as_sf(coords=c("lon", "lat"), remove=F, crs=4326))
-wrf.df <- readRDS(last(dirf("data/0_init/", "wrf_end_.*rds"))) %>%
-  mutate(sst=if_else(sst > -100, sst, NA_real_)) %>%
-  rename(U=U_mn, V=V_mn, UV=UV_mn)
+wrf.df <- readRDS(last(dirf("data/0_init/", "wrf_end_.*rds"))) 
 
 # HABs
 site_hab.df <- readRDS("data/site_hab_df.rds") %>% select(-starts_with("wrf_id"))
@@ -400,9 +403,7 @@ wrf_versions <- map(seq_along(dir("data/0_init/wrf", "^domain_d01")),
                       arrange(res, i) %>%
                       mutate(wrf_id=row_number()) %>%
                       st_as_sf(coords=c("lon", "lat"), remove=F, crs=4326))
-wrf.df <- readRDS(last(dirf("data/0_init/", "wrf_end_.*rds"))) %>%
-  mutate(sst=if_else(sst > -100, sst, NA_real_)) %>%
-  rename(U=U_mn, V=V_mn, UV=UV_mn)
+wrf.df <- readRDS(last(dirf("data/0_init/", "wrf_end_.*rds"))) 
 
 # HABs
 site.buffer_hab <- map(wrf_versions, 
