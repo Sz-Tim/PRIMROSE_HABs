@@ -11,6 +11,72 @@
 
 # Data preparation --------------------------------------------------------
 
+read_and_clean_sites <- function(url_sites) {
+  url(url_sites) %>%
+    readLines(warn=F) %>%
+    fromJSON() %>% as_tibble %>%
+    filter(east < 2e6) %>%
+    mutate(fromdate=date(fromdate), todate=date(todate)) %>%
+    rowwise() %>%
+    mutate(date=list(seq(fromdate, todate, by=1))) %>%
+    ungroup %>%
+    select(sin, east, north, date) %>%
+    unnest(date)
+}
+
+
+
+read_and_clean_fsa <- function(url_fsa, hab_i, sites, dateStart="2016-01-01") {
+  url(url_fsa) %>% 
+    readLines(warn=F) %>%
+    fromJSON() %>% as_tibble %>% 
+    filter(!is.na(date_collected)) %>%
+    mutate(datetime_collected=as_datetime(date_collected),
+           date=date(datetime_collected)) %>%
+    filter(date > dateStart) %>%
+    mutate(across(any_of(hab_i$full), ~na_if(.x, -99))) %>%
+    group_by(sin) %>% mutate(N=n()) %>% ungroup %>% filter(N > 2) %>%
+    select(oid, sin, date, easting, northing, all_of(hab_i$full)) %>%
+    left_join(sites, by=c("sin", "date")) %>%
+    mutate(east=if_else(is.na(east), easting, east),
+           north=if_else(is.na(north), northing, north)) %>%
+    rename(obsid=oid) %>%
+    group_by(sin) %>% mutate(lon=median(east), lat=median(north)) %>% ungroup %>%
+    mutate(siteid=as.numeric(factor(sin))) %>%
+    rename(all_of(setNames(hab_i$full, hab_i$abbr))) %>%
+    select(obsid, lon, lat, sin, siteid, date, all_of(hab_i$abbr)) %>%
+    arrange(siteid, date) 
+}
+
+
+read_and_clean_cefas <- function(url_cefas, tox_i, sites, dateStart="2016-01-01") {
+  url(url_cefas) %>% 
+    readLines(warn=F) %>%
+    fromJSON() %>% as_tibble %>% 
+    filter(!is.na(date_collected) & sin != "-99") %>%
+    mutate(datetime_collected=as_datetime(date_collected),
+           date=date(datetime_collected)) %>%
+    filter(date > dateStart) %>%
+    mutate(across(any_of(tox_i$full), ~if_else(.x == -99, NA_real_, .x)),
+           across(any_of(tox_i$full), ~if_else(.x < 0, 0, .x))) %>%
+    group_by(sin, date) %>% slice_head(n=1) %>% ungroup %>%
+    group_by(sin) %>% mutate(N=n()) %>% ungroup %>% filter(N > 2) %>%
+    select(oid, sin, date, easting, northing, all_of(tox_i$full)) %>%
+    left_join(sites, by=c("sin", "date")) %>%
+    mutate(east=if_else(is.na(east), easting, east),
+           north=if_else(is.na(north), northing, north)) %>%
+    rename(obsid=oid) %>%
+    group_by(sin) %>% mutate(lon=median(east), lat=median(north)) %>% ungroup %>%
+    filter(lat > 500000) %>%
+    mutate(siteid=as.numeric(factor(sin))) %>%
+    rename(all_of(setNames(tox_i$full, tox_i$abbr))) %>%
+    select(obsid, lon, lat, sin, siteid, date, all_of(tox_i$abbr)) %>%
+    arrange(siteid, date)
+}
+
+
+
+
 
 #' Download CMEMS layers
 #'

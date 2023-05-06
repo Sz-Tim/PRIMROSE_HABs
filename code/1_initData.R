@@ -70,65 +70,23 @@ tl_tox <- read_csv("data/tl_thresholds_tox.csv") %>%
 
 # sampling locations and dates --------------------------------------------
 
-sites <- fromJSON(readLines(url(urls$sites), warn=F)) %>% as_tibble %>%
-  filter(east < 2e6) %>%
-  mutate(fromdate=date(fromdate), todate=date(todate)) %>%
-  rowwise() %>%
-  mutate(date=list(seq(fromdate, todate, by=1))) %>%
-  ungroup %>%
-  select(sin, east, north, date) %>%
-  unnest(date)
+sites <- read_and_clean_sites(urls$sites)
 
-fsa.df <- fromJSON(readLines(url(urls$fsa), warn=F)) %>% as_tibble %>% 
-  filter(!is.na(date_collected)) %>%
-  mutate(datetime_collected=as_datetime(date_collected),
-         date=date(datetime_collected)) %>%
-  filter(date > dateStart) %>%
-  mutate(across(any_of(hab_i$full), ~na_if(.x, -99))) %>%
-  group_by(sin) %>% mutate(N=n()) %>% ungroup %>% filter(N > 2) %>%
-  select(oid, sin, date, easting, northing, all_of(hab_i$full)) %>%
-  left_join(sites, by=c("sin", "date")) %>%
-  mutate(east=if_else(is.na(east), easting, east),
-         north=if_else(is.na(north), northing, north)) %>%
-  rename(obsid=oid) %>%
-  group_by(sin) %>% mutate(lon=median(east), lat=median(north)) %>% ungroup %>%
-  mutate(siteid=as.numeric(factor(sin))) %>%
-  rename(all_of(setNames(hab_i$full, hab_i$abbr))) %>%
-  select(obsid, lon, lat, sin, siteid, date, all_of(hab_i$abbr)) %>%
-  arrange(siteid, date)
+fsa.df <- read_and_clean_fsa(urls$fsa, hab_i, sites, dateStart)
+fsa.df %>% select(-lon, -lat, -sin) %>%
+  saveRDS("data/0_init/fsa_df.rds")
 site_hab.df <- fsa.df %>%  
   select(siteid, sin, lon, lat) %>%
   group_by(siteid) %>% slice_head(n=1) %>% ungroup
 saveRDS(site_hab.df, "data/site_hab_df.rds")
-fsa.df <- fsa.df %>% select(-lon, -lat, -sin)
-saveRDS(fsa.df, "data/0_init/fsa_df.rds")
 
-cefas.df <- fromJSON(readLines(url(urls$cefas), warn=F)) %>% as_tibble %>% 
-  filter(!is.na(date_collected) & sin != "-99") %>%
-  mutate(datetime_collected=as_datetime(date_collected),
-         date=date(datetime_collected)) %>%
-  filter(date > dateStart) %>%
-  mutate(across(any_of(tox_i$full), ~if_else(.x == -99, NA_real_, .x)),
-         across(any_of(tox_i$full), ~if_else(.x < 0, 0, .x))) %>%
-  group_by(sin, date) %>% slice_head(n=1) %>% ungroup %>%
-  group_by(sin) %>% mutate(N=n()) %>% ungroup %>% filter(N > 2) %>%
-  select(oid, sin, date, easting, northing, all_of(tox_i$full)) %>%
-  left_join(sites, by=c("sin", "date")) %>%
-  mutate(east=if_else(is.na(east), easting, east),
-         north=if_else(is.na(north), northing, north)) %>%
-  rename(obsid=oid) %>%
-  group_by(sin) %>% mutate(lon=median(east), lat=median(north)) %>% ungroup %>%
-  filter(lat > 500000) %>%
-  mutate(siteid=as.numeric(factor(sin))) %>%
-  rename(all_of(setNames(tox_i$full, tox_i$abbr))) %>%
-  select(obsid, lon, lat, sin, siteid, date, all_of(tox_i$abbr)) %>%
-  arrange(siteid, date)
+cefas.df <- read_and_clean_cefas(urls$cefas, tox_i, sites, dateStart)
+cefas.df %>% select(-lon, -lat, -sin) %>%
+  saveRDS("data/0_init/cefas_df.rds")
 site_tox.df <- cefas.df %>%  
   select(siteid, sin, lon, lat) %>%
   group_by(siteid) %>% slice_head(n=1) %>% ungroup
 saveRDS(site_tox.df, "data/site_tox_df.rds")
-cefas.df <- cefas.df %>% select(-lon, -lat, -sin)
-saveRDS(cefas.df, "data/0_init/cefas_df.rds")
 
 
 
