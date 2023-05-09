@@ -1036,7 +1036,9 @@ load_datasets <- function(sub.dir, target) {
     cmems.pt=readRDS(glue("data/{sub.dir}/cmems_sitePt_{target}.rds")),
     cmems.buf=readRDS(glue("data/{sub.dir}/cmems_siteBufferNSEW_{target}.rds")),
     wrf.pt=readRDS(glue("data/{sub.dir}/wrf_sitePt_{target}.rds")),
-    wrf.buf=readRDS(glue("data/{sub.dir}/wrf_siteBufferNSEW_{target}.rds"))
+    wrf.buf=readRDS(glue("data/{sub.dir}/wrf_siteBufferNSEW_{target}.rds")),
+    fsa=readRDS(glue("data/{sub.dir}/fsa_df.rds")),
+    cefas=readRDS(glue("data/{sub.dir}/cefas_df.rds"))
   )
   if(target=="tox") {
     d.ls$habAvg <- readRDS(glue("data/{sub.dir}/tox_habAvg.rds"))

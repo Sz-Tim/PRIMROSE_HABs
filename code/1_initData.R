@@ -440,9 +440,9 @@ hab.df <- hab.ls$site %>% select(-sin) %>%
               pivot_wider(names_from="quadrant", values_from=-(1:3), names_sep="Dir"),
             by=c("siteid", "date")) %>%
   mutate(year=year(date),
-         yday=yday(date)) %>%
-  select(-contains("sst")) 
-saveRDS(hab.df, "data/0_init/data_hab_all_withNA.rds")
+         yday=yday(date))  %>%
+  na.omit
+saveRDS(hab.df, "data/0_init/data_hab_all.rds")
 
 # toxins
 tox.ls <- load_datasets("0_init", "tox")
@@ -460,9 +460,9 @@ tox.df <- tox.ls$site %>% select(-sin) %>%
               pivot_wider(names_from="quadrant", values_from=-(1:3), names_sep="Dir"),
             by=c("siteid", "date")) %>%
   mutate(year=year(date),
-         yday=yday(date)) %>%
-  select(-contains("sst")) 
-saveRDS(tox.df, "data/0_init/data_tox_all_withNA.rds")
+         yday=yday(date)) %>% 
+  na.omit
+saveRDS(tox.df, "data/0_init/data_tox_all.rds")
 
 # variable names
 grep("cmems_id|date|siteid|version", 
