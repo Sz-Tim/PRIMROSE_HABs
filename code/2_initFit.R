@@ -109,12 +109,16 @@ foreach(i=seq_along(train.ls),
   
   covs <- filter_corr_covs(all_covs, d.y, covs_exclude)
   
+  if(any(table(d.y$train$tl$tl)==0)) {
+    responses <- grep("tl", responses, invert=T, value=T)
+  }
+  
   # formulas
   smooths <- list(b=glue("b{c(covs$main, covs$interact)}"),
                   p=glue("p{c(covs$main, covs$interact)}"))
   form.ls <- map(
     responses,
-    ~list(HBL=make_HB_formula(.x, c(covs$main, covs$interact, covs$spacetime)),
+    ~list(HBL=make_HB_formula(.x, c(covs$main, covs$interact)),
           HBN=make_HB_formula(.x, c(covs$main, covs$interact), sTerms=smooths),
           ML=formula(glue("{.x} ~ {paste(unlist(covs), collapse='+')}"))
     )
@@ -163,15 +167,21 @@ foreach(i=seq_along(train.ls),
   walk(responses, ~fit_model("HBN", .x, form.ls, d.y$train, HB.i, priors, fit.dir, y))
 
   fit.ls <- map(responses, ~summarise_predictions(d.y, "train", .x, fit.dir, y_i.i))
-  fit.ls$alert <- fit.ls$alert %>%
-    full_join(fit.ls$tl %>% select(y, obsid, ends_with("_A1"))) %>%
-    full_join(fit.ls$lnN %>% select(y, obsid, ends_with("_A1")))
+  fit.ls$alert <- full_join(
+    fit.ls$alert, 
+    fit.ls[-which(responses=="alert")] %>%
+      map(~.x %>% select(y, obsid, siteid, date, ends_with("_A1"))) %>%
+      reduce(full_join)
+  )
   saveRDS(fit.ls, glue("{out.dir}/{y}_fit_ls.rds"))
-
+  
   oos.ls <- map(responses, ~summarise_predictions(d.y, "test", .x, fit.dir, y_i.i))
-  oos.ls$alert <- oos.ls$alert %>%
-    full_join(oos.ls$tl %>% select(y, obsid, ends_with("_A1"))) %>%
-    full_join(oos.ls$lnN %>% select(y, obsid, ends_with("_A1")))
+  oos.ls$alert <- full_join(
+    oos.ls$alert, 
+    oos.ls[-which(responses=="alert")] %>%
+      map(~.x %>% select(y, obsid, siteid, date, ends_with("_A1"))) %>%
+      reduce(full_join)
+  )
   saveRDS(oos.ls, glue("{out.dir}/{y}_oos_ls.rds"))
   
   
@@ -200,9 +210,9 @@ foreach(i=seq_along(train.ls),
     
     # predict
     cv.ls <- map(responses, ~summarise_predictions(d.cv, "test", .x, cv.dir, y_i.i, yr_))
-    cv.ls$alert <- cv.ls$alert %>%
-      full_join(cv.ls$tl %>% select(y, obsid, ends_with("_A1"))) %>%
-      full_join(cv.ls$lnN %>% select(y, obsid, ends_with("_A1")))
+    cv.ls$alert <- oos.ls %>%
+      map(~.x %>% select(y, obsid, siteid, date, ends_with("_A1"))) %>%
+      reduce(full_join)
     saveRDS(cv.ls, glue("{cv.dir}/{y}_CV{yr_}.rds"))
   }
   
@@ -219,14 +229,20 @@ foreach(i=seq_along(train.ls),
   wt.ls <- imap(cv.ls, ~calc_LL_wts(.x, .y))
   
   fit.ls <- map(responses, ~calc_ensemble(fit.ls, wt.ls, .x, y_i.i))
-  fit.ls$alert <- fit.ls$alert %>%
-    mutate(ens_tl_A1=fit.ls$tl$ens_tl_A1,
-           ens_lnN_A1=fit.ls$lnN$ens_lnN_A1)
+  fit.ls$alert <- full_join(
+    fit.ls[[1]], 
+    fit.ls[-1] %>%
+      map(~.x %>% select(y, obsid, siteid, date, matches("ens_.*_A1"))) %>%
+      reduce(full_join)
+    )
   
   oos.ls <- map(responses, ~calc_ensemble(oos.ls, wt.ls, .x, y_i.i))
-  oos.ls$alert <- oos.ls$alert %>%
-    mutate(ens_tl_A1=oos.ls$tl$ens_tl_A1,
-           ens_lnN_A1=oos.ls$lnN$ens_lnN_A1)
+  oos.ls$alert <- full_join(
+    oos.ls[[1]], 
+    oos.ls[-1] %>%
+      map(~.x %>% select(y, obsid, siteid, date, matches("ens_.*_A1"))) %>%
+      reduce(full_join)
+  )
   
   saveRDS(fit.ls, glue("{out.dir}/{y}_fit_ls.rds"))
   saveRDS(oos.ls, glue("{out.dir}/{y}_oos_ls.rds"))
