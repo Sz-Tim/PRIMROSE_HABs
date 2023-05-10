@@ -20,9 +20,10 @@ source("code/00_fn.R")
 nDays_avg <- 14
 dateStart <- "2016-01-01"
 UK_bbox <- list(xmin=-11, xmax=3, ymin=49, ymax=61.5)
-urls <- c(fsa="fsa_counts", 
+urls <- c(fsa="fsa_counts",
+          fsa_sites="fsa_sites", 
           cefas="cefas_counts",
-          sites="all_sites") %>%
+          cefas_sites="cefas_sites") %>%
   map(~glue("http://varro:3001/{.x}"))
 
 hab_i <- read_csv("data/i_hab.csv")
@@ -70,9 +71,11 @@ tl_tox <- read_csv("data/tl_thresholds_tox.csv") %>%
 
 # sampling locations and dates --------------------------------------------
 
-sites <- read_and_clean_sites(urls$sites)
+fsa_sites <- read_and_clean_sites(urls$fsa_sites, dateStart)
+cefas_sites <- read_and_clean_sites(urls$cefas_sites, dateStart)
 
-fsa.df <- read_and_clean_fsa(urls$fsa, hab_i, sites, dateStart)
+fsa.df <- read_and_clean_fsa(urls$fsa, hab_i, fsa_sites, dateStart) %>%
+  mutate(siteid=as.numeric(factor(sin)))
 fsa.df %>% select(-lon, -lat, -sin) %>%
   saveRDS("data/0_init/fsa_df.rds")
 site_hab.df <- fsa.df %>%  
@@ -80,7 +83,8 @@ site_hab.df <- fsa.df %>%
   group_by(siteid) %>% slice_head(n=1) %>% ungroup
 saveRDS(site_hab.df, "data/site_hab_df.rds")
 
-cefas.df <- read_and_clean_cefas(urls$cefas, tox_i, sites, dateStart)
+cefas.df <- read_and_clean_cefas(urls$cefas, tox_i, cefas_sites, dateStart) %>%
+  mutate(siteid=as.numeric(factor(sin)))
 cefas.df %>% select(-lon, -lat, -sin) %>%
   saveRDS("data/0_init/cefas_df.rds")
 site_tox.df <- cefas.df %>%  

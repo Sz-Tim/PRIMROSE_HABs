@@ -42,7 +42,7 @@ read_and_clean_fsa <- function(url_fsa, hab_i, sites, dateStart="2016-01-01") {
     filter(!is.na(date_collected)) %>%
     mutate(datetime_collected=as_datetime(date_collected),
            date=date(datetime_collected)) %>%
-    filter(date > dateStart) %>%
+    filter(date >= dateStart) %>%
     mutate(across(any_of(hab_i$full), ~na_if(.x, -99))) %>%
     group_by(sin) %>% mutate(N=n()) %>% ungroup %>% filter(N > 2) %>%
     select(oid, sin, date, easting, northing, all_of(hab_i$full)) %>%
@@ -51,10 +51,9 @@ read_and_clean_fsa <- function(url_fsa, hab_i, sites, dateStart="2016-01-01") {
            north=if_else(is.na(north), northing, north)) %>%
     rename(obsid=oid) %>%
     group_by(sin) %>% mutate(lon=median(east), lat=median(north)) %>% ungroup %>%
-    mutate(siteid=as.numeric(factor(sin))) %>%
     rename(all_of(setNames(hab_i$full, hab_i$abbr))) %>%
-    select(obsid, lon, lat, sin, siteid, date, all_of(hab_i$abbr)) %>%
-    arrange(siteid, date) 
+    select(obsid, lon, lat, sin, date, all_of(hab_i$abbr)) %>%
+    arrange(sin, date) 
 }
 
 
@@ -65,7 +64,7 @@ read_and_clean_cefas <- function(url_cefas, tox_i, sites, dateStart="2016-01-01"
     filter(!is.na(date_collected) & sin != "-99") %>%
     mutate(datetime_collected=as_datetime(date_collected),
            date=date(datetime_collected)) %>%
-    filter(date > dateStart) %>%
+    filter(date >= dateStart) %>%
     mutate(across(any_of(tox_i$full), ~if_else(.x == -99, NA_real_, .x)),
            across(any_of(tox_i$full), ~if_else(.x < 0, 0, .x))) %>%
     group_by(sin, date) %>% slice_head(n=1) %>% ungroup %>%
@@ -77,10 +76,9 @@ read_and_clean_cefas <- function(url_cefas, tox_i, sites, dateStart="2016-01-01"
     rename(obsid=oid) %>%
     group_by(sin) %>% mutate(lon=median(east), lat=median(north)) %>% ungroup %>%
     filter(lat > 500000) %>%
-    mutate(siteid=as.numeric(factor(sin))) %>%
     rename(all_of(setNames(tox_i$full, tox_i$abbr))) %>%
-    select(obsid, lon, lat, sin, siteid, date, all_of(tox_i$abbr)) %>%
-    arrange(siteid, date)
+    select(obsid, lon, lat, sin, date, all_of(tox_i$abbr)) %>%
+    arrange(sin, date)
 }
 
 
