@@ -11,17 +11,26 @@
 
 # Data preparation --------------------------------------------------------
 
-read_and_clean_sites <- function(url_sites) {
+read_and_clean_sites <- function(url_sites, dateStart) {
   url(url_sites) %>%
     readLines(warn=F) %>%
     fromJSON() %>% as_tibble %>%
-    filter(east < 2e6) %>%
+    filter(east < 2e6,
+           sin != "-99",
+           !is.na(fromdate) & !is.na(todate),
+           fromdate != todate,
+           todate >= dateStart) %>%
     mutate(fromdate=date(fromdate), todate=date(todate)) %>%
     rowwise() %>%
     mutate(date=list(seq(fromdate, todate, by=1))) %>%
     ungroup %>%
+    arrange(sin, fromdate) %>%
     select(sin, east, north, date) %>%
-    unnest(date)
+    unnest(date) %>%
+    arrange(sin, date) %>%
+    group_by(sin, date) %>%
+    slice_head(n=1) %>%
+    ungroup
 }
 
 
@@ -1104,8 +1113,8 @@ prep_recipe <- function(train.df, response, covsExclude="NA") {
     step_rename(ydayCos=yday_cos_1, ydaySin=yday_sin_1) %>%
     step_mutate_at(lon, lat, fn=list(z=~.)) %>%
     step_interact(term=~ydaySin:ydayCos, sep="X") %>%
-    # step_interact(terms=~UWk:fetch:matches("Dir[EW]"), sep="X") %>%
-    # step_interact(terms=~VWk:fetch:matches("Dir[NS]"), sep="X") %>%
+    step_interact(terms=~UWk:fetch:matches("Dir[EW]"), sep="X") %>%
+    step_interact(terms=~VWk:fetch:matches("Dir[NS]"), sep="X") %>%
     step_interact(terms=~lon_z:lat_z, sep="X") %>%
     step_YeoJohnson(all_predictors()) %>%
     step_normalize(all_predictors()) %>%
