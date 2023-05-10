@@ -166,7 +166,6 @@ wrf.dir <- ifelse(.Platform$OS.type=="unix",
                   "https",#"/media/archiver/common/sa01da-work/WRF/Archive/",
                   "D:/hydroOut/WRF/Archive/")
 get_WRF(wrf.dir=wrf.dir, nDays_buffer=nDays_avg, 
-        # dateRng=c(ymd("2016-01-07"), max(c(fsa.df$date, cefas.df$date))),
         dateRng=range(c(fsa.df$date, cefas.df$date)), 
         out.dir="data/00_env/")
 
