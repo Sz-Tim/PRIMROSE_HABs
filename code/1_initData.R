@@ -76,7 +76,7 @@ cefas_sites <- read_and_clean_sites(urls$cefas_sites, dateStart)
 
 fsa.df <- read_and_clean_fsa(urls$fsa, hab_i, fsa_sites, dateStart) %>%
   mutate(siteid=as.numeric(factor(sin)))
-fsa.df %>% select(-lon, -lat, -sin) %>%
+fsa.df %>% select(-lon, -lat) %>%
   saveRDS("data/0_init/fsa_df.rds")
 site_hab.df <- fsa.df %>%  
   select(siteid, sin, lon, lat) %>%
@@ -85,7 +85,7 @@ saveRDS(site_hab.df, "data/site_hab_df.rds")
 
 cefas.df <- read_and_clean_cefas(urls$cefas, tox_i, cefas_sites, dateStart) %>%
   mutate(siteid=as.numeric(factor(sin)))
-cefas.df %>% select(-lon, -lat, -sin) %>%
+cefas.df %>% select(-lon, -lat) %>%
   saveRDS("data/0_init/cefas_df.rds")
 site_tox.df <- cefas.df %>%  
   select(siteid, sin, lon, lat) %>%
