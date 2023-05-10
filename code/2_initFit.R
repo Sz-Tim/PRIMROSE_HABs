@@ -56,24 +56,15 @@ covs_exclude <- switch(covSet,
                        noInt="Xfetch",
                        noDtDeltaInt="Xfetch|Dt|Delta")
 
-obs_hab.ls <- readRDS("data/0_init/data_hab_all.rds") %>%
+obs.ls <- map_dfr(dirf("data/0_init", "data_.*_all.rds"), readRDS) %>%
   select(all_of(col_metadata), all_of(col_resp), 
          "alert1", "alert2", any_of(unname(unlist(all_covs)))) %>%
   mutate(across(starts_with("alert"), ~factor(.x)),
          across(starts_with("tl"), ~factor(.x, ordered=T))) %>%
   group_by(y) %>%
   group_split()
-obs_tox.ls <- readRDS("data/0_init/data_tox_all.rds") %>%
-  select(all_of(col_metadata), all_of(col_resp),
-         "alert1", "alert2", any_of(unname(unlist(all_covs)))) %>%
-  mutate(across(starts_with("alert"), ~factor(.x)),
-         across(starts_with("tl"), ~factor(.x, ordered=T))) %>%
-  group_by(y) %>%
-  group_split()
-train.ls <- c(map(obs_hab.ls, ~.x %>% filter(date < test_startDate)),
-              map(obs_tox.ls, ~.x %>% filter(date < test_startDate)))
-test.ls <- c(map(obs_hab.ls, ~.x %>% filter(date >= test_startDate)),
-             map(obs_tox.ls, ~.x %>% filter(date >= test_startDate)))
+train.ls <- map(obs.ls, ~.x %>% filter(date < test_startDate))
+test.ls <- map(obs.ls, ~.x %>% filter(date > test_startDate))
 
 
 
