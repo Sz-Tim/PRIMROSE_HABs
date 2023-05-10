@@ -15,7 +15,8 @@ read_and_clean_sites <- function(url_sites, dateStart) {
   url(url_sites) %>%
     readLines(warn=F) %>%
     fromJSON() %>% as_tibble %>%
-    filter(east < 2e6,
+    filter(east < 7e5,
+           north < 125e4,
            sin != "-99",
            !is.na(fromdate) & !is.na(todate),
            fromdate != todate,
