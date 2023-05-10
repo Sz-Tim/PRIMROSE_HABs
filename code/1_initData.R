@@ -121,10 +121,10 @@ cefas.df <- readRDS("data/0_init/cefas_df.rds")
 get_CMEMS(userid=cmems_cred$userid, pw=cmems_cred$pw, 
           i.df=cmems_i, bbox=UK_bbox, 
           nDays_buffer=nDays_avg, dateRng=range(c(fsa.df$date, cefas.df$date)), 
-          out.dir="data/0_init/cmems/")
+          out.dir="data/00_env/cmems/")
 
-rean.f <- dirf("data/0_init/cmems", "cmems.*Reanalysis.rds")
-anfo.f <- dirf("data/0_init/cmems", "cmems.*Forecast.rds")
+rean.f <- dirf("data/00_env/cmems", "cmems.*Reanalysis.rds")
+anfo.f <- dirf("data/00_env/cmems", "cmems.*Forecast.rds")
 cmems.df <- bind_rows(map(rean.f, readRDS) %>% reduce(full_join),
                       map(anfo.f, readRDS) %>% reduce(full_join)) %>%
   arrange(date, lon, lat) %>%
@@ -164,10 +164,10 @@ wrf.dir <- ifelse(.Platform$OS.type=="unix",
 get_WRF(wrf.dir=wrf.dir, nDays_buffer=nDays_avg, 
         # dateRng=c(ymd("2016-01-07"), max(c(fsa.df$date, cefas.df$date))),
         dateRng=range(c(fsa.df$date, cefas.df$date)), 
-        out.dir="data/0_init/")
+        out.dir="data/00_env/")
 
 # read and subset WRF domains to nest higher res within lower res
-wrf.out <- "data/0_init/wrf/"
+wrf.out <- "data/00_env/wrf/"
 wrf.df <- subset_WRF("d01", wrf.out, v2_start=ymd("2019-04-01")) %>%
   bind_rows(subset_WRF("d02", wrf.out, v2_start=ymd("2019-04-01"))) %>%
   bind_rows(subset_WRF("d03", wrf.out, v2_start=ymd("2019-04-01"))) %>%
