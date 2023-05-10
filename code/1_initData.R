@@ -427,42 +427,11 @@ saveRDS(wrf.buffer_tox, "data/0_init/wrf_siteBufferNSEW_tox.rds")
 
 # HABs
 hab.ls <- load_datasets("0_init", "hab")
-hab.df <- hab.ls$site %>% select(-sin) %>%
-  right_join(hab.ls$obs, by="siteid", multiple="all") %>%
-  left_join(hab.ls$cmems.pt, by=c("cmems_id", "date")) %>%
-  left_join(hab.ls$cmems.buf %>%
-              pivot_wider(names_from="quadrant", values_from=-(1:3), names_sep="Dir"),
-            by=c("siteid", "date")) %>%
-  mutate(wrf_id=if_else(date < "2019-04-01", wrf_id.1, wrf_id.2)) %>%
-  select(-wrf_id.1, -wrf_id.2, -version) %>%
-  left_join(hab.ls$wrf.pt %>% select(-version), by=c("wrf_id", "date")) %>%
-  left_join(hab.ls$wrf.buf %>%
-              pivot_wider(names_from="quadrant", values_from=-(1:3), names_sep="Dir"),
-            by=c("siteid", "date")) %>%
-  mutate(year=year(date),
-         yday=yday(date))  %>%
-  na.omit
-saveRDS(hab.df, "data/0_init/data_hab_all.rds")
+saveRDS(hab.ls$compiled, "data/0_init/data_hab_all.rds")
 
 # toxins
 tox.ls <- load_datasets("0_init", "tox")
-tox.df <- tox.ls$site %>% select(-sin) %>%
-  right_join(tox.ls$obs, by="siteid", multiple="all") %>%
-  left_join(tox.ls$habAvg %>% select(-date, -siteid), by="obsid") %>%
-  left_join(tox.ls$cmems.pt, by=c("cmems_id", "date")) %>%
-  left_join(tox.ls$cmems.buf %>%
-              pivot_wider(names_from="quadrant", values_from=-(1:3), names_sep="Dir"),
-            by=c("siteid", "date")) %>%
-  mutate(wrf_id=if_else(date < "2019-04-01", wrf_id.1, wrf_id.2)) %>%
-  select(-wrf_id.1, -wrf_id.2, -version) %>%
-  left_join(tox.ls$wrf.pt %>% select(-version), by=c("wrf_id", "date")) %>%
-  left_join(tox.ls$wrf.buf %>%
-              pivot_wider(names_from="quadrant", values_from=-(1:3), names_sep="Dir"),
-            by=c("siteid", "date")) %>%
-  mutate(year=year(date),
-         yday=yday(date)) %>% 
-  na.omit
-saveRDS(tox.df, "data/0_init/data_tox_all.rds")
+saveRDS(tox.ls$compiled, "data/0_init/data_tox_all.rds")
 
 # variable names
 grep("cmems_id|date|siteid|version", 
@@ -480,4 +449,23 @@ grep("wrf_id|date|siteid|version",
   sort %>%
   saveRDS("data/wrf_vars.rds")
 
+obs_end <- list(
+  hab=max(hab.ls$obs$date),
+  tox=max(tox.ls$obs$date),
+  cmems=ymd(str_sub(dir("data/0_init", "cmems_end"), 11, 20)),
+  wrf=ymd(str_sub(dir("data/0_init", "wrf_end"), 9, 18))
+)
+saveRDS(obs_end, "data/0_init/obs_end.rds")
+
+write_to_current <- T
+if(write_to_current) {
+  file.copy(dirf("data/0_init/", "fsa_df"), "data/1_current/")
+  file.copy(dirf("data/0_init/", "cefas_df"), "data/1_current/")
+  file.copy(dirf("data/0_init/", "_obs.rds"), "data/1_current/")
+  file.copy(dirf("data/0_init/", "_habAvg.rds"), "data/1_current/")
+  file.copy(dirf("data/0_init/", "_sitePt_"), "data/1_current/")
+  file.copy(dirf("data/0_init/", "_siteBufferNSEW_"), "data/1_current/")
+  file.copy(dirf("data/0_init/", "data_.*_all.rds"), "data/1_current/")
+  file.copy(dirf("data/0_init/", "obs_end"), "data/1_current/")
+}
 

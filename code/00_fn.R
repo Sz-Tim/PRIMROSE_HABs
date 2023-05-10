@@ -1043,6 +1043,28 @@ load_datasets <- function(sub.dir, target) {
   if(target=="tox") {
     d.ls$habAvg <- readRDS(glue("data/{sub.dir}/tox_habAvg.rds"))
   }
+  
+  d.ls$compiled <- d.ls$site %>% select(-sin) %>%
+    right_join(d.ls$obs, by="siteid", multiple="all") %>%
+    left_join(d.ls$cmems.pt, by=c("cmems_id", "date")) %>%
+    left_join(d.ls$cmems.buf %>%
+                pivot_wider(names_from="quadrant", values_from=-(1:3), names_sep="Dir"),
+              by=c("siteid", "date")) %>%
+    mutate(wrf_id=if_else(date < "2019-04-01", wrf_id.1, wrf_id.2)) %>%
+    select(-wrf_id.1, -wrf_id.2, -version) %>%
+    left_join(d.ls$wrf.pt %>% select(-version), by=c("wrf_id", "date")) %>%
+    left_join(d.ls$wrf.buf %>%
+                pivot_wider(names_from="quadrant", values_from=-(1:3), names_sep="Dir"),
+              by=c("siteid", "date")) %>%
+    mutate(year=year(date),
+           yday=yday(date))
+  if(target=="tox") {
+    d.ls$compiled <- d.ls$compiled %>%
+      left_join(d.ls$habAvg %>% select(-date, -siteid), by="obsid")
+  }
+  d.ls$compiled <- d.ls$compiled %>% 
+    na.omit
+  
   return(d.ls)
 }
 
