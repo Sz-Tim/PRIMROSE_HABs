@@ -1329,42 +1329,61 @@ createFoldsByYear <- function(data.df) {
 #'
 #' @examples
 fit_model <- function(mod, resp, form.ls, d.ls, opts, tunes, out.dir, y, suffix=NULL) {
-  library(glue); library(caret)
+  library(glue); library(tidymodels)
+  dir.create(glue("{out.dir}/meta/"), showWarnings=F, recursive=T)
   # Fit ML models
-  if(mod %in% c("ENet", "RRF", "NN")) {
-    ML.method <- switch(mod,
-                        ENet="glmnet",
-                        RRF="RRFglobal",
-                        NN="mlpML")
-    out <- train(form.ls[[resp]]$ML, 
-                 data=d.ls[[resp]],
-                 method=ML.method,
-                 trControl=opts[[resp]], 
-                 tuneGrid=tunes[[mod]])
+  if(mod %in% c("ENet", "KNN", "RF", "NN")) {
     fit_ID <- glue("{y}_{resp}_{mod}{ifelse(is.null(suffix),'',suffix)}")
+    ML_spec <- switch(paste0(resp, mod),
+                      alertENet=logistic_reg(penalty=tune(), mixture=tune()) %>%
+                        set_engine("glmnet") %>% set_mode("classification"),
+                      tlENet=multinom_reg(penalty=tune(), mixture=tune()) %>%
+                        set_engine("glmnet") %>% set_mode("classification"),
+                      alertRF=rand_forest(trees=tune(), min_n=tune()) %>%
+                        set_engine("randomForest") %>% set_mode("classification"),
+                      tlRF=rand_forest(trees=tune(), min_n=tune()) %>%
+                        set_engine("randomForest") %>% set_mode("classification"),
+                      alertNN=mlp(hidden_units=tune(), penalty=tune()) %>%
+                        set_engine("nnet") %>% set_mode("classification"),
+                      tlNN=mlp(hidden_units=tune(), penalty=tune()) %>%
+                        set_engine("nnet") %>% set_mode("classification")
+    )
+    wf <- workflow() %>%
+      add_model(ML_spec) %>%
+      add_formula(form.ls[[resp]]$ML)
+    out_tune <- wf %>%
+      tune_grid(resamples=opts, 
+                grid=grid_regular(extract_parameter_set_dials(ML_spec), levels=tunes))
+    saveRDS(out_tune, glue("{out.dir}/meta/{fit_ID}_tune.rds"))
+    out <- wf %>%
+      finalize_workflow(select_best(out_tune, "roc_auc")) %>%
+      fit(d.ls[[resp]])
   }
   
   # Fit Hierarchical Bayesian models
   if(mod %in% c("HBL", "HBN")) {
     library(brms)
-    dir.create(glue("{out.dir}/stan/"), showWarnings=F, recursive=T)
     fit_ID <- glue("{y}_{resp}_{mod}{opts$prior_i}{ifelse(is.null(suffix),'',suffix)}")
     HB.family <- switch(resp, 
                         lnN=hurdle_lognormal,
                         tl=cumulative,
                         alert=bernoulli)
-    out <- brm(form.ls[[resp]][[mod]], 
-               data=d.ls[[resp]], 
-               family=HB.family,
-               prior=tunes[[resp]][[mod]],
-               init=0,
-               iter=opts$iter,
-               warmup=opts$warmup,
-               refresh=opts$refresh,
-               control=opts$ctrl,
-               chains=opts$chains,
-               cores=opts$cores,
-               save_model=glue("{out.dir}/stan/{fit_ID}.stan"))
+    wf <- workflow() %>%
+      add_model(bayesian(mode="classification", engine="brms", 
+                         formula.override=bayesian_formula(form.ls[[resp]][[mod]]),
+                         family=HB.family, 
+                         prior=tunes[[resp]][[mod]],
+                         init=0, 
+                         iter=opts$iter,
+                         warmup=opts$warmup,
+                         control=opts$ctrl,
+                         chains=opts$chains,
+                         cores=opts$cores,
+                         save_model=glue("{out.dir}/meta/{fit_ID}.stan")),
+                formula=form.ls[[resp]]$HB_vars) %>%
+      add_recipe(recipe(d.ls[[resp]], formula=form.ls[[resp]]$HB_vars))
+    out <- wf %>%
+      fit(data=d.ls[[resp]])
   }
   saveRDS(out, glue("{out.dir}/{fit_ID}.rds"))
   cat("Saved ", y, "_", resp, "_", mod, " as ", out.dir, "*", suffix, "\n", sep="")
@@ -1396,7 +1415,7 @@ fit_model <- function(mod, resp, form.ls, d.ls, opts, tunes, out.dir, y, suffix=
 #'
 #' @examples
 summarise_predictions <- function(d.y, set, resp, fit.dir, y_i.i, suffix=NULL) {
-  library(tidyverse); library(glue)
+  library(tidyverse); library(glue); library(tidymodels)
   fits.f <- dirf(fit.dir, glue("{y_i.i$abbr[1]}_{resp}.*{ifelse(is.null(suffix),'',suffix)}"))
   names(fits.f) <- str_split_fixed(str_split_fixed(fits.f, glue("{resp}_"), 2)[,2], "_|\\.", 2)[,1]
   fits <- map(fits.f, readRDS)
@@ -1426,18 +1445,15 @@ summarise_predictions <- function(d.y, set, resp, fit.dir, y_i.i, suffix=NULL) {
 #'
 #' @examples
 get_predictions <- function(fit, mod, resp, set, d.df, y_i.i) {
-  library(tidyverse); library(glue); library(caret); library(brms)
+  library(tidyverse); library(glue); library(tidymodels); library(brms)
   
   if(grepl("HB", mod)) {
-    pred <- posterior_epred(fit, d.df[[resp]], allow_new_levels=T) %>%
+    pred <- parsnip::extract_fit_engine(fit) %>%
+      posterior_epred(d.df[[resp]], allow_new_levels=T) %>%
       summarise_post_preds(., resp, y_i.i)
   } else {
     pred_type <- ifelse(resp=="lnN", "raw", "prob")
-    if(set=="train") {
-      preds <- predict(fit, type=pred_type)
-    } else {
-      preds <- predict(fit, d.df[[resp]], pred_type)
-    }
+    preds <- predict(fit, d.df[[resp]], pred_type)
     pred <- summarise_ML_preds(preds, resp, y_i.i)
   }
   pred.df <- as_tibble(pred) %>% 
@@ -1460,7 +1476,7 @@ get_predictions <- function(fit, mod, resp, set, d.df, y_i.i) {
 #' @examples
 summarise_ML_preds <- function(preds, resp, y_i.i) {
   if(resp=="alert") {
-    pred <- cbind(A1=preds[,2])
+    pred <- cbind(A1=preds$.pred_A1)
   }
   if(resp=="tl") {
     thresh <- as.numeric(str_sub(y_i.i$tl_thresh, -1, -1)) + 1

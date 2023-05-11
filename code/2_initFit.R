@@ -6,16 +6,15 @@
 
 
 # setup -------------------------------------------------------------------
-pkgs <- c("tidyverse", "lubridate", "glue", "recipes", "RSNNS", "RRF", "glmnet", 
-          "brms", "caret", "doParallel", "foreach")
+pkgs <- c("tidyverse", "lubridate", "glue", "tidymodels", "nnet", "randomForest", "glmnet", 
+          "brms", "bayesian", "doParallel", "foreach")
 lapply(pkgs, library, character.only=T)
 source("code/00_fn.R")
 
 covSet <- c("test", "full", "noDt", 
             "noDtDelta", "noInt", "noDtDeltaInt")[1]
 cores_per_model <- 3
-n_spp_parallel <- 2
-test_startDate <- "2021-01-01"
+n_spp_parallel <- 6
 fit.dir <- glue("out/model_fits/{covSet}/")
 cv.dir <- glue("{fit.dir}/cv/")
 out.dir <- glue("out/{covSet}/")
@@ -61,45 +60,48 @@ obs.ls <- map_dfr(dirf("data/0_init", "data_.*_all.rds"), readRDS) %>%
          "alert1", "alert2", any_of(unname(unlist(all_covs)))) %>%
   mutate(across(starts_with("alert"), ~factor(.x)),
          across(starts_with("tl"), ~factor(.x, ordered=T))) %>%
+  group_by(y, obsid) %>%
+  slice_head(n=1) %>%
   group_by(y) %>%
-  group_split()
-train.ls <- map(obs.ls, ~.x %>% filter(date < test_startDate))
-test.ls <- map(obs.ls, ~.x %>% filter(date > test_startDate))
+  group_split() %>%
+  map(~.x %>% select(where(~any(!is.na(.x)))) %>% na.omit)
 
 
 
 # runs by taxon -----------------------------------------------------------
 
 registerDoParallel(n_spp_parallel)
-foreach(i=seq_along(train.ls),
-        .export=c("all_covs", "train.ls", "test.ls", "covSet", "covs_exclude", 
+foreach(i=seq_along(obs.ls),
+        .export=c("all_covs", "obs.ls", "covSet", "covs_exclude", 
                   "fit.dir", "out.dir", "cv.dir", "y_i")
 ) %dopar% {
   
   lapply(pkgs, library, character.only=T)
   source("code/00_fn.R")
-  y <- train.ls[[i]]$y[1]
+  y <- obs.ls[[i]]$y[1]
   y_i.i <- filter(y_i, abbr==y)
+  set.seed(123)
+  obs.split <- group_initial_split(obs.ls[[i]], group=year)
+  obs.train <- training(obs.split)
+  obs.test <- testing(obs.split)
   
   
 
 # . prep ------------------------------------------------------------------
 
-  # TODO: remove ifelse for final version
-  reprep <- T
-  responses <- c(alert="alert", tl="tl", lnN="lnN")
-  if(reprep) {
-    prep.ls <- map(responses, ~prep_recipe(train.ls[[i]], .x, covs_exclude))
-    d.y <- list(train=map(prep.ls, ~bake(.x, train.ls[[i]])),
-                test=map(prep.ls, ~bake(.x, test.ls[[i]])))
-    saveRDS(prep.ls, glue("data/0_init/data_prep_{y}_{covSet}.rds"))
-    saveRDS(d.y, glue("data/0_init/data_baked_{y}_{covSet}.rds"))
-  } else {
-    d.y <- readRDS(glue("data/0_init/data_baked_{y}_{covSet}.rds"))
+  responses <- c(alert="alert", tl="tl")
+  prep.ls <- map(responses, ~prep_recipe(obs.train, .x, covs_exclude))
+  d.y <- list(train=map(prep.ls, ~bake(.x, obs.train)),
+              test=map(prep.ls, ~bake(.x, obs.test)))
+  # saveRDS(prep.ls, glue("data/0_init/data_prep_{y}_{covSet}.rds"))
+  # saveRDS(d.y, glue("data/0_init/data_baked_{y}_{covSet}.rds"))
+  d.split <- map(responses, ~obs.split)
+  for(r in responses) {
+    d.split[[r]]$data <- d.split[[r]]$data %>% select(obsid) %>%
+      left_join(bind_rows(d.y$train[[r]], d.y$test[[r]]))
   }
   
   covs <- filter_corr_covs(all_covs, d.y, covs_exclude)
-  
   if(any(table(d.y$train$tl$tl)==0)) {
     responses <- grep("tl", responses, invert=T, value=T)
   }
@@ -111,7 +113,9 @@ foreach(i=seq_along(train.ls),
     responses,
     ~list(HBL=make_HB_formula(.x, c(covs$main, covs$interact)),
           HBN=make_HB_formula(.x, c(covs$main, covs$interact), sTerms=smooths),
-          ML=formula(glue("{.x} ~ {paste(unlist(covs), collapse='+')}"))
+          ML=formula(glue("{.x} ~ {paste(unlist(covs), collapse='+')}")),
+          HB_vars=formula(glue("{.x} ~ yday + lon + lat + siteid +",
+                               "{paste(unlist(covs), collapse='+')}"))
     )
   )
   
@@ -125,21 +129,10 @@ foreach(i=seq_along(train.ls),
                                  HBN=make_HB_priors(priStr, "HBN", .x, covs)))
   
   # tuning controls
-  folds <- map(d.y$train, createFoldsByYear)
-  ctrl <- map(folds, ~trainControl("cv", classProbs=T, number=length(.x$i.in),
-                                   index=.x$i.in, indexOut=.x$i.out))
-  grids <- list(
-    ENet=expand.grid(alpha=seq(0, 1, length.out=51),
-                     lambda=2^(seq(-15,-1,length.out=50))),
-    RRF=expand.grid(mtry=seq(1, min(3, length(unlist(covs))/10), by=1),
-                    coefReg=seq(0.05, 0.8, by=0.05)),
-    NN=expand.grid(layer1=2:5,
-                   layer2=2:5,
-                   layer3=2:5)
-  )
+  n_tuneVal <- 10
   HB.i <- list(
-    iter=1000,
-    warmup=500,
+    iter=10,
+    warmup=5,
     refresh=1,
     chains=cores_per_model,
     cores=cores_per_model,
@@ -151,12 +144,16 @@ foreach(i=seq_along(train.ls),
   
 # . train: fit models -----------------------------------------------------
   
-  walk(responses, ~fit_model("ENet", .x, form.ls, d.y$train, ctrl, grids, fit.dir, y))
-  walk(responses, ~fit_model("RRF", .x, form.ls, d.y$train, ctrl, grids, fit.dir, y))
-  walk(responses, ~fit_model("NN", .x, form.ls, d.y$train, ctrl, grids, fit.dir, y))
-  walk(responses, ~fit_model("HBL", .x, form.ls, d.y$train, HB.i, priors, fit.dir, y))
-  walk(responses, ~fit_model("HBN", .x, form.ls, d.y$train, HB.i, priors, fit.dir, y))
-
+  for(r in responses) {
+    set.seed(123)
+    folds <- vfold_cv(d.y$train[[r]], strata=r)
+    fit_model("ENet", r, form.ls, d.y$train, folds, n_tuneVal, fit.dir, y)
+    fit_model("RF", r, form.ls, d.y$train, folds, n_tuneVal, fit.dir, y)
+    fit_model("NN", r, form.ls, d.y$train, folds, n_tuneVal, fit.dir, y)
+    fit_model("HBL", r, form.ls, d.y$train, HB.i, priors, fit.dir, y)
+    fit_model("HBN", r, form.ls, d.y$train, HB.i, priors, fit.dir, y)
+  }
+  
   fit.ls <- map(responses, ~summarise_predictions(d.y, "train", .x, fit.dir, y_i.i))
   fit.ls$alert <- full_join(
     fit.ls$alert, 
@@ -192,12 +189,15 @@ foreach(i=seq_along(train.ls),
     ctrl <- map(folds, ~trainControl("cv", classProbs=T, number=length(.x$i.in),
                                      index=.x$i.in, indexOut=.x$i.out))
     
-    # fit models
-    walk(responses, ~fit_model("ENet", .x, form.ls, d.cv$train, ctrl, grids, cv.dir, y, yr_))
-    walk(responses, ~fit_model("RRF", .x, form.ls, d.cv$train, ctrl, grids, cv.dir, y, yr_))
-    walk(responses, ~fit_model("NN", .x, form.ls, d.cv$train, ctrl, grids, cv.dir, y, yr_))
-    walk(responses, ~fit_model("HBL", .x, form.ls, d.cv$train, HB.i, priors, cv.dir, y, yr_))
-    walk(responses, ~fit_model("HBN", .x, form.ls, d.cv$train, HB.i, priors, cv.dir, y, yr_))
+    for(r in responses) {
+      set.seed(123)
+      folds <- vfold_cv(d.cv$train[[r]])
+      fit_model("ENet", r, form.ls, d.cv$train, folds, n_tuneVal, cv.dir, y, yr_)
+      fit_model("RF", r, form.ls, d.cv$train, folds, n_tuneVal, cv.dir, y, yr_)
+      fit_model("NN", r, form.ls, d.cv$train, folds, n_tuneVal, cv.dir, y, yr_)
+      fit_model("HBL", r, form.ls, d.cv$train, HB.i, priors, cv.dir, y, yr_)
+      fit_model("HBN", r, form.ls, d.cv$train, HB.i, priors, cv.dir, y, yr_)
+    }
     
     # predict
     cv.ls <- map(responses, ~summarise_predictions(d.cv, "test", .x, cv.dir, y_i.i, yr_))
