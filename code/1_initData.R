@@ -201,6 +201,7 @@ path.ls <- get_shortestPaths(ocean.path="data/northAtlantic_footprint.tif",
 write_csv(path.ls$dist.df, "data/site_hab_pairwise_distances.csv")
 site_hab.df <- path.ls$site.df # slightly modified lat/lon to fit within ocean mesh
 saveRDS(site_hab.df, "data/site_hab_df.rds")
+path.ls <- list(dist.df=read_csv("data/site_hab_pairwise_distances.csv"))
 path.ls$dist.df %>% 
   bind_rows(tibble(origin=unique(.$origin), 
                    destination=unique(.$origin), 
@@ -222,6 +223,7 @@ path.ls <- get_shortestPaths(ocean.path="data/northAtlantic_footprint.tif",
 write_csv(path.ls$dist.df, "data/site_tox_pairwise_distances.csv")
 site_tox.df <- path.ls$site.df # slightly modified lat/lon to fit within ocean mesh
 saveRDS(site_tox.df, "data/site_tox_df.rds")
+path.ls <- list(dist.df=read_csv("data/site_tox_pairwise_distances.csv"))
 path.ls$dist.df %>% 
   bind_rows(tibble(origin=unique(.$origin), 
                    destination=unique(.$origin), 
