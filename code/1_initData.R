@@ -371,8 +371,8 @@ saveRDS(cmems.buffer_tox, "data/0_init/cmems_siteBufferNSEW_tox.rds")
 wrf_i <- list(all=c("U", "V", "UV", "Shortwave", "Precip", "sst"),
               sea=c("U", "V", "UV", "Shortwave", "Precip"),
               land=c("sst"))
-wrf_versions <- map(seq_along(dir("data/0_init/wrf", "^domain_d01")), 
-                    ~map_dfr(dirf("data/0_init/wrf", glue("domain_d0._{.x}")), readRDS) %>%
+wrf_versions <- map(seq_along(dir("data/00_env/wrf", "^domain_d01")), 
+                    ~map_dfr(dirf("data/00_env/wrf", glue("domain_d0._{.x}")), readRDS) %>%
                       arrange(res, i) %>%
                       mutate(wrf_id=row_number()) %>%
                       st_as_sf(coords=c("lon", "lat"), remove=F, crs=4326))
@@ -401,8 +401,8 @@ saveRDS(wrf.site_tox, "data/0_init/wrf_sitePt_tox.rds")
 wrf_i <- list(all=c("U", "V", "UV", "Shortwave", "Precip", "sst"),
               sea=c("U", "V", "UV", "Shortwave", "Precip"),
               land=c("sst"))
-wrf_versions <- map(seq_along(dir("data/0_init/wrf", "^domain_d01")), 
-                    ~map_dfr(dirf("data/0_init/wrf", glue("domain_d0._{.x}")), readRDS) %>%
+wrf_versions <- map(seq_along(dir("data/00_env/wrf", "^domain_d01")), 
+                    ~map_dfr(dirf("data/00_env/wrf", glue("domain_d0._{.x}")), readRDS) %>%
                       arrange(res, i) %>%
                       mutate(wrf_id=row_number()) %>%
                       st_as_sf(coords=c("lon", "lat"), remove=F, crs=4326))

@@ -340,7 +340,7 @@ subset_WRF <- function(domain, wrf.out, v2_start=NULL) {
   iwalk(domain.ls, 
         ~.x %>% mutate(version=.y) %>%
           select(-row, -col) %>%
-          saveRDS(glue("data/0_init/wrf/domain_{domain}_{.y}.rds")))
+          saveRDS(glue("{wrf.out}/domain_{domain}_{.y}.rds")))
   
   wrf.ls <- vector("list", length(f.wrf))
   for(i in seq_along(f.wrf)) {
