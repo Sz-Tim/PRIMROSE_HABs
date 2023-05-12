@@ -163,28 +163,11 @@ cefas.df <- readRDS("data/0_init/cefas_df.rds")
 wrf.dir <- ifelse(.Platform$OS.type=="unix",
                   "https",#"/media/archiver/common/sa01da-work/WRF/Archive/",
                   "D:/hydroOut/WRF/Archive/")
+wrf.out <- "data/00_env/wrf/"
 get_WRF(wrf.dir=wrf.dir, nDays_buffer=nDays_avg, 
         dateRng=range(c(fsa.df$date, cefas.df$date)), 
-        out.dir="data/00_env/wrf/")
-
-# read and subset WRF domains to nest higher res within lower res
-wrf.out <- "data/00_env/wrf/"
-wrf.df <- subset_WRF("d01", wrf.out, v2_start=ymd("2019-04-01")) %>%
-  bind_rows(subset_WRF("d02", wrf.out, v2_start=ymd("2019-04-01"))) %>%
-  bind_rows(subset_WRF("d03", wrf.out, v2_start=ymd("2019-04-01"))) %>%
-  filter(!is.na(date)) %>%
-  arrange(date, res, i) %>%
-  group_by(date) %>%
-  mutate(wrf_id=row_number()) %>%
-  ungroup %>%
-  mutate(across(where(is.numeric), ~if_else(.x > 1e30, NA, .x))) %>%
-  mutate(yday=yday(date)) %>%
-  group_by(wrf_id, version, yday) %>%
-  mutate(across(where(is.numeric), zoo::na.aggregate)) %>%
-  ungroup %>%
-  mutate(Shortwave=log1p(Shortwave),
-         Precip=log1p(pmax(Precip, 0)*3600*24*1000), # m/s to mm/day
-         UV=log1p(UV))
+        out.dir=wrf.out)
+wrf.df <- aggregate_WRF(wrf.out)
 saveRDS(wrf.df, glue("data/0_init/wrf_end_{max(wrf.df$date)}.rds"))
 
 
@@ -331,7 +314,7 @@ cmems.sf <- cmems.df %>%
   st_as_sf(., coords=c("lon", "lat"), crs=4326)
 
 # HABs
-site_hab.df <- readRDS("data/site_hab_df.rds") %>% select(-cmems_id)
+site_hab.df <- readRDS("data/site_hab_df.rds") %>% select(-any_of("cmems_id"))
 site_hab.df <- site_hab.df %>% find_nearest_feature_id(cmems.sf, "cmems_id")
 saveRDS(site_hab.df, "data/site_hab_df.rds")
 cmems.site_hab <- extract_env_pts(site_hab.df, cmems_i$all, cmems.df %>% mutate(version=1), cmems_id, "cmems_id")

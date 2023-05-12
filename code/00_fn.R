@@ -364,6 +364,30 @@ subset_WRF <- function(domain, wrf.out, v2_start=NULL) {
 
 
 
+aggregate_WRF <- function(wrf.out, v2_start=ymd("2019-04-01")) {
+  wrf.df <- subset_WRF("d01", wrf.out, v2_start=ymd("2019-04-01")) %>%
+    bind_rows(subset_WRF("d02", wrf.out, v2_start=ymd("2019-04-01"))) %>%
+    bind_rows(subset_WRF("d03", wrf.out, v2_start=ymd("2019-04-01"))) %>%
+    filter(!is.na(date)) %>%
+    arrange(date, res, i) %>%
+    group_by(date) %>%
+    mutate(wrf_id=row_number()) %>%
+    ungroup %>%
+    mutate(across(where(is.numeric), ~if_else(.x > 1e30, NA, .x))) %>%
+    mutate(yday=yday(date)) %>%
+    group_by(wrf_id, version, yday) %>%
+    mutate(across(where(is.numeric), zoo::na.aggregate)) %>%
+    ungroup %>%
+    mutate(Shortwave=log1p(Shortwave),
+           Precip=log1p(pmax(Precip, 0)*3600*24*1000), # m/s to mm/day
+           UV=log1p(UV))
+  return(wrf.df)
+}
+
+
+
+
+
 
 #' Extract CMEMS or WRF data to site point locations
 #'
