@@ -580,44 +580,20 @@ get_shortestPaths <- function(ocean.path, site.df, transMx.path=NULL, recalc_tra
     points2nearestcell(., mesh.r) %>%
     as.data.frame
   site.df_new <- site.df %>% select(siteid, sin) %>% left_join(site.spdf)
-  if(!is.null(site2.df)) {
-    site2.spdf <- SpatialPointsDataFrame(site2.df[,c("lon", "lat")],
-                                         data=site2.df[,"siteid"], 
-                                         proj4string=CRS("+init=epsg:27700")) %>%
-      points2nearestcell(., mesh.r) %>%
-      as.data.frame
-    site2.df_new <- site2.df %>% select(siteid, sin) %>% left_join(site2.spdf)
-  } else {
-    site2.df_new <- NULL
-  }
   
-  if(is.null(site2.df)) {
-    # Pairwise each i to all others within site.df
-    dist.df <- map_dfr(1:nrow(site.spdf),
-                       ~shortestPath(mesh.tmx,
-                                     as.matrix(site.spdf[.x, c("lon", "lat")]),
-                                     as.matrix(site.spdf[-.x, c("lon", "lat")]),
-                                     output="SpatialLines") %>%
-                         st_as_sf %>%
-                         mutate(origin=site.spdf$siteid[.x],
-                                destination=site.spdf$siteid[-.x],
-                                distance=st_length(.)) %>%
-                         st_drop_geometry) 
-  } else {
-    # Pairwise each i in site.df to each within site2.df
-    dist.df <- map_dfr(1:nrow(site.spdf),
-                       ~shortestPath(mesh.tmx,
-                                     as.matrix(site.spdf[.x, c("lon", "lat")]),
-                                     as.matrix(site2.spdf[, c("lon", "lat")]),
-                                     output="SpatialLines") %>%
-                         st_as_sf %>%
-                         mutate(origin=site.spdf$siteid[.x],
-                                destination=site2.spdf$siteid,
-                                distance=st_length(.)) %>%
-                         st_drop_geometry)
-  }
+  # Pairwise each i to all others within site.df
+  dist.df <- map_dfr(1:nrow(site.spdf),
+                     ~shortestPath(mesh.tmx,
+                                   as.matrix(site.spdf[.x, c("lon", "lat")]),
+                                   as.matrix(site.spdf[-.x, c("lon", "lat")]),
+                                   output="SpatialLines") %>%
+                       st_as_sf %>%
+                       mutate(origin=site.spdf$siteid[.x],
+                              destination=site.spdf$siteid[-.x],
+                              distance=st_length(.)) %>%
+                       st_drop_geometry) 
   
-  return(list(site.df=site.df_new, dist.df=dist.df, site2.df=site2.df_new))
+  return(list(site.df=site.df_new, dist.df=dist.df))
 }
 
 
