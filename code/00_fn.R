@@ -1343,9 +1343,9 @@ fit_model <- function(mod, resp, form.ls, d.ls, opts, tunes, out.dir, y, suffix=
                         set_engine("randomForest") %>% set_mode("classification"),
                       tlRF=rand_forest(trees=tune(), min_n=tune()) %>%
                         set_engine("randomForest") %>% set_mode("classification"),
-                      alertNN=mlp(hidden_units=tune(), penalty=tune()) %>%
+                      alertNN=mlp(hidden_units=tune(), penalty=tune(), epochs=tune()) %>%
                         set_engine("nnet") %>% set_mode("classification"),
-                      tlNN=mlp(hidden_units=tune(), penalty=tune()) %>%
+                      tlNN=mlp(hidden_units=tune(), penalty=tune(), epochs=tune()) %>%
                         set_engine("nnet") %>% set_mode("classification")
     )
     wf <- workflow() %>%
