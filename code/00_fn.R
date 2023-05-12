@@ -162,34 +162,38 @@ get_CMEMS <- function(userid, pw, i.df, bbox, nDays_buffer, dateRng, out.dir) {
 #' @export
 #'
 #' @examples
-get_WRF <- function(wrf.dir, nDays_buffer, dateRng, out.dir) {
+get_WRF <- function(wrf.dir, nDays_buffer, dateRng, out.dir, forecast=F) {
   library(tidyverse); library(ncdf4); library(lubridate); library(glue); 
   library(xml2); library(rvest)
-  dir.create(glue("{out.dir}/wrf"), showWarnings=F)
+  dir.create(out.dir, showWarnings=F)
   
   # metadata for all WRF files within timespan
   if(grepl("https", wrf.dir)) {
-    thredds_head <- "https://thredds.sams.ac.uk/thredds/catalog/scoats-wrf/Archive/netcdf_"
+    thredd_base <- "https://thredds.sams.ac.uk/thredds/"
+    Archive <- ifelse(forecast, "Archive_forecast", "Archive")
+    catalog <- ifelse(forecast, "F/catalog.html", "/catalog.html")
+    
+    thredds_head <- glue("{thredd_base}catalog/scoats-wrf/{Archive}/netcdf_")
     wrf_links <- map(seq(year(dateRng[1]), year(dateRng[2]), by=1), 
-                     ~glue("{thredds_head}{.x}/catalog.html") %>%
+                     ~glue("{thredds_head}{.x}{catalog}") %>%
                        read_html() %>% html_nodes("a") %>% html_attr("href") %>% 
-                       grep("netcdf_20../wrf_", ., value=T) %>%
-                       str_split_fixed(., "Archive/", 2) %>% 
+                       grep("netcdf_20.*/wrf_", ., value=T) %>%
+                       str_split_fixed(., glue("{Archive}/"), 2) %>% 
                        magrittr::extract(,2)) %>%
       do.call('c', .)
     wrf_i <- tibble(fname=wrf_links)
-    wrf_base <- "https://thredds.sams.ac.uk/thredds/dodsC/scoats-wrf/Archive"
+    wrf_base <- glue("{thredd_base}dodsC/scoats-wrf/{Archive}")
   } else {
     wrf_i <- tibble(fname=dir(wrf.dir, ".nc$", recursive=T))
     wrf_base <- wrf.dir
   }
   wrf_i <- wrf_i %>%
-    mutate(res=str_sub(fname, -6, -4),
-           day_0=str_sub(fname, 23, 24),
-           month_0=str_sub(fname, 21, 22),
-           year_0=str_sub(fname, 17, 20),
-           day_1=str_sub(fname, 28, 29),
-           month_1=str_sub(fname, 26, 27),
+    mutate(res=str_sub(fname, -6-forecast, -4-forecast),
+           day_0=str_sub(fname, 23+forecast, 24+forecast),
+           month_0=str_sub(fname, 21+forecast, 22+forecast),
+           year_0=str_sub(fname, 17+forecast, 20+forecast),
+           day_1=str_sub(fname, 28+forecast, 29+forecast),
+           month_1=str_sub(fname, 26+forecast, 27+forecast),
            year_1=if_else(month_0=="12" & month_1=="01",
                           as.character(as.numeric(year_0) + 1),
                           year_0),
@@ -224,7 +228,8 @@ get_WRF <- function(wrf.dir, nDays_buffer, dateRng, out.dir) {
       group_by(res, date) %>%
       group_split()
     for(j in seq_along(var.ls)) {
-      j.fname <- glue("{out.dir}/wrf/wrf_{var.ls[[j]]$date[1]}_{var.ls[[j]]$res[1]}.rds")
+      j.fname <- glue("{out.dir}/wrf_{var.ls[[j]]$date[1]}_{var.ls[[j]]$res[1]}.rds")
+      j.fnameF <- glue("{out.dir}/wrfF_{var.ls[[j]]$date[1]}_{var.ls[[j]]$res[1]}.rds")
       if(!file.exists(j.fname)) {
         var.ls[[j]] %>% 
           mutate(sst=if_else(sst > -100, sst, NA_real_)) %>%
@@ -237,13 +242,13 @@ get_WRF <- function(wrf.dir, nDays_buffer, dateRng, out.dir) {
                     sst=mean(sst)) %>%
           ungroup %>%
           rename(U=U_mn, V=V_mn, UV=UV_mn) %>%
-          saveRDS(j.fname)
+          saveRDS(ifelse(forecast, j.fnameF, j.fname))
       }
     }
     # save domain extents IF all three domains are represented
     if(length(nc_f.i)==3 & all(c("d01", "d02", "d03") %in% names(nc_f.i))) {
       nest_WRF_domains(nc.ls) %>%
-        walk(~saveRDS(.x, glue("{out.dir}/wrf/wrfDomains_{wrf_dates[i]}_{.x$res[1]}.rds")))
+        walk(~saveRDS(.x, glue("{out.dir}/wrfDomains_{wrf_dates[i]}_{.x$res[1]}.rds")))
     }
     walk(nc.ls, nc_close)
   }
@@ -320,7 +325,7 @@ nest_WRF_domains <- function(nc.ls) {
 #' @examples
 subset_WRF <- function(domain, wrf.out, v2_start=NULL) {
   f.domain <- dirf(wrf.out, glue("wrfDomains_.*{domain}.rds"))
-  f.wrf <- dirf(wrf.out, glue("wrf_.*{domain}.rds"))
+  f.wrf <- dirf(wrf.out, glue("wrfF?_.*{domain}.rds"))
   if(is.null(v2_start)) {
     domain.ls <- map(f.domain, readRDS)
     i_chg <- c(1, which(map_lgl(1:(length(domain.ls)-1), 
@@ -344,12 +349,12 @@ subset_WRF <- function(domain, wrf.out, v2_start=NULL) {
   
   wrf.ls <- vector("list", length(f.wrf))
   for(i in seq_along(f.wrf)) {
-    date_i <- str_split_fixed(str_split_fixed(f.wrf[i], "/wrf_", 2)[,2], "_d0", 2)[,1]
+    date_i <- str_split_fixed(str_split_fixed(f.wrf[i], "/wrfF?_", 2)[,2], "_d0", 2)[,1]
     v_i <- which(date_i >= v_dateRng$start & date_i < v_dateRng$end)
     wrf.ls[[i]] <- readRDS(f.wrf[i]) %>%
       select(-lon_i, -lat_i) %>%
       right_join(domain.ls[[v_i]] %>% select(-row, -col), by="i") %>%
-      mutate(version=v_i)
+      mutate(version=ifelse(is.null(v2_start), v_i, 1 + (date_i >= v2_start)))
   }
   wrf.ls <- do.call('rbind', wrf.ls)
   return(wrf.ls)
@@ -382,7 +387,7 @@ extract_env_pts <- function(site.df, env_vars, env.df, id_env, site.v) {
     arrange({{id_env}}, date) %>%
     group_by({{id_env}}) %>%
     mutate(across(any_of(env_vars), 
-                  ~rollmean(.x, k=7, na.pad=T, align="right"),
+                  ~rollmeanr(.x, k=7, na.pad=T, align="right"),
                   .names="{.col}Wk")) %>%
     mutate(across(any_of(paste0(env_vars, "Wk")),
                   ~.x - lag(.x),
