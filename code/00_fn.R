@@ -1410,14 +1410,14 @@ fit_model <- function(mod, resp, form.ls, d.ls, opts, tunes, out.dir, y, suffix=
 #' @export
 #'
 #' @examples
-summarise_predictions <- function(d.y, set, resp, fit.dir, y_i.i, suffix=NULL) {
+summarise_predictions <- function(d.y, resp, fit.dir, y_i.i, suffix=NULL) {
   library(tidyverse); library(glue); library(tidymodels)
   fits.f <- dirf(fit.dir, glue("{y_i.i$abbr[1]}_{resp}.*{ifelse(is.null(suffix),'',suffix)}"))
   names(fits.f) <- str_split_fixed(str_split_fixed(fits.f, glue("{resp}_"), 2)[,2], "_|\\.", 2)[,1]
   fits <- map(fits.f, readRDS)
-  preds <- imap_dfc(fits, ~get_predictions(.x, .y, resp, set, d.y[[set]], y_i.i))
+  preds <- imap_dfc(fits, ~get_predictions(.x, .y, resp, d.y, y_i.i))
   
-  out.df <- d.y[[set]][[resp]] %>%
+  out.df <- d.y[[resp]] %>%
     select(y, obsid, siteid, date, {{resp}}) %>%
     bind_cols(preds)
   return(out.df)
@@ -1432,7 +1432,6 @@ summarise_predictions <- function(d.y, set, resp, fit.dir, y_i.i, suffix=NULL) {
 #' @param fit 
 #' @param mod 
 #' @param resp 
-#' @param set 
 #' @param d.df 
 #' @param y_i.i 
 #'
@@ -1440,7 +1439,7 @@ summarise_predictions <- function(d.y, set, resp, fit.dir, y_i.i, suffix=NULL) {
 #' @export
 #'
 #' @examples
-get_predictions <- function(fit, mod, resp, set, d.df, y_i.i) {
+get_predictions <- function(fit, mod, resp, d.df, y_i.i) {
   library(tidyverse); library(glue); library(tidymodels); library(brms)
   
   if(grepl("HB", mod)) {

@@ -154,7 +154,7 @@ foreach(i=seq_along(obs.ls),
     fit_model("HBN", r, form.ls, d.y$train, HB.i, priors, fit.dir, y)
   }
   
-  fit.ls <- map(responses, ~summarise_predictions(d.y, "train", .x, fit.dir, y_i.i))
+  fit.ls <- map(responses, ~summarise_predictions(d.y$train, .x, fit.dir, y_i.i))
   fit.ls$alert <- full_join(
     fit.ls$alert, 
     fit.ls[-which(responses=="alert")] %>%
@@ -163,7 +163,7 @@ foreach(i=seq_along(obs.ls),
   )
   saveRDS(fit.ls, glue("{out.dir}/{y}_fit_ls.rds"))
   
-  oos.ls <- map(responses, ~summarise_predictions(d.y, "test", .x, fit.dir, y_i.i))
+  oos.ls <- map(responses, ~summarise_predictions(d.y$test, .x, fit.dir, y_i.i))
   oos.ls$alert <- full_join(
     oos.ls$alert, 
     oos.ls[-which(responses=="alert")] %>%
@@ -200,7 +200,7 @@ foreach(i=seq_along(obs.ls),
     }
     
     # predict
-    cv.ls <- map(responses, ~summarise_predictions(d.cv, "test", .x, cv.dir, y_i.i, yr_))
+    cv.ls <- map(responses, ~summarise_predictions(d.cv$test, .x, cv.dir, y_i.i, yr_))
     cv.ls$alert <- oos.ls %>%
       map(~.x %>% select(y, obsid, siteid, date, ends_with("_A1"))) %>%
       reduce(full_join)
