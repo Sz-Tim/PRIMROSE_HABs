@@ -43,7 +43,6 @@ tl_hab <- read_csv("data/tl_thresholds_hab.csv") %>%
 #               group_by(abbr) %>% slice_head(n=1) %>%
 #               rename(N_thresh=min_ge, tl_thresh=tl) %>%
 #               select(abbr, N_thresh, tl_thresh))# %>%
-# # mutate(N_thresh=pmax(1, N_thresh))) # Why did I do this?
 # write_csv(hab_i, "data/i_hab.csv")
 # NB: toxin thresholds are adjusted for ASP, AZAs, YTXs because of the extremely 
 # limited occurrence of TL2 and TL3. Models thus predict only presence/absence
@@ -64,7 +63,6 @@ tl_tox <- read_csv("data/tl_thresholds_tox.csv") %>%
 #               group_by(abbr) %>% slice_head(n=1) %>%
 #               rename(N_thresh=min_ge, tl_thresh=tl) %>%
 #               select(abbr, N_thresh, tl_thresh))# %>%
-#               # mutate(N_thresh=pmax(1, N_thresh))) # Why did I do this?
 # write_csv(tox_i, "data/i_tox.csv")
 
 
@@ -195,12 +193,11 @@ saveRDS(wrf.df, glue("data/0_init/wrf_end_{max(wrf.df$date)}.rds"))
 
 # HABs
 site_hab.df <- readRDS("data/site_hab_df.rds")
-path.ls <- get_shortestPaths(ocean.path="data/northAtlantic_footprint.tif", 
+path.ls <- get_shortestPaths(ocean.path="data/ScotlandOcean_footprint.tif", 
                              site.df=site_hab.df, 
-                             transMx.path="data/mesh_tmx.rds", recalc_transMx=F)
+                             transMx.path="data/mesh_tmx.rds", recalc_transMx=F,
+                             site_savePath="data/site_hab_df.rds")
 write_csv(path.ls$dist.df, "data/site_hab_pairwise_distances.csv")
-site_hab.df <- path.ls$site.df # slightly modified lat/lon to fit within ocean mesh
-saveRDS(site_hab.df, "data/site_hab_df.rds")
 path.ls <- list(dist.df=read_csv("data/site_hab_pairwise_distances.csv"))
 path.ls$dist.df %>% 
   bind_rows(tibble(origin=unique(.$origin), 
@@ -217,12 +214,11 @@ path.ls$dist.df %>%
 
 # toxins
 site_tox.df <- readRDS("data/site_tox_df.rds")
-path.ls <- get_shortestPaths(ocean.path="data/northAtlantic_footprint.tif", 
+path.ls <- get_shortestPaths(ocean.path="data/ScotlandOcean_footprint.tif", 
                              site.df=site_tox.df, 
-                             transMx.path="data/mesh_tmx.rds", recalc_transMx=F)
+                             transMx.path="data/mesh_tmx.rds", recalc_transMx=F,
+                             site_savePath="data/site_tox_df.rds")
 write_csv(path.ls$dist.df, "data/site_tox_pairwise_distances.csv")
-site_tox.df <- path.ls$site.df # slightly modified lat/lon to fit within ocean mesh
-saveRDS(site_tox.df, "data/site_tox_df.rds")
 path.ls <- list(dist.df=read_csv("data/site_tox_pairwise_distances.csv"))
 path.ls$dist.df %>% 
   bind_rows(tibble(origin=unique(.$origin), 

@@ -559,7 +559,7 @@ find_buffer_intersect_ids <- function(site.sf, env.sf, id_env) {
 #' @export
 #'
 #' @examples
-get_shortestPaths <- function(ocean.path, site.df, transMx.path=NULL, recalc_transMx=T, site2.df=NULL) {
+get_shortestPaths <- function(ocean.path, site.df, transMx.path=NULL, recalc_transMx=T, site_savePath=NULL) {
   library(tidyverse); library(sf); library(glue);
   library(raster); library(gdistance)
   
@@ -585,6 +585,9 @@ get_shortestPaths <- function(ocean.path, site.df, transMx.path=NULL, recalc_tra
     points2nearestcell(., mesh.r) %>%
     as.data.frame
   site.df_new <- site.df %>% select(siteid, sin) %>% left_join(site.spdf)
+  if(!is.null(site_savePath)) {
+    saveRDS(site.df_new, site_savePath)
+  }
   
   # Pairwise each i to all others within site.df
   dist.df <- map_dfr(1:nrow(site.spdf),
