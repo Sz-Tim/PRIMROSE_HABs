@@ -910,20 +910,28 @@ calc_y_features <- function(yRaw.df, y_i, tl_i, dist.df=NULL) {
     group_by(y, siteid) %>%
     get_lags(lnN, alert, date, n=2) %>%
     ungroup %>%
-    mutate(lnNWt1=lnN1/log1p(as.numeric(date-date1)), 
+    mutate(year=year(date),
+           lnNWt1=lnN1/log1p(as.numeric(date-date1)), 
            lnNWt2=lnN2/log1p(as.numeric(date-date2)),
            lnNAvg1=0, lnNAvg2=0, prAlertAvg1=0, prAlertAvg2=0, 
-           lnNPrevYr=0, prAlertPrevYr=0, lnNAvgPrevYr=0, prAlertAvgPrevYr=0) %>%
+           lnNAvgPrevYr=0, prAlertAvgPrevYr=0) %>%
     group_by(y) %>%
     group_split()
+  y_new <- vector("list", length(y.ls))
   
   for(i in seq_along(y.ls)) {
     y.df_i <- y.ls[[i]] %>% select(siteid, date, lnN1, lnN2, alert1, alert2)
-    yYr_i <- y.ls[[i]] %>% mutate(year=year(date)) %>%
+    yYr_i <- y.ls[[i]] %>% 
       group_by(siteid, year) %>%
       summarise(lnN_yr=mean(lnN, na.rm=T),
                 prAlert_yr=mean(alert=="A1", na.rm=T)) %>%
-      ungroup
+      ungroup %>%
+      mutate(year_matchObs=year+1)
+    y_new[[i]] <- y.ls[[i]] %>%
+      left_join(yYr_i %>% select(year_matchObs, siteid, lnN_yr, prAlert_yr), 
+                by=c("year"="year_matchObs", "siteid"="siteid")) %>%
+      rename(lnNPrevYr=lnN_yr, prAlertPrevYr=prAlert_yr)
+    
     for(j in 1:nrow(y.ls[[i]])) {
       site_j <- y.df_i$siteid[j]
       date_j <- y.df_i$date[j]
@@ -936,18 +944,16 @@ calc_y_features <- function(yRaw.df, y_i, tl_i, dist.df=NULL) {
         filter(siteid %in% dist.df$dest_c[dist.df$origin==site_j][[1]] &
                  year == yr_j - 1)
       yr.site_j <- yYr_i %>% filter(siteid==site_j & year==yr_j-1)
-      y.ls[[i]]$lnNAvg1[j] <- mean(wk.df$lnN1, na.rm=T)
-      y.ls[[i]]$lnNAvg2[j] <- mean(wk.df$lnN2, na.rm=T)
-      y.ls[[i]]$prAlertAvg1[j] <- mean(wk.df$alert1 == "A1", na.rm=T)
-      y.ls[[i]]$prAlertAvg2[j] <- mean(wk.df$alert2 == "A1", na.rm=T)
-      y.ls[[i]]$lnNAvgPrevYr[j] <- mean(yr.df$lnN_yr, na.rm=T)
-      y.ls[[i]]$prAlertAvgPrevYr[j] <- mean(yr.df$prAlert_yr, na.rm=T)
-      y.ls[[i]]$lnNPrevYr[j] <- mean(yr.site_j$lnN_yr, na.rm=T)
-      y.ls[[i]]$prAlertPrevYr[j] <- mean(yr.site_j$prAlert_yr, na.rm=T)
-      if(j %% 1000 == 0) {cat(i, ":", j, "of", nrow(y.ls[[i]]), "\n")}
+      y_new[[i]]$lnNAvg1[j] <- mean(wk.df$lnN1, na.rm=T)
+      y_new[[i]]$lnNAvg2[j] <- mean(wk.df$lnN2, na.rm=T)
+      y_new[[i]]$prAlertAvg1[j] <- mean(wk.df$alert1 == "A1", na.rm=T)
+      y_new[[i]]$prAlertAvg2[j] <- mean(wk.df$alert2 == "A1", na.rm=T)
+      y_new[[i]]$lnNAvgPrevYr[j] <- mean(yr.df$lnN_yr, na.rm=T)
+      y_new[[i]]$prAlertAvgPrevYr[j] <- mean(yr.df$prAlert_yr, na.rm=T)
+      if(j %% 1000 == 0) {cat(i, ":", j, "of", nrow(y_new[[i]]), "\n")}
     }
   }
-  y.df <- do.call('rbind', y.ls)
+  y.df <- do.call('rbind', y_new)
   return(y.df)
 }
 
