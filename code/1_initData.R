@@ -18,7 +18,7 @@ library(WeStCOMS)
 source("code/00_fn.R")
 
 nDays_avg <- 14
-dateStart <- "2016-01-01"
+dateStart <- "2015-01-01"
 UK_bbox <- list(xmin=-11, xmax=3, ymin=49, ymax=61.5)
 urls <- c(fsa="fsa_counts",
           fsa_sites="fsa_sites", 
@@ -167,7 +167,7 @@ wrf.dir <- ifelse(.Platform$OS.type=="unix",
                   "D:/hydroOut/WRF/Archive/")
 get_WRF(wrf.dir=wrf.dir, nDays_buffer=nDays_avg, 
         dateRng=range(c(fsa.df$date, cefas.df$date)), 
-        out.dir="data/00_env/")
+        out.dir="data/00_env/wrf/")
 
 # read and subset WRF domains to nest higher res within lower res
 wrf.out <- "data/00_env/wrf/"
