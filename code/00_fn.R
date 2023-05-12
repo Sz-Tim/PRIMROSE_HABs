@@ -909,23 +909,38 @@ calc_y_features <- function(yRaw.df, y_i, tl_i, dist.df=NULL) {
     ungroup %>%
     mutate(lnNWt1=lnN1/log1p(as.numeric(date-date1)), 
            lnNWt2=lnN2/log1p(as.numeric(date-date2)),
-           lnNAvg1=0, lnNAvg2=0, prAlertAvg1=0, prAlertAvg2=0) %>%
+           lnNAvg1=0, lnNAvg2=0, prAlertAvg1=0, prAlertAvg2=0, 
+           lnNPrevYr=0, prAlertPrevYr=0, lnNAvgPrevYr=0, prAlertAvgPrevYr=0) %>%
     group_by(y) %>%
     group_split()
   
   for(i in seq_along(y.ls)) {
     y.df_i <- y.ls[[i]] %>% select(siteid, date, lnN1, lnN2, alert1, alert2)
+    yYr_i <- y.ls[[i]] %>% mutate(year=year(date)) %>%
+      group_by(siteid, year) %>%
+      summarise(lnN_yr=mean(lnN, na.rm=T),
+                prAlert_yr=mean(alert=="A1", na.rm=T)) %>%
+      ungroup
     for(j in 1:nrow(y.ls[[i]])) {
       site_j <- y.df_i$siteid[j]
       date_j <- y.df_i$date[j]
+      yr_j <- year(date_j)
       wk.df <- y.df_i %>%
         filter(siteid %in% dist.df$dest_c[dist.df$origin==site_j][[1]] &
                  date <= date_j & 
                  date > date_j-7) 
+      yr.df <- yYr_i %>%
+        filter(siteid %in% dist.df$dest_c[dist.df$origin==site_j][[1]] &
+                 year == yr_j - 1)
+      yr.site_j <- yYr_i %>% filter(siteid==site_j & year==yr_j-1)
       y.ls[[i]]$lnNAvg1[j] <- mean(wk.df$lnN1, na.rm=T)
       y.ls[[i]]$lnNAvg2[j] <- mean(wk.df$lnN2, na.rm=T)
       y.ls[[i]]$prAlertAvg1[j] <- mean(wk.df$alert1 == "A1", na.rm=T)
       y.ls[[i]]$prAlertAvg2[j] <- mean(wk.df$alert2 == "A1", na.rm=T)
+      y.ls[[i]]$lnNAvgPrevYr[j] <- mean(yr.df$lnN_yr, na.rm=T)
+      y.ls[[i]]$prAlertAvgPrevYr[j] <- mean(yr.df$prAlert_yr, na.rm=T)
+      y.ls[[i]]$lnNPrevYr[j] <- mean(yr.site_j$lnN_yr, na.rm=T)
+      y.ls[[i]]$prAlertPrevYr[j] <- mean(yr.site_j$prAlert_yr, na.rm=T)
       if(j %% 1000 == 0) {cat(i, ":", j, "of", nrow(y.ls[[i]]), "\n")}
     }
   }
