@@ -382,7 +382,7 @@ extract_env_pts <- function(site.df, env_vars, env.df, id_env, site.v) {
     arrange({{id_env}}, date) %>%
     group_by({{id_env}}) %>%
     mutate(across(any_of(env_vars), 
-                  ~rollmean(.x, k=7, na.pad=T),
+                  ~rollmean(.x, k=7, na.pad=T, align="right"),
                   .names="{.col}Wk")) %>%
     mutate(across(any_of(paste0(env_vars, "Wk")),
                   ~.x - lag(.x),
@@ -468,7 +468,7 @@ extract_env_buffers <- function(site.buffer, vars, env.df, id_env) {
   env.buffer <- env.buffer %>% 
     group_by(siteid, quadrant) %>%
     mutate(across(any_of(vars$all), 
-                  ~rollmean(.x, k=7, na.pad=T),
+                  ~rollmean(.x, k=7, na.pad=T, align="right"),
                   .names="{.col}AvgWk")) %>%
     mutate(across(any_of(paste0(vars$all, "AvgWk")),
                   ~.x - lag(.x),
