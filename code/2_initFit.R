@@ -155,21 +155,27 @@ foreach(i=seq_along(obs.ls),
   }
   
   fit.ls <- map(responses, ~summarise_predictions(d.y$train, .x, fit.dir, y_i.i))
-  fit.ls$alert <- full_join(
-    fit.ls$alert, 
-    fit.ls[-which(responses=="alert")] %>%
-      map(~.x %>% select(y, obsid, siteid, date, ends_with("_A1"))) %>%
-      reduce(full_join)
-  )
+  fit.ls$alert <- fit.ls %>%
+    map(~.x %>% select(y, obsid, siteid, date, ends_with("_A1"))) %>%
+    reduce(full_join)
+  # fit.ls$alert <- full_join(
+  #   fit.ls$alert, 
+  #   fit.ls[-which(responses=="alert")] %>%
+  #     map(~.x %>% select(y, obsid, siteid, date, ends_with("_A1"))) %>%
+  #     reduce(full_join)
+  # )
   saveRDS(fit.ls, glue("{out.dir}/{y}_fit_ls.rds"))
   
   oos.ls <- map(responses, ~summarise_predictions(d.y$test, .x, fit.dir, y_i.i))
-  oos.ls$alert <- full_join(
-    oos.ls$alert, 
-    oos.ls[-which(responses=="alert")] %>%
-      map(~.x %>% select(y, obsid, siteid, date, ends_with("_A1"))) %>%
-      reduce(full_join)
-  )
+  oos.ls$alert <- oos.ls %>%
+    map(~.x %>% select(y, obsid, siteid, date, ends_with("_A1"))) %>%
+    reduce(full_join)
+  # oos.ls$alert <- full_join(
+  #   oos.ls$alert, 
+  #   oos.ls[-which(responses=="alert")] %>%
+  #     map(~.x %>% select(y, obsid, siteid, date, ends_with("_A1"))) %>%
+  #     reduce(full_join)
+  # )
   saveRDS(oos.ls, glue("{out.dir}/{y}_oos_ls.rds"))
   
   
@@ -201,7 +207,7 @@ foreach(i=seq_along(obs.ls),
     
     # predict
     cv.ls <- map(responses, ~summarise_predictions(d.cv$test, .x, cv.dir, y_i.i, yr_))
-    cv.ls$alert <- oos.ls %>%
+    cv.ls$alert <- cv.ls %>%
       map(~.x %>% select(y, obsid, siteid, date, ends_with("_A1"))) %>%
       reduce(full_join)
     saveRDS(cv.ls, glue("{cv.dir}/{y}_CV{yr_}.rds"))
@@ -221,16 +227,16 @@ foreach(i=seq_along(obs.ls),
   
   fit.ls <- map(responses, ~calc_ensemble(fit.ls, wt.ls, .x, y_i.i))
   fit.ls$alert <- full_join(
-    fit.ls[[1]], 
-    fit.ls[-1] %>%
+    fit.ls$alert, 
+    fit.ls[-which(responses=="alert")] %>%
       map(~.x %>% select(y, obsid, siteid, date, matches("ens_.*_A1"))) %>%
       reduce(full_join)
     )
   
   oos.ls <- map(responses, ~calc_ensemble(oos.ls, wt.ls, .x, y_i.i))
   oos.ls$alert <- full_join(
-    oos.ls[[1]], 
-    oos.ls[-1] %>%
+    oos.ls$alert, 
+    oos.ls[-which(responses=="alert")] %>%
       map(~.x %>% select(y, obsid, siteid, date, matches("ens_.*_A1"))) %>%
       reduce(full_join)
   )
