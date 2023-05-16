@@ -11,8 +11,8 @@ pkgs <- c("tidyverse", "lubridate", "glue", "tidymodels", "nnet", "randomForest"
 lapply(pkgs, library, character.only=T)
 source("code/00_fn.R")
 
-covSet <- c("test", "full", "noDt", 
-            "noDtDelta", "noInt", "noDtDeltaInt")[1]
+covSet <- c("1-test", "2-noDtDeltaInt", "3-noInt",
+            "4-noDtDelta", "5-noDt", "6-full")[2]
 cores_per_model <- 3
 n_spp_parallel <- 3
 fit.dir <- glue("out/model_fits/{covSet}/")

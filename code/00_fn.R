@@ -1123,10 +1123,11 @@ load_datasets <- function(sub.dir, target) {
 #' @export
 #'
 #' @examples
-prep_recipe <- function(train.df, response, covsExclude="NA") {
+prep_recipe <- function(train.df, response, covsExclude="NA", dimReduce=FALSE) {
   respExclude <- grep(response, c("lnN", "tl", "alert"), value=T, invert=T)
   pred_vars <- names(train.df)
-  recipe(train.df) %>%
+  include_interactions <- !grepl("X", covsExclude)
+  rec <- recipe(train.df) %>%
     step_mutate(prevAlert=alert1, role="ID") %>%
     update_role(all_of(pred_vars), new_role="predictor") %>%
     update_role(all_of(response), new_role="outcome") %>%
@@ -1140,14 +1141,23 @@ prep_recipe <- function(train.df, response, covsExclude="NA") {
     update_role(yday, new_role="RE") %>%
     step_rename(ydayCos=yday_cos_1, ydaySin=yday_sin_1) %>%
     step_mutate_at(lon, lat, fn=list(z=~.)) %>%
-    step_interact(term=~ydaySin:ydayCos, sep="X") %>%
-    step_interact(terms=~UWk:fetch:matches("Dir[EW]"), sep="X") %>%
-    step_interact(terms=~VWk:fetch:matches("Dir[NS]"), sep="X") %>%
+    step_interact(term=~ydaySin:ydayCos, sep="X")
+  if(include_interactions) {
+    rec <- rec %>%
+      step_interact(terms=~UWk:fetch:matches("Dir[EW]"), sep="X") %>%
+      step_interact(terms=~VWk:fetch:matches("Dir[NS]"), sep="X")
+  }
+  rec <- rec %>%
     step_interact(terms=~lon_z:lat_z, sep="X") %>%
     step_YeoJohnson(all_predictors()) %>%
     step_normalize(all_predictors()) %>%
     step_rename_at(contains("_"), fn=~str_remove_all(.x, "_")) %>%
-    step_select(-matches(covsExclude)) %>%
+    step_select(-matches(covsExclude))
+  if(dimReduce) {
+    rec <- rec %>%
+      step_pca(threshold=0.9)
+  }
+  rec %>%
     prep(training=train.df)
 }
 
