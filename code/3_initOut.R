@@ -15,22 +15,27 @@ source("code/00_fn.R")
 y_i <- bind_rows(read_csv("data/i_hab.csv") %>% arrange(abbr) %>% mutate(type="hab"),
                  read_csv("data/i_tox.csv") %>% arrange(abbr) %>% mutate(type="tox"))
 
-mod_i <- tibble(levels=c("nullGrand", "null4wk", "ens", "ENet", "NN", "RF", "RRF",
-                         paste0("HBL", c("", 1:3)), paste0("HBN", c("", 1:3))),
+mod_i <- tibble(levels=c("nullGrand", "null4wk", "ens", 
+                         "ENet", "MARS", "RF", "NN", 
+                         "SVMl", "SVMr", "Boost",
+                         paste0("HBL", 1:3), paste0("HBN", 1:3)),
                 labels=c("Null (grand)", "Null (\u00B12wk avg)", "Ensemble",
-                         "ENet GLM", "NeuralNetwork", "RandForest", "RandForest",
-                         paste0("Bayes-L", c("", 1:3)), 
-                         paste0("Bayes-NL", c("", 1:3))))
-mod_cols <- c(rep("grey", 2), "#a6cee3", "#1f78b4", "#fb9a99", "#e31a1c", "#e31a1c", 
-              rep("#b2df8a", 4), rep("#33a02c", 4)) %>%
+                         "ENet GLM", "MARS", "RandForest", "NeuralNetwork",
+                         "SVM-linear", "SVM-radial", "XGBoost",
+                         paste0("Bayes-L", 1:3), 
+                         paste0("Bayes-NL", 1:3)))
+mod_cols <- c(rep("grey", 2), "black", 
+              "#b2df8a", "#33a02c", "#fb9a99", "#e31a1c", 
+              "#fdbf6f", "#ff7f00", "#6a3d9a",
+              rep("#a6cee3", 3), rep("#1f78b4", 3)) %>%
   setNames(mod_i$labels)
 
 # d.ls <- dirf("data/0_init/", "data_baked.*test") %>% map(readRDS)
-fit.ls <- dirf("out", "_fit_ls.rds", recursive=T) %>%
+fit.ls <- dirf("out/compiled", "_fit_ls.rds", recursive=T) %>%
   map(~readRDS(.x) %>% lapply(., function(x) {x %>% mutate(file=.x)})) %>%
   list_transpose() %>% map(bind_rows) %>%
   map(~.x %>% mutate(covSet=str_split_fixed(file, "/", 3)[,2]))
-oos.ls <- dirf("out", "_oos_ls.rds", recursive=T) %>%
+oos.ls <- dirf("out/compiled", "_oos_ls.rds", recursive=T) %>%
   map(~readRDS(.x) %>% lapply(., function(x) {x %>% mutate(file=.x)})) %>%
   list_transpose() %>% map(bind_rows) %>%
   map(~.x %>% mutate(covSet=str_split_fixed(file, "/", 3)[,2]))
@@ -45,22 +50,26 @@ oos.ls$alert_L <- oos.ls$alert %>%
   mutate(model=str_split_fixed(run, "_", 3)[,1], 
          resp=str_split_fixed(run, "_", 3)[,2]) %>% 
   # filter(model != "nullGrand") %>%
-  mutate(model=factor(model, levels=mod_i$levels, labels=mod_i$labels))  %>% 
-  filter(date < "2023-01-01")
+  mutate(model=factor(model, levels=mod_i$levels, labels=mod_i$labels))
   
 meta <- map_dfr(dir("out/model_fits/test/meta", "tune"), 
                 ~readRDS(paste0("out/model_fits/test/meta/", .x)) %>% 
-                  collect_metrics() %>% mutate(f=.x)) %>%
-  mutate(across(any_of(c("penalty", "mixture", "trees", "min_n", "hidden_units", "epochs")), factor))
-ggplot(meta %>% filter(grepl("ENet", f)), aes(penalty, mean, colour=mixture)) + 
-  geom_line() + geom_point() + facet_grid(f~.metric)
-ggplot(meta %>% filter(grepl("RF", f)), aes(trees, mean, colour=min_n)) + 
-  geom_line() + facet_grid(f~.metric)
-ggplot(meta %>% filter(grepl("NN", f)), aes(penalty, mean, colour=hidden_units, linetype=epochs)) + 
-  geom_line() + facet_grid(f~.metric)
-ggplot(meta, aes(mean, f)) + geom_boxplot() + facet_wrap(~.metric)
+                  collect_metrics() %>% mutate(f=.x)) 
+meta %>% filter(grepl("ENet", f)) %>% mutate(mixture=factor(mixture)) %>% 
+  filter(.metric=="roc_auc")%>%
+  ggplot(aes(penalty, mean, colour=mixture)) + ylim(0.5, 1) +
+  geom_line() + scale_colour_viridis_d(option="turbo") + facet_wrap(~f)
+meta %>% filter(grepl("RF", f)) %>% mutate(min_n=factor(min_n)) %>% 
+  filter(.metric=="roc_auc") %>%
+  ggplot(aes(trees, mean, colour=min_n)) + ylim(0.5, 1) +
+  geom_line() + scale_colour_viridis_d(option="turbo") + facet_wrap(~f)
+meta %>% filter(grepl("NN", f)) %>% mutate(epochs=factor(epochs)) %>% 
+  filter(.metric=="roc_auc") %>%
+  ggplot(aes(penalty, mean, colour=epochs)) + ylim(0.5, 1) +
+  geom_line() + scale_colour_viridis_d(option="turbo") + facet_grid(f~hidden_units)
+
 meta %>% group_by(f, .metric) %>% arrange(mean) %>% slice_tail(n=1) %>%
-  ggplot(aes(mean, f)) + geom_point() + facet_wrap(~.metric)
+  ggplot(aes(mean, f)) + geom_point() + facet_wrap(~.metric, scales="free_x")
 
 
 
@@ -131,6 +140,13 @@ thresh.HSS %>%
 
 # AUC
 oos.ls$alert_L %>% 
+  na.omit %>%
+  group_by(y, model, resp) %>%
+  yardstick::roc_auc(prA1, truth=alert, event_level="second") %>%
+  group_by(y) %>% arrange(desc(.estimate)) %>% slice_head(n=1) %>%
+  ungroup %>% arrange(desc(.estimate))
+oos.ls$alert_L %>% 
+  na.omit %>%
   group_by(y, model, resp) %>%
   yardstick::roc_auc(prA1, truth=alert, event_level="second") %>%
   arrange(y, desc(.estimate)) %>%
@@ -235,7 +251,6 @@ oos.ls$alert_L %>%
 oos.ls$alert_L %>%
   mutate(prA1=if_else(prA1==0, 1e-5, prA1),
          prA1=if_else(prA1==1, 1-1e-5, prA1)) %>%
-  filter(resp != "lnN") %>%
   group_by(y, model, resp, covSet) %>%
   mutate(alert=as.numeric(alert=="A1")) %>%
   summarise(LL=sum(dbinom(alert, 1, prA1, log=T))) %>%
@@ -263,13 +278,33 @@ oos.ls$alert_L %>%
   arrange(y, model) %>%
   mutate(R2=1 - LL/first(LL)) %>%
   filter(model != "Null (grand)") %>%
+  ggplot(aes(R2, y, colour=model, fill=model)) + 
+  ggridges::geom_density_ridges(alpha=0.2) + 
+  scale_colour_manual(values=mod_cols) +
+  scale_fill_manual(values=mod_cols) +
+  labs(x="McFaddens R2 by site (oos)", y="Model") + 
+  xlim(0, 1) + 
+  theme(panel.grid.minor=element_blank(), 
+        axis.text.x=element_text(angle=270, hjust=0, vjust=0.5),
+        legend.position="bottom")
+oos.ls$alert_L %>%
+  mutate(prA1=if_else(prA1==0, 1e-5, prA1),
+         prA1=if_else(prA1==1, 1-1e-5, prA1)) %>%
+  # filter(resp != "lnN") %>%
+  group_by(y, model, resp, covSet, siteid) %>%
+  mutate(alert=as.numeric(alert=="A1")) %>%
+  summarise(LL=sum(dbinom(alert, 1, prA1, log=T))) %>%
+  group_by(y, siteid) %>%
+  arrange(y, model) %>%
+  mutate(R2=1 - LL/first(LL)) %>%
+  filter(model != "Null (grand)") %>%
   group_by(y, model, resp, covSet) %>%
   summarise(R2_mn=mean(R2), se=sd(R2)/sqrt(n())) %>%
   ggplot(aes(model, R2_mn, colour=model, shape=covSet)) + 
   geom_point(size=2) + geom_errorbar(aes(ymin=R2_mn-2*se, ymax=R2_mn+2*se), width=0.5) +
   scale_colour_manual(values=mod_cols) +
   labs(x="Model", y="McFaddens R2 mn, 2se among sites (oos)") + 
-  facet_grid(resp~y) + ylim(0, 0.8) + 
+  facet_grid(resp~y) + ylim(0, 1) + 
   theme(panel.grid.minor=element_blank(), 
         axis.text.x=element_text(angle=270, hjust=0, vjust=0.5),
         legend.position="bottom")
@@ -294,7 +329,89 @@ oos.ls$alert_L %>%
         axis.text.x=element_text(angle=270, hjust=0, vjust=0.5),
         legend.position="bottom")
 
+oos.ls$alert_L %>%
+  mutate(prA1=if_else(prA1==0, 1e-5, prA1),
+         prA1=if_else(prA1==1, 1-1e-5, prA1)) %>%
+  # filter(resp != "lnN") %>%
+  group_by(y, model, resp, covSet, siteid) %>%
+  mutate(alert=as.numeric(alert=="A1")) %>%
+  summarise(LL=sum(dbinom(alert, 1, prA1, log=T)), 
+            nA1=sum(alert==1),
+            pA1=mean(alert)) %>%
+  group_by(y, siteid) %>%
+  arrange(y, model) %>%
+  mutate(R2=1 - LL/first(LL)) %>%
+  filter(model != "Null (grand)") %>%
+  group_by(y, model, resp, covSet) %>%
+  summarise(R2_mn=mean(R2), se=sd(R2)/sqrt(n()), nA1=sum(nA1), mnPA1=mean(pA1)) %>%
+  ungroup %>%
+  filter(!is.na(R2_mn)) %>%
+  group_by(y) %>%
+  arrange(R2_mn) %>% 
+  slice_tail(n=1) %>%
+  arrange(desc(R2_mn))
 
+
+oos.ls$alert_L %>%
+  mutate(prA1=if_else(prA1==0, 1e-5, prA1),
+         prA1=if_else(prA1==1, 1-1e-5, prA1)) %>%
+  # filter(resp != "lnN") %>%
+  group_by(y, model, resp, covSet, siteid) %>%
+  mutate(alert=as.numeric(alert=="A1")) %>%
+  summarise(LL=sum(dbinom(alert, 1, prA1, log=T)), 
+            nA1=sum(alert==1),
+            pA1=mean(alert)) %>%
+  group_by(y, siteid) %>%
+  arrange(y, model) %>%
+  mutate(R2=1 - LL/first(LL)) %>%
+  filter(model != "Null (grand)") %>%
+  group_by(y, model, resp, covSet) %>%
+  summarise(R2_mn=mean(R2), se=sd(R2)/sqrt(n()), nA1=sum(nA1), mnPA1=mean(pA1)) %>%
+  ungroup %>%
+  filter(!is.na(R2_mn)) %>%
+  ggplot(aes(mnPA1, R2_mn)) + 
+  geom_point() + facet_wrap(~model)
+
+oos.ls$alert_L %>%
+  mutate(prA1=if_else(prA1==0, 1e-5, prA1),
+         prA1=if_else(prA1==1, 1-1e-5, prA1)) %>%
+  # filter(resp != "lnN") %>%
+  group_by(y, model, resp, covSet, siteid) %>%
+  mutate(alert=as.numeric(alert=="A1")) %>%
+  summarise(LL=sum(dbinom(alert, 1, prA1, log=T)), 
+            nA1=sum(alert==1),
+            pA1=mean(alert)) %>%
+  group_by(y, siteid) %>%
+  arrange(y, model) %>%
+  mutate(R2=1 - LL/first(LL)) %>%
+  filter(model != "Null (grand)") %>%
+  filter(pA1 > 0 & pA1 < 1) %>%
+  ggplot(aes(pA1, R2, colour=model)) + ylim(-1,1) + 
+  scale_colour_manual(values=mod_cols) +
+  geom_point(alpha=0.6, shape=1) + 
+  stat_smooth(se=F, method="lm") + 
+  facet_wrap(~y) +
+  theme(legend.position="none")
+
+oos.ls$alert_L %>%
+  mutate(prA1=if_else(prA1==0, 1e-5, prA1),
+         prA1=if_else(prA1==1, 1-1e-5, prA1)) %>%
+  # filter(resp != "lnN") %>%
+  group_by(y, model, resp, covSet, siteid) %>%
+  mutate(alert=as.numeric(alert=="A1")) %>%
+  summarise(LL=sum(dbinom(alert, 1, prA1, log=T)), 
+            nA1=sum(alert==1),
+            pA1=mean(alert)) %>%
+  group_by(y, siteid) %>%
+  arrange(y, model) %>%
+  mutate(R2=1 - LL/first(LL)) %>%
+  filter(model != "Null (grand)") %>%
+  mutate(anyA1=pA1 > 0) %>%
+  ggplot(aes(anyA1, R2, fill=model)) + ylim(-1,1) + 
+  scale_fill_manual(values=mod_cols) +
+  geom_boxplot() +
+  facet_wrap(~y) +
+  theme(legend.position="none")
 
 
 
@@ -369,3 +486,40 @@ oos.ls$alert_L %>%
   group_by(y) %>%
   mutate(rank=row_number()) %>% 
   ggplot(aes(model, rank)) + geom_boxplot() + facet_wrap(~y)
+
+
+
+
+
+# variable importance -----------------------------------------------------
+
+enet.f <- dirf("out/model_fits", "_ENet.rds", recursive=T)
+rf.f <- dirf("out/model_fits", "_RF.rds", recursive=T)
+nn.f <- dirf("out/model_fits", "_NN.rds", recursive=T)
+
+vi.df <- bind_rows(
+  enet.f %>% 
+    map_dfr(~readRDS(.x) %>% tidy %>% mutate(f=.x)) %>% 
+    filter(term!="(Intercept)") %>%
+    group_by(f) %>% mutate(Importance=abs(estimate)/max(abs(estimate))) %>% ungroup %>%
+    rename(Variable=term) %>% select(-estimate) %>%
+    mutate(model="ENet"), 
+  rf.f %>%
+    map_dfr(~readRDS(.x) %>% extract_fit_engine() %>% vip::vi(scale=T) %>% mutate(f=.x)) %>%
+    group_by(f) %>% mutate(Importance=Importance/max(Importance)) %>% ungroup %>%
+    mutate(model="RF"),
+  nn.f %>%
+    map_dfr(~readRDS(.x) %>% extract_fit_engine() %>% vip::vi(scale=T) %>% mutate(f=.x)) %>%
+    group_by(f) %>% mutate(Importance=abs(Importance)/max(abs(Importance))) %>% ungroup %>%
+    mutate(model="NN")
+) %>%
+  mutate(model=factor(model, levels=mod_i$levels, labels=mod_i$labels),
+         y=str_split_fixed(str_split_fixed(f, "/", 4)[,4], "_", 3)[,1]) 
+
+vi.df %>%
+  ggplot(aes(Importance, Variable, fill=model)) + 
+  geom_bar(stat="identity", colour="grey30", position="dodge") + 
+  scale_fill_manual(values=mod_cols) + 
+  facet_grid(.~y)
+
+
