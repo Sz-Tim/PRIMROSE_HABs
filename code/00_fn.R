@@ -1361,28 +1361,43 @@ fit_model <- function(mod, resp, form.ls, d.ls, opts, tunes, out.dir, y, suffix=
   library(glue); library(tidymodels)
   dir.create(glue("{out.dir}/meta/"), showWarnings=F, recursive=T)
   # Fit ML models
-  if(mod %in% c("ENet", "KNN", "RF", "NN")) {
+  if(mod %in% c("ENet", "RF", "NN", "MARS", "SVMl", "SVMr", "Boost")) {
     fit_ID <- glue("{y}_{resp}_{mod}{ifelse(is.null(suffix),'',suffix)}")
-    ML_spec <- switch(paste0(resp, mod),
-                      alertENet=logistic_reg(penalty=tune(), mixture=tune()) %>%
+    ML_spec <- switch(mod,
+                      ENet=logistic_reg(penalty=tune(), 
+                                        mixture=tune()) %>%
                         set_engine("glmnet") %>% set_mode("classification"),
-                      tlENet=multinom_reg(penalty=tune(), mixture=tune()) %>%
-                        set_engine("glmnet") %>% set_mode("classification"),
-                      alertRF=rand_forest(trees=tune(), min_n=tune()) %>%
+                      RF=rand_forest(trees=tune(), 
+                                     min_n=tune()) %>%
                         set_engine("randomForest") %>% set_mode("classification"),
-                      tlRF=rand_forest(trees=tune(), min_n=tune()) %>%
-                        set_engine("randomForest") %>% set_mode("classification"),
-                      alertNN=mlp(hidden_units=tune(), penalty=tune(), epochs=tune()) %>%
+                      NN=mlp(hidden_units=tune(), 
+                             penalty=tune(), 
+                             epochs=tune()) %>%
                         set_engine("nnet") %>% set_mode("classification"),
-                      tlNN=mlp(hidden_units=tune(), penalty=tune(), epochs=tune()) %>%
-                        set_engine("nnet") %>% set_mode("classification")
+                      MARS=mars(num_terms=tune(), 
+                                prod_degree=tune()) %>%
+                        set_engine("earth") %>% set_mode("classification"),
+                      SVMl=svm_linear(cost=tune(),
+                                      margin=tune()) %>%
+                        set_engine("kernlab") %>% set_mode("classification"),
+                      SVMr=svm_rbf(cost=tune(),
+                                   rbf_sigma=tune()) %>%
+                        set_engine("kernlab") %>% set_mode("classification"),
+                      Boost=boost_tree(trees=2000,
+                                       tree_depth=tune(),
+                                       min_n=tune(),
+                                       learn_rate=tune(),
+                                       loss_reduction=tune()) %>%
+                        set_engine("xgboost") %>% set_mode("classification")
     )
     wf <- workflow() %>%
       add_model(ML_spec) %>%
       add_formula(form.ls[[resp]]$ML)
     out_tune <- wf %>%
       tune_grid(resamples=opts, 
-                grid=grid_regular(extract_parameter_set_dials(ML_spec), levels=tunes))
+                grid=grid_regular(extract_parameter_set_dials(ML_spec), 
+                                  levels=tunes[[mod]]),
+                metrics=metric_set(roc_auc, mn_log_loss))
     saveRDS(out_tune, glue("{out.dir}/meta/{fit_ID}_tune.rds"))
     out <- wf %>%
       finalize_workflow(select_best(out_tune, "roc_auc")) %>%
@@ -1611,17 +1626,46 @@ calc_LL_wts <- function(cv.df, resp, wt.penalty=1) {
 #' @export
 #'
 #' @examples
-calc_ensemble <- function(out.ls, wt.ls, resp, y_i.i) {
-  library(tidyverse)
+calc_ensemble <- function(out.ls, wt.ls, resp, y_i.i, method="wtmean", out.path=NULL) {
+  library(tidyverse); library(tidymodels)
+  if(grepl("lasso", method) & resp != "alert") {
+    stop("Lasso only implemented for alert")
+  }
   if(resp=="alert") {
-    out <- left_join(
-      out.ls[[resp]] %>% 
-        pivot_longer(ends_with("_A1"), names_to="model", values_to="pr"),
-      wt.ls[[resp]]
-    ) %>%
-      group_by(obsid) %>%
-      summarise(ens_alert_A1=sum(pr*wt, na.rm=T)) %>%
-      ungroup
+    if(method=="wtmean") {
+      out <- left_join(
+        out.ls[[resp]] %>% 
+          pivot_longer(ends_with("_A1"), names_to="model", values_to="pr"),
+        wt.ls[[resp]]
+      ) %>%
+        group_by(obsid) %>%
+        summarise(ens_alert_A1=sum(pr*wt, na.rm=T)) %>%
+        ungroup
+    } else if(method=="lasso_fit") {
+      folds <- vfold_cv(wt.ls[[resp]], strata="alert")
+      ens_spec <- logistic_reg(penalty=tune(), mixture=tune()) %>%
+        set_engine("glmnet") %>% set_mode("classification")
+      ens_rec <- recipe(alert~., data=wt.ls[[resp]]) %>%
+        update_role(y, obsid, siteid, date, new_role="ID") %>%
+        step_logit(ends_with("_A1"), offset=0.01) %>%
+        step_normalize(all_predictors())
+      wf <- workflow() %>%
+        add_model(ens_spec) %>%
+        add_recipe(ens_rec)
+      out_tune <- wf %>%
+        tune_grid(resamples=folds,
+                  grid=grid_regular(extract_parameter_set_dials(ens_spec), 
+                                    levels=30))
+      out_lasso <- wf %>%
+        finalize_workflow(select_best(out_tune, "roc_auc")) %>%
+        fit(wt.ls[[resp]])
+      saveRDS(out_lasso, glue("{out.path}/{y_i.i$abbr}_EnsLasso.rds"))
+    }
+    if(method %in% c("lasso_fit", "lasso_oos")) {
+      out_lasso <- readRDS(glue("{out.path}/{y_i.i$abbr}_EnsLasso.rds"))
+      out <- out.ls[[resp]] %>%
+        mutate(ensLasso_alert_A1=predict(out_lasso, new_data=., type="prob")[[2]])
+    }
   }
   if(resp=="tl") {
     thresh <- as.numeric(str_sub(y_i.i$tl_thresh, -1, -1))
