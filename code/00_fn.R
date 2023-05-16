@@ -1373,7 +1373,7 @@ fit_model <- function(mod, resp, form.ls, d.ls, opts, tunes, out.dir, y, suffix=
   # Fit ML models
   if(mod %in% c("ENet", "RF", "NN", "MARS", "SVMl", "SVMr", "Boost")) {
     fit_ID <- glue("{y}_{resp}_{mod}{ifelse(is.null(suffix),'',suffix)}")
-    ML_form <- ifelse(suffix=="_PCA", "ML_PCA", "ML")
+    ML_form <- ifelse(all(!is.null(suffix), suffix=="_PCA"), "ML_PCA", "ML")
     ML_spec <- switch(mod,
                       ENet=logistic_reg(penalty=tune(), 
                                         mixture=tune()) %>%
