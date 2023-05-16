@@ -44,8 +44,9 @@ tl_hab <- read_csv("data/tl_thresholds_hab.csv") %>%
 #               rename(N_thresh=min_ge, tl_thresh=tl) %>%
 #               select(abbr, N_thresh, tl_thresh))# %>%
 # write_csv(hab_i, "data/i_hab.csv")
-# NB: toxin thresholds are adjusted for ASP, AZAs, YTXs because of the extremely 
-# limited occurrence of TL2 and TL3. Models thus predict only presence/absence
+# NB: toxin thresholds are adjusted for ASP, AZP, YTX because of the extremely 
+# limited occurrence of TL2 and TL3. Models thus predict only presence/absence.
+# NB: there are still too few observations for a reliable model.
 tl_tox <- read_csv("data/tl_thresholds_tox.csv") %>%
   filter(min_ge != -99) %>%
   group_by(abbr) %>%
@@ -321,7 +322,7 @@ cmems.site_hab <- extract_env_pts(site_hab.df, cmems_i$all, cmems.df %>% mutate(
 saveRDS(cmems.site_hab, "data/0_init/cmems_sitePt_hab.rds")
 
 # toxins
-site_tox.df <- readRDS("data/site_tox_df.rds") %>% select(-cmems_id)
+site_tox.df <- readRDS("data/site_tox_df.rds") %>% select(-any_of("cmems_id"))
 site_tox.df <- site_tox.df %>% find_nearest_feature_id(cmems.sf, "cmems_id")
 saveRDS(site_tox.df, "data/site_tox_df.rds")
 cmems.site_tox <- extract_env_pts(site_tox.df, cmems_i$all, cmems.df %>% mutate(version=1), cmems_id, "cmems_id")
@@ -443,13 +444,13 @@ saveRDS(obs_end, "data/0_init/obs_end.rds")
 
 write_to_current <- T
 if(write_to_current) {
-  file.copy(dirf("data/0_init/", "fsa_df"), "data/1_current/")
-  file.copy(dirf("data/0_init/", "cefas_df"), "data/1_current/")
-  file.copy(dirf("data/0_init/", "_obs.rds"), "data/1_current/")
-  file.copy(dirf("data/0_init/", "_habAvg.rds"), "data/1_current/")
-  file.copy(dirf("data/0_init/", "_sitePt_"), "data/1_current/")
-  file.copy(dirf("data/0_init/", "_siteBufferNSEW_"), "data/1_current/")
-  file.copy(dirf("data/0_init/", "data_.*_all.rds"), "data/1_current/")
-  file.copy(dirf("data/0_init/", "obs_end"), "data/1_current/")
+  file.copy(dirf("data/0_init/", "fsa_df"), "data/1_current/", overwrite=T)
+  file.copy(dirf("data/0_init/", "cefas_df"), "data/1_current/", overwrite=T)
+  file.copy(dirf("data/0_init/", "_obs.rds"), "data/1_current/", overwrite=T)
+  file.copy(dirf("data/0_init/", "_habAvg.rds"), "data/1_current/", overwrite=T)
+  file.copy(dirf("data/0_init/", "_sitePt_"), "data/1_current/", overwrite=T)
+  file.copy(dirf("data/0_init/", "_siteBufferNSEW_"), "data/1_current/", overwrite=T)
+  file.copy(dirf("data/0_init/", "data_.*_all.rds"), "data/1_current/", overwrite=T)
+  file.copy(dirf("data/0_init/", "obs_end"), "data/1_current/", overwrite=T)
 }
 

@@ -14,15 +14,16 @@ source("code/00_fn.R")
 covSet <- c("test", "full", "noDt", 
             "noDtDelta", "noInt", "noDtDeltaInt")[1]
 cores_per_model <- 3
-n_spp_parallel <- 6
+n_spp_parallel <- 3
 fit.dir <- glue("out/model_fits/{covSet}/")
 cv.dir <- glue("{fit.dir}/cv/")
-out.dir <- glue("out/{covSet}/")
+out.dir <- glue("out/compiled/{covSet}/")
 dir.create(cv.dir, recursive=T, showWarnings=F)
 dir.create(out.dir, recursive=T, showWarnings=F)
 
 y_i <- bind_rows(read_csv("data/i_hab.csv") %>% arrange(abbr) %>% mutate(type="hab"),
-                 read_csv("data/i_tox.csv") %>% arrange(abbr) %>% mutate(type="tox"))
+                 read_csv("data/i_tox.csv") %>% arrange(abbr) %>% mutate(type="tox")) %>%
+  filter(! abbr %in% c("ASP", "AZP", "YTX"))
 
 col_metadata <- c("obsid", "y", "date", "year", "yday", "siteid", "lon", "lat")
 col_resp <- c("lnN", "tl", "alert")
@@ -36,6 +37,7 @@ all_covs <- list(
     "fetch", 
     "lnNWt1", "lnNAvg1", "prAlertAvg1", "alert1A1", 
     "lnNWt2", "lnNAvg2", "prAlertAvg2", "alert2A1",
+    "lnNPrevYr", "lnNAvgPrevYr", "prAlertPrevYr", "prAlertAvgPrevYr",
     col_cmems, col_wrf
   ),
   interact=c(
@@ -56,6 +58,7 @@ covs_exclude <- switch(covSet,
                        noDtDeltaInt="Xfetch|Dt|Delta")
 
 obs.ls <- map_dfr(dirf("data/0_init", "data_.*_all.rds"), readRDS) %>%
+  filter(y %in% y_i$abbr) %>%
   select(all_of(col_metadata), all_of(col_resp), 
          "alert1", "alert2", any_of(unname(unlist(all_covs)))) %>%
   mutate(across(starts_with("alert"), ~factor(.x)),
