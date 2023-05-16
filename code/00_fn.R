@@ -1155,7 +1155,7 @@ prep_recipe <- function(train.df, response, covsExclude="NA", dimReduce=FALSE) {
     step_select(-matches(covsExclude))
   if(dimReduce) {
     rec <- rec %>%
-      step_pca(threshold=0.9)
+      step_pca(all_predictors(), threshold=0.95)
   }
   rec %>%
     prep(training=train.df)
@@ -1373,6 +1373,7 @@ fit_model <- function(mod, resp, form.ls, d.ls, opts, tunes, out.dir, y, suffix=
   # Fit ML models
   if(mod %in% c("ENet", "RF", "NN", "MARS", "SVMl", "SVMr", "Boost")) {
     fit_ID <- glue("{y}_{resp}_{mod}{ifelse(is.null(suffix),'',suffix)}")
+    ML_form <- ifelse(suffix=="_PCA", "ML_PCA", "ML")
     ML_spec <- switch(mod,
                       ENet=logistic_reg(penalty=tune(), 
                                         mixture=tune()) %>%
@@ -1402,7 +1403,7 @@ fit_model <- function(mod, resp, form.ls, d.ls, opts, tunes, out.dir, y, suffix=
     )
     wf <- workflow() %>%
       add_model(ML_spec) %>%
-      add_formula(form.ls[[resp]]$ML)
+      add_formula(form.ls[[resp]][[ML_form]])
     out_tune <- wf %>%
       tune_grid(resamples=opts, 
                 grid=grid_regular(extract_parameter_set_dials(ML_spec), 

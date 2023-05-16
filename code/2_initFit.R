@@ -12,8 +12,8 @@ lapply(pkgs, library, character.only=T)
 source("code/00_fn.R")
 
 covSet <- c("1-test", "2-noDtDeltaInt", "3-noInt",
-            "4-noDtDelta", "5-noDt", "6-full")[2]
-cores_per_model <- 3
+            "4-noDtDelta", "5-noDt", "6-full")[4]
+cores_per_model <- 4
 n_spp_parallel <- 3
 fit.dir <- glue("out/model_fits/{covSet}/")
 cv.dir <- glue("{fit.dir}/cv/")
@@ -50,12 +50,12 @@ all_covs <- list(
 )
 
 covs_exclude <- switch(covSet,
-                       full="NA",
-                       test="Xfetch|Dt|Delta|Avg",
-                       noDt="Dt",
-                       noDtDelta="Dt|Delta",
-                       noInt="Xfetch",
-                       noDtDeltaInt="Xfetch|Dt|Delta")
+                       '1-test'="Xfetch|Dt|Delta|Avg",
+                       '2-noDtDeltaInt'="Xfetch|Dt|Delta",
+                       '3-noInt'="Xfetch",
+                       '4-noDtDelta'="Dt|Delta",
+                       '5-noDt'="Dt",
+                       '6-full'="NA")
 
 obs.ls <- map_dfr(dirf("data/0_init", "data_.*_all.rds"), readRDS) %>%
   filter(y %in% y_i$abbr) %>%
@@ -96,15 +96,21 @@ foreach(i=seq_along(obs.ls),
   prep.ls <- map(responses, ~prep_recipe(obs.train, .x, covs_exclude))
   d.y <- list(train=map(prep.ls, ~bake(.x, obs.train)),
               test=map(prep.ls, ~bake(.x, obs.test)))
+  prepPCA.ls <- map(responses, ~prep_recipe(obs.train, .x, covs_exclude, TRUE))
+  dPCA.y <- list(train=map(prepPCA.ls, ~bake(.x, obs.train)),
+                 test=map(prepPCA.ls, ~bake(.x, obs.test)))
   # saveRDS(prep.ls, glue("data/0_init/data_prep_{y}_{covSet}.rds"))
   # saveRDS(d.y, glue("data/0_init/data_baked_{y}_{covSet}.rds"))
-  d.split <- map(responses, ~obs.split)
+  d.split <- dPCA.split <- map(responses, ~obs.split)
   for(r in responses) {
     d.split[[r]]$data <- d.split[[r]]$data %>% select(obsid) %>%
       left_join(bind_rows(d.y$train[[r]], d.y$test[[r]]))
+    dPCA.split[[r]]$data <- dPCA.split[[r]]$data %>% select(obsid) %>%
+      left_join(bind_rows(dPCA.y$train[[r]], dPCA.y$test[[r]]))
   }
   
   covs <- filter_corr_covs(all_covs, d.y, covs_exclude)
+  covsPCA <- names(dPCA.y$train[[1]] %>% select(starts_with("PC")))
   if(any(table(d.y$train$tl$tl)==0)) {
     responses <- grep("tl", responses, invert=T, value=T)
   }
@@ -117,6 +123,7 @@ foreach(i=seq_along(obs.ls),
     ~list(HBL=make_HB_formula(.x, c(covs$main, covs$interact)),
           HBN=make_HB_formula(.x, c(covs$main, covs$interact), sTerms=smooths),
           ML=formula(glue("{.x} ~ {paste(unlist(covs), collapse='+')}")),
+          ML_PCA=formula(glue("{.x} ~ {paste(covsPCA, collapse='+')}")),
           HB_vars=formula(glue("{.x} ~ yday + lon + lat + siteid +",
                                "{paste(unlist(covs), collapse='+')}"))
     )
@@ -156,6 +163,8 @@ foreach(i=seq_along(obs.ls),
   for(r in responses) {
     set.seed(3001)
     folds <- vfold_cv(d.y$train[[r]], strata=r)
+    set.seed(3001)
+    foldsPCA <- vfold_cv(dPCA.y$train[[r]], strata=r)
     fit_model("ENet", r, form.ls, d.y$train, folds, n_tuneVal, fit.dir, y)
     fit_model("MARS", r, form.ls, d.y$train, folds, n_tuneVal, fit.dir, y)
     fit_model("RF", r, form.ls, d.y$train, folds, n_tuneVal, fit.dir, y)
@@ -163,6 +172,13 @@ foreach(i=seq_along(obs.ls),
     fit_model("SVMl", r, form.ls, d.y$train, folds, n_tuneVal, fit.dir, y)
     fit_model("SVMr", r, form.ls, d.y$train, folds, n_tuneVal, fit.dir, y)
     fit_model("Boost", r, form.ls, d.y$train, folds, n_tuneVal, fit.dir, y)
+    fit_model("ENet", r, form.ls, dPCA.y$train, foldsPCA, n_tuneVal, fit.dir, y, "_PCA")
+    fit_model("MARS", r, form.ls, dPCA.y$train, foldsPCA, n_tuneVal, fit.dir, y, "_PCA")
+    fit_model("RF", r, form.ls, dPCA.y$train, foldsPCA, n_tuneVal, fit.dir, y, "_PCA")
+    fit_model("NN", r, form.ls, dPCA.y$train, foldsPCA, n_tuneVal, fit.dir, y, "_PCA")
+    fit_model("SVMl", r, form.ls, dPCA.y$train, foldsPCA, n_tuneVal, fit.dir, y, "_PCA")
+    fit_model("SVMr", r, form.ls, dPCA.y$train, foldsPCA, n_tuneVal, fit.dir, y, "_PCA")
+    fit_model("Boost", r, form.ls, dPCA.y$train, foldsPCA, n_tuneVal, fit.dir, y, "_PCA")
     # fit_model("HBL", r, form.ls, d.y$train, HB.i, priors, fit.dir, y)
     # fit_model("HBN", r, form.ls, d.y$train, HB.i, priors, fit.dir, y)
   }
