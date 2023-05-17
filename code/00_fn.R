@@ -1469,16 +1469,36 @@ fit_model <- function(mod, resp, form.ls, d.ls, opts, tunes, out.dir, y, suffix=
 #' @export
 #'
 #' @examples
-summarise_predictions <- function(d.y, resp, fit.dir, y_i.i, suffix=NULL) {
+summarise_predictions <- function(d.y, dPCA.y, resp, fit.dir, y_i.i, suffix=NULL) {
   library(tidyverse); library(glue); library(tidymodels)
   fits.f <- dirf(fit.dir, glue("{y_i.i$abbr[1]}_{resp}.*{ifelse(is.null(suffix),'',suffix)}"))
   names(fits.f) <- str_split_fixed(str_split_fixed(fits.f, glue("{resp}_"), 2)[,2], "_|\\.", 2)[,1]
   fits <- map(fits.f, readRDS)
-  preds <- imap_dfc(fits, ~get_predictions(.x, .y, resp, d.y, y_i.i))
+  
+  fits.dPCA <- grep("PCA", fits.f)
+  fits.d <- grep("PCA", fits.f, invert=T)
+  
+  if(length(fits.dPCA) > 0) {
+    preds.dPCA <- imap_dfc(fits[fits.dPCA], ~get_predictions(.x, .y, resp, dPCA.y, y_i.i)) %>%
+      rename_with(~glue("PCA.{.x}"))
+  } else {
+    preds.dPCA <- NULL
+  }
+  
+  if(length(fits.d) > 0) {
+    preds.d <- imap_dfc(fits[fits.d], ~get_predictions(.x, .y, resp, d.y, y_i.i))
+  } else {
+    preds.d <- NULL
+  }
   
   out.df <- d.y[[resp]] %>%
-    select(y, obsid, siteid, date, {{resp}}) %>%
-    bind_cols(preds)
+    select(y, obsid, siteid, date, {{resp}}) 
+  if(!is.null(preds.d)) {
+    out.df <- out.df %>% bind_cols(preds.d)
+  }
+  if(!is.null(preds.dPCA)) {
+    out.df <- out.df %>% bind_cols(preds.dPCA)
+  }
   return(out.df)
 }
 
