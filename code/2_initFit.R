@@ -211,6 +211,21 @@ foreach(i=seq_along(obs.ls),
   
   # . cross validation by year ----------------------------------------------
   
+  # Only necessary for Bayesian models; ML models use CV in fitting process
+  for(r in responses) {
+    set.seed(3001)
+    folds <- vfold_cv(d.y$train[[r]], strata=r)
+    for(f in 1:nrow(folds)) {
+      f_ <- paste0("_", str_pad(f, 2, side="left", pad="0"))
+      d.cv <- list(train=list(alert=training(folds$splits[[f]])),
+                   test=list(alert=testing(folds$splits[[f]])))
+      fit_model("HBL", r, form.ls, d.cv$train, HB.i, priors, cv.dir, y, f_)
+      summarise_predictions(d.cv$test, NULL, r, cv.dir, y_i.i, f_) %>%
+        saveRDS(glue("{cv.dir}/{y}_CV{f_}.rds"))
+    }
+  }
+  
+  
   yrCV <- unique(d.y$train$alert$year)
   for(k in 1:length(yrCV)) {
     yr <- yrCV[k]
