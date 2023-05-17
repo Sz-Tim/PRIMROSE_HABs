@@ -216,12 +216,12 @@ foreach(i=seq_along(obs.ls),
     set.seed(3001)
     folds <- vfold_cv(d.y$train[[r]], strata=r)
     for(f in 1:nrow(folds)) {
-      f_ <- paste0("_", str_pad(f, 2, side="left", pad="0"))
+      f_ <- paste0("f_", str_pad(f, 2, side="left", pad="0"))
       d.cv <- list(train=list(alert=training(folds$splits[[f]])),
                    test=list(alert=testing(folds$splits[[f]])))
       fit_model("HBL", r, form.ls, d.cv$train, HB.i, priors, cv.dir, y, f_)
       summarise_predictions(d.cv$test, NULL, r, cv.dir, y_i.i, f_) %>%
-        saveRDS(glue("{cv.dir}/{y}_CV{f_}.rds"))
+        saveRDS(glue("{cv.dir}/{y}_HB-CV{f_}.rds"))
     }
   }
   
