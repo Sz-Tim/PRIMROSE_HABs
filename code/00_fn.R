@@ -1373,7 +1373,9 @@ fit_model <- function(mod, resp, form.ls, d.ls, opts, tunes, out.dir, y, suffix=
   # Fit ML models
   if(mod %in% c("ENet", "RF", "NN", "MARS", "SVMl", "SVMr", "Boost")) {
     fit_ID <- glue("{y}_{resp}_{mod}{ifelse(is.null(suffix),'',suffix)}")
-    ML_form <- ifelse(all(!is.null(suffix), suffix=="_PCA"), "ML_PCA", "ML")
+    PCA_run <- all(!is.null(suffix) & suffix=="_PCA")
+    mod.prefix <- ifelse(PCA_run, "PCA.", "")
+    ML_form <- ifelse(PCA_run, "ML_PCA", "ML")
     ML_spec <- switch(mod,
                       ENet=logistic_reg(penalty=tune(), 
                                         mixture=tune()) %>%
@@ -1420,7 +1422,7 @@ fit_model <- function(mod, resp, form.ls, d.ls, opts, tunes, out.dir, y, suffix=
       mutate(obsid=d.ls[[resp]]$obsid,
              y=y) %>%
       select(y, obsid, .pred_A1) %>%
-      rename_with(~glue("{mod}_{resp}_A1"), .cols=".pred_A1") %>%
+      rename_with(~glue("{prefix}{mod}_{resp}_A1"), .cols=".pred_A1") %>%
       saveRDS(glue("{out.dir}/cv/{fit_ID}_CV.rds"))
     out <- wf %>%
       finalize_workflow(best) %>%
@@ -1615,6 +1617,63 @@ summarise_post_preds <- function(post, resp, y_i.i) {
 
 
 
+
+
+
+
+#' Merge summarised predictions across all models into single dataframes
+#'
+#' @param files vector of full file path
+#'
+#' @return
+#' @export
+#'
+#' @examples
+merge_pred_dfs <- function(files, CV=NULL) {
+  f.df <- tibble(f=files, 
+                 covSet=str_split(files, "/") %>% 
+                   map_chr(~grep("^[1-9]", .x, value=T) %>% str_sub(1, 1)),
+                 PCA=grepl("PCA", files))
+  if(is.null(CV)) {
+    map(1:nrow(f.df), 
+        ~readRDS(f.df$f[.x]) %>% 
+          lapply(., function(x) {x %>% mutate(covSet=paste0("d", f.df$covSet[.x], "."))})) %>%
+      list_transpose() %>%
+      map_depth(2, ~.x %>% 
+                  pivot_longer(ends_with("_A1"), names_to="model", values_to="prA1") %>%
+                  mutate(model=paste0(covSet, model)) %>%
+                  select(-covSet) %>%
+                  pivot_wider(names_from="model", values_from="prA1")) %>%
+      map(~reduce(.x, full_join)) 
+  } else if(CV=="HB") {
+    map_dfr(1:nrow(f.df), 
+            ~readRDS(f.df$f[.x]) %>% mutate(covSet=paste0("d", f.df$covSet[.x], "."))) %>%
+      pivot_longer(ends_with("A1"), names_to="model", values_to="prA1") %>%
+      mutate(model=paste0(covSet, model)) %>%
+      select(-covSet) %>%
+      pivot_wider(names_from="model", values_from="prA1")
+  } else if(CV=="ML") {
+    map(1:nrow(f.df), 
+        ~readRDS(f.df$f[.x]) %>% 
+          mutate(covSet=paste0("d", f.df$covSet[.x], "."),
+                 PCA=f.df$PCA[.x])) %>%
+      reduce(full_join) %>%
+      pivot_longer(ends_with("A1"), names_to="model", values_to="prA1") %>%
+      mutate(model=paste0(covSet, model)) %>%
+      select(-covSet) %>%
+      pivot_wider(names_from="model", values_from="prA1")
+  } else {
+    stop("CV must be 'HB', 'ML', or NULL")
+  }
+}
+
+
+
+
+
+
+
+
 #' Calculate model weights based on mean log loss
 #'
 #' @param cv.df 
@@ -1697,8 +1756,8 @@ calc_ensemble <- function(out.ls, wt.ls, resp, y_i.i, method="wtmean", out.path=
         add_recipe(ens_rec)
       out_tune <- wf %>%
         tune_grid(resamples=folds,
-                  grid=grid_regular(extract_parameter_set_dials(ens_spec), 
-                                    levels=30))
+                  grid=grid_latin_hypercube(extract_parameter_set_dials(ens_spec), 
+                                            size=1e3))
       out_lasso <- wf %>%
         finalize_workflow(select_best(out_tune, "roc_auc")) %>%
         fit(wt.ls[[resp]])
@@ -1707,6 +1766,7 @@ calc_ensemble <- function(out.ls, wt.ls, resp, y_i.i, method="wtmean", out.path=
     if(method %in% c("lasso_fit", "lasso_oos")) {
       out_lasso <- readRDS(glue("{out.path}/{y_i.i$abbr}_EnsLasso.rds"))
       out <- out.ls[[resp]] %>%
+        select(obsid) %>%
         mutate(ensLasso_alert_A1=predict(out_lasso, new_data=., type="prob")[[2]])
     }
   }

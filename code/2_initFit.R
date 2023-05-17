@@ -12,9 +12,9 @@ lapply(pkgs, library, character.only=T)
 source("code/00_fn.R")
 
 covSet <- c("1-test", "2-noDtDeltaInt", "3-noInt",
-            "4-noDtDelta", "5-noDt", "6-full")[4]
-cores_per_model <- 4
-n_spp_parallel <- 3
+            "4-noDtDelta", "5-noDt", "6-full")[1]
+cores_per_model <- 3
+n_spp_parallel <- 4
 fit.dir <- glue("out/model_fits/{covSet}/")
 cv.dir <- glue("{fit.dir}/cv/")
 out.dir <- glue("out/compiled/{covSet}/")
@@ -139,16 +139,14 @@ foreach(i=seq_along(obs.ls),
                                  HBN=make_HB_priors(priStr, "HBN", .x, covs)))
   
   # tuning controls
-  n_tuneVal <- list(ENet=30, 
-                    MARS=30,
-                    RF=5, 
-                    NN=5,
-                    SVMl=5, 
-                    SVMr=5, 
-                    Boost=5)
+  n_tuneVal <- list(ENet=1e3, 
+                    MARS=1e3,
+                    RF=1e2, 
+                    NN=1e2,
+                    Boost=1e2)
   HB.i <- list(
-    iter=1500,
-    warmup=1000,
+    iter=20,
+    warmup=10,
     refresh=1,
     chains=cores_per_model,
     cores=cores_per_model,
@@ -169,15 +167,11 @@ foreach(i=seq_along(obs.ls),
     fit_model("MARS", r, form.ls, d.y$train, folds, n_tuneVal, fit.dir, y)
     fit_model("RF", r, form.ls, d.y$train, folds, n_tuneVal, fit.dir, y)
     fit_model("NN", r, form.ls, d.y$train, folds, n_tuneVal, fit.dir, y)
-    fit_model("SVMl", r, form.ls, d.y$train, folds, n_tuneVal, fit.dir, y)
-    fit_model("SVMr", r, form.ls, d.y$train, folds, n_tuneVal, fit.dir, y)
     fit_model("Boost", r, form.ls, d.y$train, folds, n_tuneVal, fit.dir, y)
     fit_model("ENet", r, form.ls, dPCA.y$train, foldsPCA, n_tuneVal, fit.dir, y, "_PCA")
     fit_model("MARS", r, form.ls, dPCA.y$train, foldsPCA, n_tuneVal, fit.dir, y, "_PCA")
     fit_model("RF", r, form.ls, dPCA.y$train, foldsPCA, n_tuneVal, fit.dir, y, "_PCA")
     fit_model("NN", r, form.ls, dPCA.y$train, foldsPCA, n_tuneVal, fit.dir, y, "_PCA")
-    fit_model("SVMl", r, form.ls, dPCA.y$train, foldsPCA, n_tuneVal, fit.dir, y, "_PCA")
-    fit_model("SVMr", r, form.ls, dPCA.y$train, foldsPCA, n_tuneVal, fit.dir, y, "_PCA")
     fit_model("Boost", r, form.ls, dPCA.y$train, foldsPCA, n_tuneVal, fit.dir, y, "_PCA")
     # fit_model("HBL", r, form.ls, d.y$train, HB.i, priors, fit.dir, y)
     # fit_model("HBN", r, form.ls, d.y$train, HB.i, priors, fit.dir, y)
@@ -216,56 +210,26 @@ foreach(i=seq_along(obs.ls),
     set.seed(3001)
     folds <- vfold_cv(d.y$train[[r]], strata=r)
     for(f in 1:nrow(folds)) {
-      f_ <- paste0("f_", str_pad(f, 2, side="left", pad="0"))
+      f_ <- paste0("_f", str_pad(f, 2, side="left", pad="0"))
       d.cv <- list(train=list(alert=training(folds$splits[[f]])),
                    test=list(alert=testing(folds$splits[[f]])))
       fit_model("HBL", r, form.ls, d.cv$train, HB.i, priors, cv.dir, y, f_)
       summarise_predictions(d.cv$test, NULL, r, cv.dir, y_i.i, f_) %>%
-        saveRDS(glue("{cv.dir}/{y}_HB-CV{f_}.rds"))
+        saveRDS(glue("{cv.dir}/{y}_{r}_HB_CV{f_}.rds"))
     }
-  }
-  
-  
-  yrCV <- unique(d.y$train$alert$year)
-  for(k in 1:length(yrCV)) {
-    yr <- yrCV[k]
-    yr_ <- paste0("_", yr)
-    
-    d.cv <- list(train=map(d.y$train, ~.x %>% filter(year!=yr)),
-                 test=map(d.y$train, ~.x %>% filter(year==yr)))
-    
-    for(r in responses) {
-      set.seed(1003)
-      folds <- vfold_cv(d.cv$train[[r]])
-      fit_model("ENet", r, form.ls, d.cv$train, folds, n_tuneVal, cv.dir, y, yr_)
-      fit_model("MARS", r, form.ls, d.cv$train, folds, n_tuneVal, cv.dir, y, yr_)
-      fit_model("RF", r, form.ls, d.cv$train, folds, n_tuneVal, cv.dir, y, yr_)
-      fit_model("NN", r, form.ls, d.cv$train, folds, n_tuneVal, cv.dir, y, yr_)
-      fit_model("SVMl", r, form.ls, d.cv$train, folds, n_tuneVal, cv.dir, y, yr_)
-      fit_model("SVMr", r, form.ls, d.cv$train, folds, n_tuneVal, cv.dir, y, yr_)
-      fit_model("Boost", r, form.ls, d.cv$train, folds, n_tuneVal, cv.dir, y, yr_)
-      fit_model("HBL", r, form.ls, d.cv$train, HB.i, priors, cv.dir, y, yr_)
-      fit_model("HBN", r, form.ls, d.cv$train, HB.i, priors, cv.dir, y, yr_)
-    }
-    
-    # predict
-    cv.ls <- map(responses, ~summarise_predictions(d.cv$test, dPCA.cv$test, .x, cv.dir, y_i.i, yr_))
-    # cv.ls$alert <- cv.ls %>%
-    #   map(~.x %>% select(y, obsid, siteid, date, ends_with("_A1"))) %>%
-    #   reduce(full_join)
-    saveRDS(cv.ls, glue("{cv.dir}/{y}_CV{yr_}.rds"))
   }
   
   
   
   # . ensemble --------------------------------------------------------------
   
-  fit.ls <- readRDS(glue("{out.dir}/{y}_fit_ls.rds"))
-  oos.ls <- readRDS(glue("{out.dir}/{y}_oos_ls.rds"))
-  cv.ls <- map(dirf(cv.dir, glue("{y}_CV")), readRDS)
-  cv.ls <- list(alert=map_dfr(cv.ls, ~.x$alert),
-                tl=map_dfr(cv.ls, ~.x$tl) %>% select(-ends_with("_A1")),
-                lnN=map_dfr(cv.ls, ~.x$lnN) %>% select(-ends_with("_A1")))
+  fit.ls <- merge_pred_dfs(dirf("out/compiled", glue("{y}_fit_ls.rds"), recursive=T))
+  oos.ls <- merge_pred_dfs(dirf("out/compiled", glue("{y}_oos_ls.rds"), recursive=T))
+  cv.ls <- list(alert=full_join(
+    merge_pred_dfs(dirf("out/model_fits", glue("{y}_.*_HB_CV"), recursive=T), CV="HB"),
+    merge_pred_dfs(dirf("out/model_fits", glue("{y}_.*_CV.rds"), recursive=T), CV="ML"), 
+    by=c("y", "obsid"))
+    )
   wt.ls <- imap(cv.ls, ~calc_LL_wts(.x, .y))
   
   fit.ls <- map(responses, ~calc_ensemble(fit.ls, wt.ls, .x, y_i.i, "wtmean"))
