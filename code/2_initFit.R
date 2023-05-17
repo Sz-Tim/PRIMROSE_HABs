@@ -89,9 +89,9 @@ foreach(i=seq_along(obs.ls),
   obs.test <- testing(obs.split)
   
   
-
-# . prep ------------------------------------------------------------------
-
+  
+  # . prep ------------------------------------------------------------------
+  
   responses <- c(alert="alert", tl="tl")[1]
   prep.ls <- map(responses, ~prep_recipe(obs.train, .x, covs_exclude))
   d.y <- list(train=map(prep.ls, ~bake(.x, obs.train)),
@@ -158,7 +158,7 @@ foreach(i=seq_along(obs.ls),
   
   
   
-# . train: fit models -----------------------------------------------------
+  # . train: fit models -----------------------------------------------------
   
   for(r in responses) {
     set.seed(3001)
@@ -183,7 +183,7 @@ foreach(i=seq_along(obs.ls),
     # fit_model("HBN", r, form.ls, d.y$train, HB.i, priors, fit.dir, y)
   }
   
-  fit.ls <- map(responses, ~summarise_predictions(d.y$train, .x, fit.dir, y_i.i))
+  fit.ls <- map(responses, ~summarise_predictions(d.y$train, dPCA.y$train, .x, fit.dir, y_i.i))
   # fit.ls$alert <- fit.ls %>%
   #   map(~.x %>% select(y, obsid, siteid, date, ends_with("_A1"))) %>%
   #   reduce(full_join)
@@ -195,7 +195,7 @@ foreach(i=seq_along(obs.ls),
   # )
   saveRDS(fit.ls, glue("{out.dir}/{y}_fit_ls.rds"))
   
-  oos.ls <- map(responses, ~summarise_predictions(d.y$test, .x, fit.dir, y_i.i))
+  oos.ls <- map(responses, ~summarise_predictions(d.y$test, dPCA.y$test, .x, fit.dir, y_i.i))
   # oos.ls$alert <- oos.ls %>%
   #   map(~.x %>% select(y, obsid, siteid, date, ends_with("_A1"))) %>%
   #   reduce(full_join)
@@ -208,9 +208,9 @@ foreach(i=seq_along(obs.ls),
   saveRDS(oos.ls, glue("{out.dir}/{y}_oos_ls.rds"))
   
   
-
-# . cross validation by year ----------------------------------------------
-
+  
+  # . cross validation by year ----------------------------------------------
+  
   yrCV <- unique(d.y$train$alert$year)
   for(k in 1:length(yrCV)) {
     yr <- yrCV[k]
@@ -234,7 +234,7 @@ foreach(i=seq_along(obs.ls),
     }
     
     # predict
-    cv.ls <- map(responses, ~summarise_predictions(d.cv$test, .x, cv.dir, y_i.i, yr_))
+    cv.ls <- map(responses, ~summarise_predictions(d.cv$test, dPCA.cv$test, .x, cv.dir, y_i.i, yr_))
     # cv.ls$alert <- cv.ls %>%
     #   map(~.x %>% select(y, obsid, siteid, date, ends_with("_A1"))) %>%
     #   reduce(full_join)
@@ -242,8 +242,8 @@ foreach(i=seq_along(obs.ls),
   }
   
   
-
-# . ensemble --------------------------------------------------------------
+  
+  # . ensemble --------------------------------------------------------------
   
   fit.ls <- readRDS(glue("{out.dir}/{y}_fit_ls.rds"))
   oos.ls <- readRDS(glue("{out.dir}/{y}_oos_ls.rds"))
@@ -276,9 +276,9 @@ foreach(i=seq_along(obs.ls),
   saveRDS(wt.ls, glue("{out.dir}/{y}_wt_ls.rds"))
   
   
-
-# . null ------------------------------------------------------------------
-
+  
+  # . null ------------------------------------------------------------------
+  
   fit.ls <- readRDS(glue("{out.dir}/{y}_fit_ls.rds")) 
   oos.ls <- readRDS(glue("{out.dir}/{y}_oos_ls.rds"))
   
@@ -291,8 +291,8 @@ foreach(i=seq_along(obs.ls),
   saveRDS(fit.ls, glue("{out.dir}/{y}_fit_ls.rds"))
   saveRDS(oos.ls, glue("{out.dir}/{y}_oos_ls.rds"))
   saveRDS(map(null.ls, ~.x$yday.df), glue("{out.dir}/{y}_null_ls.rds"))
-
-  }
+  
+}
 
 closeAllConnections()
 
