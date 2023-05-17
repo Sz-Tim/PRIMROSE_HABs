@@ -1422,7 +1422,7 @@ fit_model <- function(mod, resp, form.ls, d.ls, opts, tunes, out.dir, y, suffix=
       mutate(obsid=d.ls[[resp]]$obsid,
              y=y) %>%
       select(y, obsid, .pred_A1) %>%
-      rename_with(~glue("{prefix}{mod}_{resp}_A1"), .cols=".pred_A1") %>%
+      rename_with(~glue("{mod.prefix}{mod}_{resp}_A1"), .cols=".pred_A1") %>%
       saveRDS(glue("{out.dir}/cv/{fit_ID}_CV.rds"))
     out <- wf %>%
       finalize_workflow(best) %>%
