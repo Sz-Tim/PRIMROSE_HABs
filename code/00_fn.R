@@ -1394,7 +1394,7 @@ fit_model <- function(mod, resp, form.ls, d.ls, opts, tunes, out.dir, y, suffix=
                       SVMr=svm_rbf(cost=tune(),
                                    rbf_sigma=tune()) %>%
                         set_engine("kernlab") %>% set_mode("classification"),
-                      Boost=boost_tree(trees=2000,
+                      Boost=boost_tree(trees=tune(),
                                        tree_depth=tune(),
                                        min_n=tune(),
                                        learn_rate=tune(),
@@ -1404,10 +1404,11 @@ fit_model <- function(mod, resp, form.ls, d.ls, opts, tunes, out.dir, y, suffix=
     wf <- workflow() %>%
       add_model(ML_spec) %>%
       add_formula(form.ls[[resp]][[ML_form]])
+    set.seed(1003)
     out_tune <- wf %>%
       tune_grid(resamples=opts, 
-                grid=grid_regular(extract_parameter_set_dials(ML_spec), 
-                                  levels=tunes[[mod]]),
+                grid=grid_latin_hypercube(extract_parameter_set_dials(ML_spec), 
+                                          size=tunes[[mod]]),
                 metrics=metric_set(roc_auc, mn_log_loss))
     saveRDS(out_tune, glue("{out.dir}/meta/{fit_ID}_tune.rds"))
     out <- wf %>%
