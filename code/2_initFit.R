@@ -59,6 +59,7 @@ covs_exclude <- switch(covSet,
 
 obs.ls <- map_dfr(dirf("data/0_init", "data_.*_all.rds"), readRDS) %>%
   filter(y %in% y_i$abbr) %>%
+  filter(year(date) < 2023) %>%
   select(all_of(col_metadata), all_of(col_resp), 
          "alert1", "alert2", any_of(unname(unlist(all_covs)))) %>%
   mutate(across(starts_with("alert"), ~factor(.x)),
@@ -145,9 +146,8 @@ foreach(i=seq_along(obs.ls),
                     NN=1e2,
                     Boost=1e2)
   HB.i <- list(
-    iter=20,
-    warmup=10,
-    refresh=1,
+    iter=1500,
+    warmup=1000,
     chains=cores_per_model,
     cores=cores_per_model,
     ctrl=list(adapt_delta=0.8, max_treedepth=10),
