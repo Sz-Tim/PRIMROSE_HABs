@@ -1371,7 +1371,7 @@ fit_model <- function(mod, resp, form.ls, d.ls, opts, tunes, out.dir, y, suffix=
   library(glue); library(tidymodels)
   dir.create(glue("{out.dir}/meta/"), showWarnings=F, recursive=T)
   # Fit ML models
-  if(mod %in% c("ENet", "RF", "NN", "MARS", "SVMl", "SVMr", "Boost")) {
+  if(mod %in% c("ENet", "RF", "NN", "MARS", "Boost")) {
     fit_ID <- glue("{y}_{resp}_{mod}{ifelse(is.null(suffix),'',suffix)}")
     PCA_run <- all(!is.null(suffix), suffix=="_PCA")
     mod.prefix <- ifelse(PCA_run, "PCA.", "")
@@ -1386,16 +1386,10 @@ fit_model <- function(mod, resp, form.ls, d.ls, opts, tunes, out.dir, y, suffix=
                       NN=mlp(hidden_units=tune(), 
                              penalty=tune(), 
                              epochs=tune()) %>%
-                        set_engine("nnet") %>% set_mode("classification"),
+                        set_engine("nnet", maxNWts=1e4) %>% set_mode("classification"),
                       MARS=mars(num_terms=tune(), 
                                 prod_degree=tune()) %>%
                         set_engine("earth") %>% set_mode("classification"),
-                      SVMl=svm_linear(cost=tune(),
-                                      margin=tune()) %>%
-                        set_engine("kernlab") %>% set_mode("classification"),
-                      SVMr=svm_rbf(cost=tune(),
-                                   rbf_sigma=tune()) %>%
-                        set_engine("kernlab") %>% set_mode("classification"),
                       Boost=boost_tree(trees=tune(),
                                        tree_depth=tune(),
                                        min_n=tune(),
@@ -1403,6 +1397,7 @@ fit_model <- function(mod, resp, form.ls, d.ls, opts, tunes, out.dir, y, suffix=
                                        loss_reduction=tune()) %>%
                         set_engine("xgboost") %>% set_mode("classification")
     )
+    pr_auc2 <- metric_tweak("pr_auc2", pr_auc, event_level="second")
     wf <- workflow() %>%
       add_model(ML_spec) %>%
       add_formula(form.ls[[resp]][[ML_form]])
@@ -1411,10 +1406,10 @@ fit_model <- function(mod, resp, form.ls, d.ls, opts, tunes, out.dir, y, suffix=
       tune_grid(resamples=opts, 
                 grid=grid_latin_hypercube(extract_parameter_set_dials(ML_spec), 
                                           size=tunes[[mod]]),
-                metrics=metric_set(roc_auc, pr_auc), 
+                metrics=metric_set(roc_auc, pr_auc, pr_auc2), 
                 control=control_grid(save_pred=T))
     saveRDS(out_tune, glue("{out.dir}/meta/{fit_ID}_tune.rds"))
-    best <- select_best(out_tune, "pr_auc")
+    best <- select_best(out_tune, "pr_auc2")
     out_tune %>% 
       collect_predictions() %>%
       filter(.config==best$.config) %>%
