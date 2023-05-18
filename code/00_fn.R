@@ -1411,10 +1411,10 @@ fit_model <- function(mod, resp, form.ls, d.ls, opts, tunes, out.dir, y, suffix=
       tune_grid(resamples=opts, 
                 grid=grid_latin_hypercube(extract_parameter_set_dials(ML_spec), 
                                           size=tunes[[mod]]),
-                metrics=metric_set(roc_auc, mn_log_loss), 
+                metrics=metric_set(roc_auc, gain_capture), 
                 control=control_grid(save_pred=T))
     saveRDS(out_tune, glue("{out.dir}/meta/{fit_ID}_tune.rds"))
-    best <- select_best(out_tune, "roc_auc")
+    best <- select_best(out_tune, "gain_capture")
     out_tune %>% 
       collect_predictions() %>%
       filter(.config==best$.config) %>%
@@ -1688,7 +1688,7 @@ calc_LL_wts <- function(cv.df, resp, wt.penalty=1) {
     wt.df <- cv.df %>%
       pivot_longer(ends_with("_A1"), names_to="model", values_to="pr") %>%
       group_by(model) %>%
-      mn_log_loss(pr, truth=alert, event_level="second") 
+      gain_capture(pr, truth=alert, event_level="second") 
   }
   if(resp=="tl") {
     wt.df <- cv.df %>%
@@ -1708,7 +1708,7 @@ calc_LL_wts <- function(cv.df, resp, wt.penalty=1) {
   }
   return(wt.df %>%
            ungroup %>%
-           mutate(wt=(1/.estimate^wt.penalty)/sum(1/.estimate^wt.penalty)))
+           mutate(wt=(.estimate^wt.penalty)/sum(.estimate^wt.penalty)))
 }
 
 
