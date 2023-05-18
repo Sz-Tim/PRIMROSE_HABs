@@ -178,27 +178,9 @@ foreach(i=seq_along(obs.ls),
   }
   
   fit.ls <- map(responses, ~summarise_predictions(d.y$train, dPCA.y$train, .x, fit.dir, y_i.i))
-  # fit.ls$alert <- fit.ls %>%
-  #   map(~.x %>% select(y, obsid, siteid, date, ends_with("_A1"))) %>%
-  #   reduce(full_join)
-  # fit.ls$alert <- full_join(
-  #   fit.ls$alert, 
-  #   fit.ls[-which(responses=="alert")] %>%
-  #     map(~.x %>% select(y, obsid, siteid, date, ends_with("_A1"))) %>%
-  #     reduce(full_join)
-  # )
   saveRDS(fit.ls, glue("{out.dir}/{y}_fit_ls.rds"))
   
   oos.ls <- map(responses, ~summarise_predictions(d.y$test, dPCA.y$test, .x, fit.dir, y_i.i))
-  # oos.ls$alert <- oos.ls %>%
-  #   map(~.x %>% select(y, obsid, siteid, date, ends_with("_A1"))) %>%
-  #   reduce(full_join)
-  # oos.ls$alert <- full_join(
-  #   oos.ls$alert, 
-  #   oos.ls[-which(responses=="alert")] %>%
-  #     map(~.x %>% select(y, obsid, siteid, date, ends_with("_A1"))) %>%
-  #     reduce(full_join)
-  # )
   saveRDS(oos.ls, glue("{out.dir}/{y}_oos_ls.rds"))
   
   
@@ -232,34 +214,25 @@ foreach(i=seq_along(obs.ls),
     )
   wt.ls <- imap(cv.ls, ~calc_LL_wts(.x, .y))
   
+  cl <- makeCluster(cores_per_model)
+  registerDoParallel(cl)
   fit.ls <- map(responses, ~calc_ensemble(fit.ls, wt.ls, .x, y_i.i, "wtmean"))
   fit.ls <- map(responses, ~calc_ensemble(fit.ls, cv.ls, .x, y_i.i, "lasso_fit", cv.dir))
-  # fit.ls$alert <- full_join(
-  #   fit.ls$alert, 
-  #   fit.ls[-which(responses=="alert")] %>%
-  #     map(~.x %>% select(y, obsid, siteid, date, matches("ens_.*_A1"))) %>%
-  #     reduce(full_join)
-  #   )
+  stopCluster(cl)
   
   oos.ls <- map(responses, ~calc_ensemble(oos.ls, wt.ls, .x, y_i.i, "wtmean"))
   oos.ls <- map(responses, ~calc_ensemble(oos.ls, cv.ls, .x, y_i.i, "lasso_oos", cv.dir))
-  # oos.ls$alert <- full_join(
-  #   oos.ls$alert, 
-  #   oos.ls[-which(responses=="alert")] %>%
-  #     map(~.x %>% select(y, obsid, siteid, date, matches("ens_.*_A1"))) %>%
-  #     reduce(full_join)
-  # )
   
-  saveRDS(fit.ls, glue("{out.dir}/{y}_fit_ls.rds"))
-  saveRDS(oos.ls, glue("{out.dir}/{y}_oos_ls.rds"))
-  saveRDS(wt.ls, glue("{out.dir}/{y}_wt_ls.rds"))
+  saveRDS(fit.ls, glue("out/compiled/{y}_fit.rds"))
+  saveRDS(oos.ls, glue("out/compiled/{y}_oos.rds"))
+  saveRDS(wt.ls, glue("out/compiled/{y}_wt.rds"))
   
   
   
   # . null ------------------------------------------------------------------
   
-  fit.ls <- readRDS(glue("{out.dir}/{y}_fit_ls.rds")) 
-  oos.ls <- readRDS(glue("{out.dir}/{y}_oos_ls.rds"))
+  fit.ls <- readRDS(glue("out/compiled/{y}_fit.rds")) 
+  oos.ls <- readRDS(glue("out/compiled/{y}_oos.rds"))
   
   null.ls <- map(responses, ~calc_null(fit.ls, .x))
   fit.ls <- map(null.ls, ~.x$obs.df)
@@ -267,9 +240,9 @@ foreach(i=seq_along(obs.ls),
                  ~left_join(.x %>% mutate(yday=yday(date)), .y$yday.df) %>% select(-yday)) %>%
     map2(., fit.ls, ~bind_cols(.x, .y %>% select(contains("nullGrand")) %>% slice_head(n=1)))
   
-  saveRDS(fit.ls, glue("{out.dir}/{y}_fit_ls.rds"))
-  saveRDS(oos.ls, glue("{out.dir}/{y}_oos_ls.rds"))
-  saveRDS(map(null.ls, ~.x$yday.df), glue("{out.dir}/{y}_null_ls.rds"))
+  saveRDS(fit.ls, glue("out/compiled/{y}_fit.rds"))
+  saveRDS(oos.ls, glue("out/compiled/{y}_oos.rds"))
+  saveRDS(map(null.ls, ~.x$yday.df), glue("out/compiled/{y}_null.rds"))
   
 }
 
