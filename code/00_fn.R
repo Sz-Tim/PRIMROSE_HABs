@@ -1632,8 +1632,7 @@ summarise_post_preds <- function(post, resp, y_i.i) {
 merge_pred_dfs <- function(files, CV=NULL) {
   f.df <- tibble(f=files, 
                  covSet=str_split(files, "/") %>% 
-                   map_chr(~grep("^[1-9]", .x, value=T) %>% str_sub(1, 1)),
-                 PCA=grepl("PCA", files))
+                   map_chr(~grep("^[1-9]", .x, value=T) %>% str_sub(1, 1)))
   if(is.null(CV)) {
     map(1:nrow(f.df), 
         ~readRDS(f.df$f[.x]) %>% 
@@ -1655,8 +1654,7 @@ merge_pred_dfs <- function(files, CV=NULL) {
   } else if(CV=="ML") {
     map(1:nrow(f.df), 
         ~readRDS(f.df$f[.x]) %>% 
-          mutate(covSet=paste0("d", f.df$covSet[.x], "."),
-                 PCA=f.df$PCA[.x])) %>%
+          mutate(covSet=paste0("d", f.df$covSet[.x], "."))) %>%
       reduce(full_join) %>%
       pivot_longer(ends_with("A1"), names_to="model", values_to="prA1") %>%
       mutate(model=paste0(covSet, model)) %>%
@@ -1766,8 +1764,8 @@ calc_ensemble <- function(out.ls, wt.ls, resp, y_i.i, method="wtmean", out.path=
     if(method %in% c("lasso_fit", "lasso_oos")) {
       out_lasso <- readRDS(glue("{out.path}/{y_i.i$abbr}_EnsLasso.rds"))
       out <- out.ls[[resp]] %>%
-        select(obsid) %>%
-        mutate(ensLasso_alert_A1=predict(out_lasso, new_data=., type="prob")[[2]])
+        mutate(ensLasso_alert_A1=predict(out_lasso, new_data=., type="prob")[[2]]) %>%
+        select(obsid, ensLasso_alert_A1) 
     }
   }
   if(resp=="tl") {
