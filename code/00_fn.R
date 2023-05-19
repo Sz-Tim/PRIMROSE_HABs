@@ -1371,12 +1371,15 @@ fit_model <- function(mod, resp, form.ls, d.ls, opts, tunes, out.dir, y, suffix=
   library(glue); library(tidymodels)
   dir.create(glue("{out.dir}/meta/"), showWarnings=F, recursive=T)
   # Fit ML models
-  if(mod %in% c("ENet", "RF", "NN", "MARS", "Boost")) {
+  if(mod %in% c("Ridge", "ENet", "RF", "NN", "MARS", "Boost")) {
     fit_ID <- glue("{y}_{resp}_{mod}{ifelse(is.null(suffix),'',suffix)}")
     PCA_run <- all(!is.null(suffix), suffix=="_PCA")
     mod.prefix <- ifelse(PCA_run, "PCA.", "")
     ML_form <- ifelse(PCA_run, "ML_PCA", "ML")
     ML_spec <- switch(mod,
+                      Ridge=logistic_reg(penalty=tune(), 
+                                         mixture=0) %>%
+                        set_engine("glmnet") %>% set_mode("classification"),
                       ENet=logistic_reg(penalty=tune(), 
                                         mixture=tune()) %>%
                         set_engine("glmnet") %>% set_mode("classification"),
@@ -1651,12 +1654,12 @@ merge_pred_dfs <- function(files, CV=NULL) {
   } else if(CV=="ML") {
     map(1:nrow(f.df), 
         ~readRDS(f.df$f[.x]) %>% 
-          mutate(covSet=paste0("d", f.df$covSet[.x], "."))) %>%
-      reduce(full_join) %>%
-      pivot_longer(ends_with("A1"), names_to="model", values_to="prA1") %>%
-      mutate(model=paste0(covSet, model)) %>%
-      select(-covSet) %>%
-      pivot_wider(names_from="model", values_from="prA1")
+          mutate(covSet=paste0("d", f.df$covSet[.x], ".")) %>%
+          pivot_longer(ends_with("A1"), names_to="model", values_to="prA1") %>%
+          mutate(model=paste0(covSet, model)) %>%
+          select(-covSet) %>%
+          pivot_wider(names_from="model", values_from="prA1")) %>%
+      reduce(full_join)
   } else {
     stop("CV must be 'HB', 'ML', or NULL")
   }
@@ -1685,7 +1688,7 @@ calc_LL_wts <- function(cv.df, resp, wt.penalty=1) {
     wt.df <- cv.df %>%
       pivot_longer(ends_with("_A1"), names_to="model", values_to="pr") %>%
       group_by(model) %>%
-      gain_capture(pr, truth=alert, event_level="second") 
+      average_precision(pr, truth=alert, event_level="second") 
   }
   if(resp=="tl") {
     wt.df <- cv.df %>%
@@ -1739,9 +1742,15 @@ calc_ensemble <- function(out.ls, wt.ls, resp, y_i.i, method="wtmean", out.path=
         summarise(ens_alert_A1=sum(pr*wt, na.rm=T)) %>%
         ungroup
     } else if(method=="lasso_fit") {
+      avg_prec2 <- metric_tweak("avg_prec2", average_precision, event_level="second")
+      pr_auc2 <- metric_tweak("pr_auc2", pr_auc, event_level="second")
+      roc_auc2 <- metric_tweak("roc_auc2", roc_auc, event_level="second")
       folds <- vfold_cv(wt.ls[[resp]], strata="alert")
-      ens_spec <- logistic_reg(penalty=tune(), mixture=tune()) %>%
-        set_engine("glmnet") %>% set_mode("classification")
+      ens_spec <- logistic_reg(penalty=tune(), mixture=0) %>%
+        set_engine("glmnet", lower.limits=0) %>% set_mode("classification")
+      ens_spec <- rand_forest(trees=tune(), 
+                              min_n=tune()) %>%
+        set_engine("randomForest") %>% set_mode("classification")
       ens_rec <- recipe(alert~., data=wt.ls[[resp]]) %>%
         update_role(y, obsid, siteid, date, new_role="ID") %>%
         step_logit(ends_with("_A1"), offset=0.01) %>%
@@ -1751,15 +1760,16 @@ calc_ensemble <- function(out.ls, wt.ls, resp, y_i.i, method="wtmean", out.path=
         add_recipe(ens_rec)
       out_tune <- wf %>%
         tune_grid(resamples=folds,
-                  grid=grid_latin_hypercube(extract_parameter_set_dials(ens_spec), 
-                                            size=1e3))
+                  grid=grid_latin_hypercube(extract_parameter_set_dials(ens_spec),
+                                            size=5),
+                  metrics=metric_set(roc_auc2, pr_auc2, avg_prec2))
       out_lasso <- wf %>%
-        finalize_workflow(select_best(out_tune, "roc_auc")) %>%
+        finalize_workflow(select_best(out_tune, "avg_prec2")) %>%
         fit(wt.ls[[resp]])
-      saveRDS(out_lasso, glue("{out.path}/{y_i.i$abbr}_EnsLasso.rds"))
+      saveRDS(out_lasso, glue("{out.path}/{y_i.i$abbr}_EnsGLM.rds"))
     }
     if(method %in% c("lasso_fit", "lasso_oos")) {
-      out_lasso <- readRDS(glue("{out.path}/{y_i.i$abbr}_EnsLasso.rds"))
+      out_lasso <- readRDS(glue("{out.path}/{y_i.i$abbr}_EnsGLM.rds"))
       out <- out.ls[[resp]] %>%
         mutate(ensLasso_alert_A1=predict(out_lasso, new_data=., type="prob")[[2]]) %>%
         select(obsid, ensLasso_alert_A1) 

@@ -138,7 +138,8 @@ foreach(i=seq_along(obs.ls),
                                  HBN=make_HB_priors(priStr, "HBN", .x, covs)))
   
   # tuning controls
-  n_tuneVal <- list(ENet=1e3, 
+  n_tuneVal <- list(Ridge=1e3,
+                    ENet=1e3, 
                     MARS=1e3,
                     RF=1e2, 
                     NN=1e2,
@@ -161,11 +162,13 @@ foreach(i=seq_along(obs.ls),
     folds <- vfold_cv(d.y$train[[r]], strata=r)
     set.seed(3001)
     foldsPCA <- vfold_cv(dPCA.y$train[[r]], strata=r)
+    fit_model("Ridge", r, form.ls, d.y$train, folds, n_tuneVal, fit.dir, y)
     fit_model("ENet", r, form.ls, d.y$train, folds, n_tuneVal, fit.dir, y)
     fit_model("MARS", r, form.ls, d.y$train, folds, n_tuneVal, fit.dir, y)
     fit_model("RF", r, form.ls, d.y$train, folds, n_tuneVal, fit.dir, y)
     fit_model("NN", r, form.ls, d.y$train, folds, n_tuneVal, fit.dir, y)
     fit_model("Boost", r, form.ls, d.y$train, folds, n_tuneVal, fit.dir, y)
+    fit_model("Ridge", r, form.ls, dPCA.y$train, foldsPCA, n_tuneVal, fit.dir, y, "_PCA")
     fit_model("ENet", r, form.ls, dPCA.y$train, foldsPCA, n_tuneVal, fit.dir, y, "_PCA")
     fit_model("MARS", r, form.ls, dPCA.y$train, foldsPCA, n_tuneVal, fit.dir, y, "_PCA")
     fit_model("RF", r, form.ls, dPCA.y$train, foldsPCA, n_tuneVal, fit.dir, y, "_PCA")

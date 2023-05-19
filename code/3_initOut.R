@@ -15,46 +15,81 @@ source("code/00_fn.R")
 y_i <- bind_rows(read_csv("data/i_hab.csv") %>% arrange(abbr) %>% mutate(type="hab"),
                  read_csv("data/i_tox.csv") %>% arrange(abbr) %>% mutate(type="tox"))
 
-mod_i <- tibble(levels=c("nullGrand", "null4wk", "ens", 
-                         "ENet", "MARS", "RF", "NN", 
+mod_i <- tibble(levels=c("nullGrand", "null4wk", 
+                         "ens", "ensLasso", "perfect",
+                         "Ridge GLM", "ENet", "MARS", "RF", "NN", 
                          "SVMl", "SVMr", "Boost",
                          paste0("HBL", 1:3), paste0("HBN", 1:3)),
-                labels=c("Null (grand)", "Null (\u00B12wk avg)", "Ensemble",
-                         "ENet GLM", "MARS", "RandForest", "NeuralNetwork",
+                labels=c("Null (grand)", "Null (\u00B12wk avg)", 
+                         "Ensemble-WtMn", "Ensemble-glm", "perfect",
+                         "Ridge GLM", "ENet GLM", "MARS", "RandForest", "NeuralNetwork",
                          "SVM-linear", "SVM-radial", "XGBoost",
                          paste0("Bayes-L", 1:3), 
                          paste0("Bayes-NL", 1:3)))
-mod_cols <- c(rep("grey", 2), "black", 
-              "#b2df8a", "#33a02c", "#fb9a99", "#e31a1c", 
+mod_cols <- c(rep("grey", 2),
+              "black", "black", "black",
+              "#b2df8a", "#b2df8a", "#33a02c", "#fb9a99", "#e31a1c", 
               "#fdbf6f", "#ff7f00", "#6a3d9a",
               rep("#a6cee3", 3), rep("#1f78b4", 3)) %>%
   setNames(mod_i$labels)
 
 # d.ls <- dirf("data/0_init/", "data_baked.*test") %>% map(readRDS)
-fit.ls <- dirf("out/compiled", "_fit_ls.rds", recursive=T) %>%
-  map(~readRDS(.x) %>% lapply(., function(x) {x %>% mutate(file=.x)})) %>%
-  list_transpose() %>% map(bind_rows) %>%
-  map(~.x %>% mutate(covSet=str_split_fixed(file, "/", 3)[,2]))
-oos.ls <- dirf("out/compiled", "_oos_ls.rds", recursive=T) %>%
-  map(~readRDS(.x) %>% lapply(., function(x) {x %>% mutate(file=.x)})) %>%
-  list_transpose() %>% map(bind_rows) %>%
-  map(~.x %>% mutate(covSet=str_split_fixed(file, "/", 3)[,2]))
-fit.ls$alert_L <- fit.ls$alert %>%
+fit.ls <- dirf("out/compiled", "_fit.rds") %>%
+  map(~readRDS(.x)) %>% list_transpose() %>% map(bind_rows)
+oos.ls <- dirf("out/compiled", "_oos.rds") %>%
+  map(~readRDS(.x)) %>% list_transpose() %>% map(bind_rows)
+fit.ls$alert_L <- fit.ls$alert %>% 
+  mutate(perfect_A1=if_else(alert=="A0", 1e-5, 1-1e-5)) %>%
   pivot_longer(ends_with("_A1"), names_to="run", values_to="prA1") %>% 
   mutate(model=str_split_fixed(run, "_", 3)[,1], 
-         resp=str_split_fixed(run, "_", 3)[,2]) %>% 
+         resp=str_split_fixed(run, "_", 3)[,2],
+         PCA=grepl("PCA", model),
+         covSet=str_split_fixed(model, "\\.", 2)[,1],
+         model=str_remove(model, "PCA.") %>% str_remove("d.\\.")) %>% 
   # filter(model != "nullGrand") %>%
   mutate(model=factor(model, levels=mod_i$levels, labels=mod_i$labels))  
-oos.ls$alert_L <- oos.ls$alert %>%
+oos.ls$alert_L <- oos.ls$alert %>% 
+  mutate(perfect_A1=if_else(alert=="A0", 1e-5, 1-1e-5)) %>%
   pivot_longer(ends_with("_A1"), names_to="run", values_to="prA1") %>% 
   mutate(model=str_split_fixed(run, "_", 3)[,1], 
-         resp=str_split_fixed(run, "_", 3)[,2]) %>% 
+         resp=str_split_fixed(run, "_", 3)[,2],
+         PCA=grepl("PCA", model),
+         covSet=str_split_fixed(model, "\\.", 2)[,1],
+         model=str_remove(model, "PCA.") %>% str_remove("d.\\.")) %>% 
   # filter(model != "nullGrand") %>%
   mutate(model=factor(model, levels=mod_i$levels, labels=mod_i$labels))
   
-meta <- map_dfr(dir("out/model_fits/test/meta", "tune"), 
-                ~readRDS(paste0("out/model_fits/test/meta/", .x)) %>% 
-                  collect_metrics() %>% mutate(f=.x)) 
+meta <- map_dfr(dirf("out/model_fits", "[A-Za-z]_tune", recursive=T), 
+                ~readRDS(.x) %>% collect_metrics() %>% 
+                  mutate(f=.x,
+                         model=str_sub(str_split_fixed(f, "_alert_", 2)[,2], 1, -10),
+                         y=str_split_fixed(str_split_fixed(f, "meta/", 2)[,2], "_alert", 2)[,1],
+                         covSet=str_split_fixed(f, "/", 5)[,3])) %>%
+  mutate(PCA=grepl("PCA", model),
+         model=str_remove(model, "_PCA"))
+meta %>% 
+  group_by(f, .metric) %>% arrange(mean) %>% slice_tail(n=1) %>%
+  ggplot(aes(mean, model, colour=covSet, shape=PCA)) + 
+  xlim(0, 1) + 
+  scale_colour_brewer(type="qual", palette=2) + 
+  scale_shape_manual(values=c(1, 19)) + 
+  geom_point(alpha=0.6, size=3) + 
+  facet_grid(y~.metric)
+
+meta %>% 
+  mutate(covSet=str_sub(covSet, 1, 1)) %>%
+  group_by(f, .metric) %>% arrange(mean) %>% slice_tail(n=1) %>%
+  ggplot(aes(covSet, mean, colour=PCA, group=paste(model, PCA), linetype=model, shape=model)) + 
+  ylim(0, 1) + 
+  geom_line() + geom_point() +
+  facet_grid(.metric~y)
+
+meta %>% 
+  group_by(f, .metric) %>% arrange(mean) %>% slice_tail(n=1) %>% ungroup %>%
+  select(y, model, covSet, PCA, .metric, mean) %>%
+  pivot_wider(names_from=".metric", values_from="mean") %>%
+  arrange(y, model, covSet, PCA)
+
 meta %>% filter(grepl("ENet", f)) %>% mutate(mixture=factor(mixture)) %>% 
   filter(.metric=="roc_auc")%>%
   ggplot(aes(penalty, mean, colour=mixture)) + ylim(0.5, 1) +
