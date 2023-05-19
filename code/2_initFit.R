@@ -11,10 +11,9 @@ pkgs <- c("tidyverse", "lubridate", "glue", "tidymodels", "nnet", "randomForest"
 lapply(pkgs, library, character.only=T)
 source("code/00_fn.R")
 
-covSet <- c("1-test", "2-noDtDeltaInt", "3-noInt",
-            "4-noDtDelta", "5-noDt", "6-full")[1]
-cores_per_model <- 3
-n_spp_parallel <- 4
+covSet <- c("1-noDtDeltaX", "2-noX", "3-noDtDelta", "4-noDt", "5-full")[1]
+cores_per_model <- 5
+n_spp_parallel <- 5
 fit.dir <- glue("out/model_fits/{covSet}/")
 cv.dir <- glue("{fit.dir}/cv/")
 out.dir <- glue("out/compiled/{covSet}/")
@@ -50,12 +49,11 @@ all_covs <- list(
 )
 
 covs_exclude <- switch(covSet,
-                       '1-test'="Xfetch|Dt|Delta|Avg",
-                       '2-noDtDeltaInt'="Xfetch|Dt|Delta",
-                       '3-noInt'="Xfetch",
-                       '4-noDtDelta'="Dt|Delta",
-                       '5-noDt'="Dt",
-                       '6-full'="NA")
+                       '1-noDtDeltaInt'="Xfetch|Dt|Delta",
+                       '2-noInt'="Xfetch",
+                       '3-noDtDelta'="Dt|Delta",
+                       '4-noDt'="Dt",
+                       '5-full'="NA")
 
 obs.ls <- map_dfr(dirf("data/0_init", "data_.*_all.rds"), readRDS) %>%
   filter(y %in% y_i$abbr) %>%
