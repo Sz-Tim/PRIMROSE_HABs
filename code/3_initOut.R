@@ -103,8 +103,16 @@ meta %>% filter(grepl("NN", f)) %>% mutate(epochs=factor(epochs)) %>%
   ggplot(aes(penalty, mean, colour=epochs)) + ylim(0.5, 1) +
   geom_line() + scale_colour_viridis_d(option="turbo") + facet_grid(f~hidden_units)
 
-meta %>% group_by(f, .metric) %>% arrange(mean) %>% slice_tail(n=1) %>%
-  ggplot(aes(mean, f)) + geom_point() + facet_wrap(~.metric, scales="free_x")
+meta %>% 
+  filter(.metric=="pr_auc") %>%
+  select(y, mean, model, covSet, PCA) %>%
+  group_by(y) %>% arrange(desc(mean)) %>% slice_head(n=1)
+
+meta %>% 
+  filter(.metric=="roc_auc") %>%
+  select(y, mean, model, covSet, PCA) %>%
+  group_by(y, model) %>% arrange(desc(mean)) %>% slice_head(n=1)
+
 
 
 
@@ -149,7 +157,7 @@ oos.ls$alert_L <- oos.ls$alert_L %>%
   left_join(., opt.HSS)
 
 opt.HSS_oss %>%
-  ggplot(aes(HSS, model, colour=model)) + 
+  ggplot(aes(HSS, model, colour=model, shape=covSet)) + 
   geom_point() + geom_rug(sides="b") +
   scale_colour_manual(values=mod_cols) +
   facet_grid(y~.) +
@@ -157,7 +165,7 @@ opt.HSS_oss %>%
   labs(x="HSS", y="", title="Out-of-sample HSS at fitted optimal p(bloom)") +
   theme(panel.grid.minor.y=element_blank(),
         legend.position="bottom")
-thresh.HSS %>%
+thresh.HSS.oos %>%
   ggplot(aes(thresh, HSS, group=paste(model, resp, covSet), colour=model)) +
   geom_line() +
   scale_colour_manual(values=mod_cols) +
@@ -176,63 +184,84 @@ thresh.HSS %>%
 # AUC
 oos.ls$alert_L %>% 
   na.omit %>%
-  group_by(y, model, resp) %>%
-  yardstick::roc_auc(prA1, truth=alert, event_level="second") %>%
+  group_by(y, model, resp, covSet, PCA) %>%
+  roc_auc(prA1, truth=alert, event_level="second") %>%
   group_by(y) %>% arrange(desc(.estimate)) %>% slice_head(n=1) %>%
   ungroup %>% arrange(desc(.estimate))
 oos.ls$alert_L %>% 
+  filter(model != "Null (grand)") %>%
   na.omit %>%
-  group_by(y, model, resp) %>%
-  yardstick::roc_auc(prA1, truth=alert, event_level="second") %>%
-  arrange(y, desc(.estimate)) %>%
-  ggplot(aes(model, .estimate, colour=model, shape=covSet)) + 
-  geom_point(size=2) + 
-  geom_rug(sides="l") +
-  scale_colour_manual(values=mod_cols) +
-  ylim(0.5, 1) + labs(x="", y="AUC (oos)") + 
-  facet_grid(resp~y) +
-  theme(axis.text.x=element_text(angle=270, hjust=0, vjust=0.5),
-        legend.position="bottom")
+  group_by(y, model, resp, covSet, PCA) %>%
+  pr_auc(prA1, truth=alert, event_level="second") %>%
+  group_by(y) %>% arrange(desc(.estimate)) %>% slice_head(n=1) %>%
+  ungroup %>% arrange(desc(.estimate))
 oos.ls$alert_L %>% 
-  filter(resp != "lnN") %>%
-  group_by(y, model, resp, covSet) %>%
-  yardstick::mn_log_loss(prA1, truth=alert, event_level="second") %>%
-  arrange(y, desc(.estimate)) %>%
-  ggplot(aes(model, .estimate, colour=model, shape=covSet)) + 
-  geom_point(size=2) + 
-  geom_rug(sides="l") +
-  scale_colour_manual(values=mod_cols) +
-  labs(x="", y="mn log loss (oos)") + 
-  facet_grid(.~y) +
-  theme(axis.text.x=element_text(angle=270, hjust=0, vjust=0.5),
-        legend.position="bottom")
+  filter(model != "Null (grand)") %>%
+  na.omit %>%
+  group_by(y, model, resp, covSet, PCA) %>%
+  average_precision(prA1, truth=alert, event_level="second") %>%
+  group_by(y) %>% arrange(desc(.estimate)) %>% slice_head(n=1) %>%
+  ungroup %>% arrange(desc(.estimate))
+
 oos.ls$alert_L %>% 
-  group_by(y, model, resp, covSet) %>%
-  yardstick::gain_capture(prA1, truth=alert, event_level="second") %>%
+  na.omit %>%
+  group_by(y, model, resp, covSet, PCA) %>%
+  average_precision(prA1, truth=alert, event_level="second") %>%
   arrange(y, desc(.estimate)) %>%
-  ggplot(aes(model, .estimate, colour=model, shape=resp)) + 
-  geom_point(size=2) + 
+  ggplot(aes(covSet, .estimate, colour=model, shape=PCA)) + 
+  geom_point() + 
+  geom_line(aes(group=paste(model, PCA))) +
   geom_rug(sides="l") +
   scale_colour_manual(values=mod_cols) +
-  labs(x="", y="gain capture (oos)") + 
-  ylim(-1,1) + facet_grid(.~y) +
-  theme(axis.text.x=element_text(angle=270, hjust=0, vjust=0.5),
-        legend.position="bottom")
+  scale_shape_manual(values=c(19, 1)) +
+  ylim(0, 1) + labs(x="", y="Avg Precision (oos)") + 
+  facet_wrap(~y) +
+  theme(axis.text.x=element_text(angle=270, hjust=0, vjust=0.5))
 oos.ls$alert_L %>% 
-  group_by(y, model, resp, covSet) %>%
-  yardstick::average_precision(prA1, truth=alert, event_level="second") %>%
+  na.omit %>%
+  group_by(y, model, resp, covSet, PCA) %>%
+  pr_auc(prA1, truth=alert, event_level="second") %>%
   arrange(y, desc(.estimate)) %>%
-  ggplot(aes(model, .estimate, colour=model, shape=resp)) + 
-  geom_point(size=2) + 
+  ggplot(aes(covSet, .estimate, colour=model, shape=PCA)) + 
+  geom_point() + 
+  geom_line(aes(group=paste(model, PCA))) +
   geom_rug(sides="l") +
   scale_colour_manual(values=mod_cols) +
-  labs(x="", y="avg precision (oos)") + 
-  ylim(0,1) + facet_grid(.~y) +
-  theme(axis.text.x=element_text(angle=270, hjust=0, vjust=0.5),
-        legend.position="bottom")
+  scale_shape_manual(values=c(19, 1)) +
+  ylim(0, 1) + labs(x="", y="PR-AUC (oos)") + 
+  facet_wrap(~y) +
+  theme(axis.text.x=element_text(angle=270, hjust=0, vjust=0.5))
+oos.ls$alert_L %>% 
+  na.omit %>%
+  group_by(y, model, resp, covSet, PCA) %>%
+  roc_auc(prA1, truth=alert, event_level="second") %>%
+  arrange(y, desc(.estimate)) %>%
+  ggplot(aes(covSet, .estimate, colour=model, shape=PCA)) + 
+  geom_point() + 
+  geom_line(aes(group=paste(model, PCA))) +
+  geom_rug(sides="l") +
+  scale_colour_manual(values=mod_cols) +
+  scale_shape_manual(values=c(19, 1)) +
+  ylim(0.5, 1) + labs(x="", y="ROC-AUC (oos)") + 
+  facet_wrap(~y) +
+  theme(axis.text.x=element_text(angle=270, hjust=0, vjust=0.5))
+oos.ls$alert_L %>% 
+  na.omit %>%
+  group_by(y, model, resp, covSet, PCA) %>%
+  gain_capture(prA1, truth=alert, event_level="second") %>%
+  arrange(y, desc(.estimate)) %>%
+  ggplot(aes(covSet, .estimate, colour=model, shape=PCA)) + 
+  geom_point() + 
+  geom_line(aes(group=paste(model, PCA))) +
+  geom_rug(sides="l") +
+  scale_colour_manual(values=mod_cols) +
+  scale_shape_manual(values=c(19, 1)) +
+  ylim(0, 1) + labs(x="", y="Gain-capture (oos)") + 
+  facet_wrap(~y) +
+  theme(axis.text.x=element_text(angle=270, hjust=0, vjust=0.5))
 oos.ls$alert_L %>%
   group_by(y, model, resp, covSet) %>%
-  yardstick::classification_cost(prA1, truth=alert, event_level="second", 
+  classification_cost(prA1, truth=alert, event_level="second", 
                                  costs=tibble(truth=c("A0", "A0", "A1", "A1"),
                                               estimate=c("A0", "A1", "A0", "A1"),
                                               cost=c(0, 1, 2, 0))) %>%
@@ -248,55 +277,49 @@ oos.ls$alert_L %>%
         legend.position="bottom")
 oos.ls$alert_L %>% 
   mutate(prA1=factor(prA1 > opt_thresh, levels=c("FALSE", "TRUE"), labels=c("A0", "A1"))) %>%
-  mutate(model=str_split_fixed(run, "_", 3)[,1], 
-         resp=str_split_fixed(run, "_", 3)[,2]) %>% 
   # filter(resp != "lnN") %>%
-  mutate(model=factor(model, levels=mod_i$levels, labels=mod_i$labels)) %>%
-  group_by(y, model, resp, covSet) %>%
-  yardstick::kap(prA1, truth=alert, event_level="second") %>%
+  group_by(y, model, PCA, covSet) %>%
+  kap(prA1, truth=alert, event_level="second") %>%
   arrange(y, desc(.estimate)) %>%
-  ggplot(aes(model, .estimate, colour=model, shape=covSet)) + 
-  geom_point(size=2) + 
+  ggplot(aes(covSet, .estimate, colour=model, shape=PCA)) + 
+  geom_point() + 
+  geom_line(aes(group=paste(model, PCA))) +
   geom_rug(sides="l") +
   scale_colour_manual(values=mod_cols) +
-  labs(x="", y="kappa: pr > HSS opt thresh (oos)") + 
-  facet_grid(resp~y) +
-  ylim(-1, 1) +
-  theme(panel.grid.minor=element_blank(), 
-        axis.text.x=element_text(angle=270, hjust=0, vjust=0.5),
-        legend.position="bottom")
+  scale_shape_manual(values=c(19, 1)) +
+  ylim(-1, 1) + labs(x="", y="kappa (oos)") + 
+  facet_wrap(~y) +
+  theme(axis.text.x=element_text(angle=270, hjust=0, vjust=0.5))
 oos.ls$alert_L %>% 
   mutate(prA1=factor(prA1 > opt_thresh, levels=c("FALSE", "TRUE"), labels=c("A0", "A1"))) %>%
-  mutate(model=str_split_fixed(run, "_", 3)[,1], 
-         resp=str_split_fixed(run, "_", 3)[,2]) %>% 
-  # filter(resp != "lnN") %>%
-  mutate(model=factor(model, levels=mod_i$levels, labels=mod_i$labels)) %>%
-  group_by(y, model, resp, covSet) %>%
-  yardstick::f_meas(prA1, truth=alert, event_level="second") %>%
+  group_by(y, model, PCA, covSet) %>%
+  f_meas(prA1, truth=alert, event_level="second") %>%
   arrange(y, desc(.estimate)) %>%
-  ggplot(aes(model, .estimate, colour=model, shape=covSet)) + 
-  geom_point(size=2) + 
+  ggplot(aes(covSet, .estimate, colour=model, shape=PCA)) + 
+  geom_point() + 
+  geom_line(aes(group=paste(model, PCA))) +
   geom_rug(sides="l") +
   scale_colour_manual(values=mod_cols) +
-  labs(x="", y="Fmeas: pr > HSS opt thresh (oos)") + 
-  facet_grid(resp~y) +
-  theme(panel.grid.minor=element_blank(), 
-        axis.text.x=element_text(angle=270, hjust=0, vjust=0.5),
-        legend.position="bottom")
+  scale_shape_manual(values=c(19, 1)) +
+  ylim(0, 1) + labs(x="", y="Fmeas (oos)") + 
+  facet_wrap(~y) +
+  theme(axis.text.x=element_text(angle=270, hjust=0, vjust=0.5))
 oos.ls$alert_L %>%
   mutate(prA1=if_else(prA1==0, 1e-5, prA1),
          prA1=if_else(prA1==1, 1-1e-5, prA1)) %>%
-  group_by(y, model, resp, covSet) %>%
+  group_by(y, model, PCA, covSet) %>%
   mutate(alert=as.numeric(alert=="A1")) %>%
   summarise(LL=sum(dbinom(alert, 1, prA1, log=T))) %>%
   group_by(y) %>%
   arrange(y, model) %>%
   mutate(R2=1 - LL/first(LL)) %>%
   filter(model != "Null (grand)") %>%
+  filter(!is.na(R2)) %>%
   arrange(y, desc(R2)) %>%
-  ggplot(aes(model, R2, colour=model, shape=covSet)) + 
-  geom_point(size=2) + 
+  ggplot(aes(covSet, R2, colour=model, linetype=PCA)) + geom_point() +
+  geom_line(aes(group=paste(model, PCA)), linewidth=0.8) + 
   scale_colour_manual(values=mod_cols) +
+  scale_shape_manual(values=c(2,1)) +
   ylim(0, NA) + labs(x="Model", y="McFaddens R2 (oos)") + 
   facet_grid(.~y) +
   theme(panel.grid.minor=element_blank(), 
@@ -306,40 +329,22 @@ oos.ls$alert_L %>%
   mutate(prA1=if_else(prA1==0, 1e-5, prA1),
          prA1=if_else(prA1==1, 1-1e-5, prA1)) %>%
   # filter(resp != "lnN") %>%
-  group_by(y, model, resp, covSet, siteid) %>%
+  group_by(y, model, PCA, covSet, siteid) %>%
   mutate(alert=as.numeric(alert=="A1")) %>%
   summarise(LL=sum(dbinom(alert, 1, prA1, log=T))) %>%
   group_by(y, siteid) %>%
   arrange(y, model) %>%
   mutate(R2=1 - LL/first(LL)) %>%
   filter(model != "Null (grand)") %>%
-  ggplot(aes(R2, y, colour=model, fill=model)) + 
-  ggridges::geom_density_ridges(alpha=0.2) + 
-  scale_colour_manual(values=mod_cols) +
-  scale_fill_manual(values=mod_cols) +
-  labs(x="McFaddens R2 by site (oos)", y="Model") + 
-  xlim(0, 1) + 
-  theme(panel.grid.minor=element_blank(), 
-        axis.text.x=element_text(angle=270, hjust=0, vjust=0.5),
-        legend.position="bottom")
-oos.ls$alert_L %>%
-  mutate(prA1=if_else(prA1==0, 1e-5, prA1),
-         prA1=if_else(prA1==1, 1-1e-5, prA1)) %>%
-  # filter(resp != "lnN") %>%
-  group_by(y, model, resp, covSet, siteid) %>%
-  mutate(alert=as.numeric(alert=="A1")) %>%
-  summarise(LL=sum(dbinom(alert, 1, prA1, log=T))) %>%
-  group_by(y, siteid) %>%
-  arrange(y, model) %>%
-  mutate(R2=1 - LL/first(LL)) %>%
-  filter(model != "Null (grand)") %>%
-  group_by(y, model, resp, covSet) %>%
+  group_by(y, model, PCA, covSet) %>%
   summarise(R2_mn=mean(R2), se=sd(R2)/sqrt(n())) %>%
-  ggplot(aes(model, R2_mn, colour=model, shape=covSet)) + 
-  geom_point(size=2) + geom_errorbar(aes(ymin=R2_mn-2*se, ymax=R2_mn+2*se), width=0.5) +
+  filter(!is.na(R2_mn)) %>%
+  ggplot(aes(covSet, R2_mn, colour=model)) + geom_point() + 
+  geom_line(aes(linetype=PCA, group=paste(model, PCA)), linewidth=0.8) + 
+  # geom_errorbar(aes(ymin=R2_mn-2*se, ymax=R2_mn+2*se), width=0.5) +
   scale_colour_manual(values=mod_cols) +
   labs(x="Model", y="McFaddens R2 mn, 2se among sites (oos)") + 
-  facet_grid(resp~y) + ylim(0, 1) + 
+  facet_grid(.~y) + ylim(0, NA) + 
   theme(panel.grid.minor=element_blank(), 
         axis.text.x=element_text(angle=270, hjust=0, vjust=0.5),
         legend.position="bottom")
@@ -347,7 +352,7 @@ oos.ls$alert_L %>%
   mutate(prA1=if_else(prA1==0, 1e-5, prA1),
          prA1=if_else(prA1==1, 1-1e-5, prA1)) %>%
   # filter(resp != "lnN") %>%
-  group_by(y, model, resp, covSet, siteid) %>%
+  group_by(y, model, PCA, covSet, siteid) %>%
   mutate(alert=as.numeric(alert=="A1")) %>%
   summarise(LL=sum(dbinom(alert, 1, prA1, log=T))) %>%
   group_by(y, siteid) %>%
@@ -364,11 +369,28 @@ oos.ls$alert_L %>%
         axis.text.x=element_text(angle=270, hjust=0, vjust=0.5),
         legend.position="bottom")
 
+
+oos.ls$alert_L %>%
+  mutate(prA1=if_else(prA1==0, 1e-5, prA1),
+         prA1=if_else(prA1==1, 1-1e-5, prA1)) %>%
+  group_by(y, model, PCA, covSet) %>%
+  mutate(alert=as.numeric(alert=="A1")) %>%
+  summarise(LL=sum(dbinom(alert, 1, prA1, log=T))) %>%
+  group_by(y) %>%
+  arrange(model) %>%
+  mutate(R2=1 - LL/first(LL)) %>%
+  filter(model != "Null (grand)") %>%
+  arrange(desc(R2)) %>%
+  slice_head(n=1) %>%
+  ungroup %>%
+  arrange(desc(R2))
+
+
 oos.ls$alert_L %>%
   mutate(prA1=if_else(prA1==0, 1e-5, prA1),
          prA1=if_else(prA1==1, 1-1e-5, prA1)) %>%
   # filter(resp != "lnN") %>%
-  group_by(y, model, resp, covSet, siteid) %>%
+  group_by(y, model, PCA, covSet, siteid) %>%
   mutate(alert=as.numeric(alert=="A1")) %>%
   summarise(LL=sum(dbinom(alert, 1, prA1, log=T)), 
             nA1=sum(alert==1),
@@ -377,7 +399,7 @@ oos.ls$alert_L %>%
   arrange(y, model) %>%
   mutate(R2=1 - LL/first(LL)) %>%
   filter(model != "Null (grand)") %>%
-  group_by(y, model, resp, covSet) %>%
+  group_by(y, model, PCA, covSet) %>%
   summarise(R2_mn=mean(R2), se=sd(R2)/sqrt(n()), nA1=sum(nA1), mnPA1=mean(pA1)) %>%
   ungroup %>%
   filter(!is.na(R2_mn)) %>%
@@ -406,12 +428,11 @@ oos.ls$alert_L %>%
   filter(!is.na(R2_mn)) %>%
   ggplot(aes(mnPA1, R2_mn)) + 
   geom_point() + facet_wrap(~model)
-
-oos.ls$alert_L %>%
+siteR2 <- oos.ls$alert_L %>%
   mutate(prA1=if_else(prA1==0, 1e-5, prA1),
          prA1=if_else(prA1==1, 1-1e-5, prA1)) %>%
   # filter(resp != "lnN") %>%
-  group_by(y, model, resp, covSet, siteid) %>%
+  group_by(y, model, PCA, covSet, siteid) %>%
   mutate(alert=as.numeric(alert=="A1")) %>%
   summarise(LL=sum(dbinom(alert, 1, prA1, log=T)), 
             nA1=sum(alert==1),
@@ -419,20 +440,63 @@ oos.ls$alert_L %>%
   group_by(y, siteid) %>%
   arrange(y, model) %>%
   mutate(R2=1 - LL/first(LL)) %>%
-  filter(model != "Null (grand)") %>%
+  filter(model != "Null (grand)") 
+siteR2 %>%
   filter(pA1 > 0 & pA1 < 1) %>%
   ggplot(aes(pA1, R2, colour=model)) + ylim(-1,1) + 
   scale_colour_manual(values=mod_cols) +
   geom_point(alpha=0.6, shape=1) + 
   stat_smooth(se=F, method="lm") + 
   facet_wrap(~y) +
+  scale_x_continuous(trans="logit") +
   theme(legend.position="none")
+siteR2 %>% 
+  group_by(y, siteid) %>%
+  summarise(mnR2=median(R2, na.rm=T), pA1=first(pA1)) %>%
+  ggplot(aes(pA1, mnR2)) + 
+  geom_point() +
+  facet_wrap(~y)
+
+siteAUC <- oos.ls$alert_L %>%
+  filter(!grepl("grand", model)) %>%
+  group_by(y, model, PCA, covSet, siteid) %>%
+  mutate(pA1=mean(alert=="A1")) %>%
+  ungroup %>%
+  filter(pA1 > 0) %>%
+  group_by(y, model, PCA, covSet, siteid, pA1) %>%
+  roc_auc(prA1, truth=alert, event_level="second") 
+siteAUC %>%
+  ggplot(aes(covSet, .estimate, fill=model)) + ylim(0,1) + 
+  scale_fill_manual(values=mod_cols) +
+  geom_boxplot() + 
+  facet_wrap(~y) +
+  theme(legend.position="none")
+siteAUC %>%
+  ggplot(aes(pA1, .estimate, colour=model)) + ylim(0,1) + 
+  scale_colour_manual(values=mod_cols) +
+  geom_point(alpha=0.6, shape=1) + 
+  stat_smooth(se=F, method="lm") + 
+  facet_wrap(~y) +
+  scale_x_continuous(trans="logit") +
+  theme(legend.position="none")
+siteAUC %>%
+  ggplot(aes(siteid, .estimate, colour=pA1, group=siteid)) +
+  geom_boxplot() + 
+  scale_colour_viridis_c() +
+  facet_wrap(~y, scales="free_x")
+siteAUC %>% 
+  group_by(y, siteid) %>%
+  summarise(mnAUC=median(.estimate, na.rm=T), pA1=first(pA1)) %>%
+  ggplot(aes(pA1, mnAUC)) + 
+  geom_point() +
+  facet_wrap(~y)
+
 
 oos.ls$alert_L %>%
   mutate(prA1=if_else(prA1==0, 1e-5, prA1),
          prA1=if_else(prA1==1, 1-1e-5, prA1)) %>%
   # filter(resp != "lnN") %>%
-  group_by(y, model, resp, covSet, siteid) %>%
+  group_by(y, model, PCA, covSet, siteid) %>%
   mutate(alert=as.numeric(alert=="A1")) %>%
   summarise(LL=sum(dbinom(alert, 1, prA1, log=T)), 
             nA1=sum(alert==1),
@@ -451,8 +515,18 @@ oos.ls$alert_L %>%
 
 
 oos.ls$alert_L %>% 
+  na.omit %>%
+  # filter(model!="Null (grand)") %>%
   group_by(y, model, resp, covSet) %>% 
-  yardstick::gain_curve(prA1, truth=alert, event_level="second") %>% 
+  pr_curve(prA1, truth=alert, event_level="second") %>% 
+  filter(recall > 0) %>%
+  ggplot(aes(recall, precision, colour=model, group=paste(resp, covSet, model))) + 
+  geom_line() + 
+  scale_colour_manual(values=mod_cols) + 
+  facet_wrap(~y) + ggtitle("oos")
+oos.ls$alert_L %>% 
+  group_by(y, model, resp, covSet) %>% 
+  gain_curve(prA1, truth=alert, event_level="second") %>% 
   ggplot(aes(.percent_tested, .percent_found, colour=model, group=paste(resp, covSet, model))) + 
   geom_line() + 
   scale_colour_manual(values=mod_cols) + 
@@ -461,15 +535,25 @@ oos.ls$alert_L %>%
   filter(resp != "lnN") %>%
   na.omit %>%
   group_by(y, model, resp, covSet) %>% 
-  yardstick::roc_curve(prA1, truth=alert, event_level="second") %>% 
+  roc_curve(prA1, truth=alert, event_level="second") %>% 
   ggplot(aes(1-specificity, sensitivity, colour=model, group=paste(resp, covSet, model))) + 
   geom_line() + 
   scale_colour_manual(values=mod_cols) + 
   facet_wrap(~y)
 
 fit.ls$alert_L %>% 
+  na.omit %>%
+  # filter(model!="Null (grand)") %>%
   group_by(y, model, resp, covSet) %>% 
-  yardstick::gain_curve(prA1, truth=alert, event_level="second") %>% 
+  pr_curve(prA1, truth=alert, event_level="second") %>% 
+  filter(recall > 0) %>%
+  ggplot(aes(recall, precision, colour=model, group=paste(resp, covSet, model))) + 
+  geom_line() + 
+  scale_colour_manual(values=mod_cols) + 
+  facet_wrap(~y) + ggtitle("fit")
+fit.ls$alert_L %>% 
+  group_by(y, model, resp, covSet) %>% 
+  gain_curve(prA1, truth=alert, event_level="second") %>% 
   ggplot(aes(.percent_tested, .percent_found, colour=model, group=paste(resp, covSet, model))) + 
   geom_line() + 
   scale_colour_manual(values=mod_cols) + 
@@ -477,7 +561,7 @@ fit.ls$alert_L %>%
 fit.ls$alert_L %>% 
   na.omit %>%
   group_by(y, model, resp, covSet) %>% 
-  yardstick::roc_curve(prA1, truth=alert, event_level="second") %>% 
+  roc_curve(prA1, truth=alert, event_level="second") %>% 
   ggplot(aes(1-specificity, sensitivity, colour=model, group=paste(resp, covSet, model))) + 
   geom_line() + 
   scale_colour_manual(values=mod_cols) + 
@@ -487,10 +571,10 @@ fit.ls$alert_L %>%
 
 
 oos.ls$alert_L %>% 
-  filter(!grepl("Null (grand)", model)) %>%
+  filter(!grepl("grand", model)) %>%
   na.omit() %>%
-  group_by(y, model, resp, covSet) %>%
-  yardstick::roc_auc(prA1, truth=alert, event_level="second") %>%
+  group_by(y, model, PCA, covSet) %>%
+  roc_auc(prA1, truth=alert, event_level="second") %>%
   arrange(y, desc(.estimate)) %>%
   group_by(y) %>%
   mutate(rank=row_number()) %>%
@@ -498,29 +582,66 @@ oos.ls$alert_L %>%
   summarise(mdRank=median(rank),
             mnRank=mean(rank)) %>%
   ungroup %>%
-  arrange(model, mnRank) %>%
+  arrange(mnRank) %>%
   print(n=28)
 
 
 oos.ls$alert_L %>% 
-  filter(!grepl("Null (grand)", model)) %>%
+  filter(!grepl("grand", model)) %>%
   na.omit() %>%
-  group_by(y, model, resp, covSet) %>%
-  yardstick::roc_auc(prA1, truth=alert, event_level="second") %>%
+  group_by(y, model, PCA, covSet) %>%
+  roc_auc(prA1, truth=alert, event_level="second") %>%
   arrange(y, desc(.estimate)) %>%
   group_by(y) %>%
   mutate(rank=row_number()) %>% 
-  ggplot(aes(model, rank)) + geom_boxplot()
+  ggplot(aes(model, rank, fill=model)) + 
+  geom_boxplot() +
+  scale_fill_manual(values=mod_cols, guide="none") + 
+  labs(x="", y="ROC-AUC Rank within response")
 
 oos.ls$alert_L %>% 
-  filter(!grepl("Null (grand)", model)) %>%
+  filter(!grepl("grand", model)) %>%
   na.omit() %>%
-  group_by(y, model, resp, covSet) %>%
-  yardstick::roc_auc(prA1, truth=alert, event_level="second") %>%
+  group_by(y, model, PCA, covSet) %>%
+  roc_auc(prA1, truth=alert, event_level="second") %>%
   arrange(y, desc(.estimate)) %>%
   group_by(y) %>%
   mutate(rank=row_number()) %>% 
-  ggplot(aes(model, rank)) + geom_boxplot() + facet_wrap(~y)
+  ggplot(aes(model, rank)) + 
+  geom_boxplot(aes(fill=model)) + 
+  facet_wrap(~y) +
+  scale_fill_manual(values=mod_cols, guide="none") + 
+  theme(axis.text.x=element_text(angle=270, hjust=0, vjust=0.5))
+
+
+
+
+
+
+
+
+
+
+
+# probabilities -----------------------------------------------------------
+
+oos.ls$alert_L %>%
+  filter(model != "Null (grand)") %>%
+  ggplot(aes(alert, prA1, fill=model)) + 
+  geom_boxplot(outlier.size=0.5, outlier.shape=1, outlier.alpha=0.5) +
+  scale_fill_manual(values=mod_cols) +
+  facet_wrap(~y)
+
+oos.ls$alert_L %>%
+  filter(model != "Null (grand)") %>%
+  ggplot(aes(alert, prA1, fill=model)) + 
+  geom_violin(scale="width") +
+  scale_fill_manual(values=mod_cols) +
+  facet_wrap(~y)
+
+
+
+
 
 
 
