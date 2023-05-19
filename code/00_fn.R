@@ -1397,7 +1397,9 @@ fit_model <- function(mod, resp, form.ls, d.ls, opts, tunes, out.dir, y, suffix=
                                        loss_reduction=tune()) %>%
                         set_engine("xgboost") %>% set_mode("classification")
     )
+    avg_prec2 <- metric_tweak("avg_prec2", average_precision, event_level="second")
     pr_auc2 <- metric_tweak("pr_auc2", pr_auc, event_level="second")
+    roc_auc2 <- metric_tweak("roc_auc2", roc_auc, event_level="second")
     wf <- workflow() %>%
       add_model(ML_spec) %>%
       add_formula(form.ls[[resp]][[ML_form]])
@@ -1406,10 +1408,10 @@ fit_model <- function(mod, resp, form.ls, d.ls, opts, tunes, out.dir, y, suffix=
       tune_grid(resamples=opts, 
                 grid=grid_latin_hypercube(extract_parameter_set_dials(ML_spec), 
                                           size=tunes[[mod]]),
-                metrics=metric_set(roc_auc, pr_auc, pr_auc2), 
+                metrics=metric_set(roc_auc2, pr_auc2, avg_prec2), 
                 control=control_grid(save_pred=T))
     saveRDS(out_tune, glue("{out.dir}/meta/{fit_ID}_tune.rds"))
-    best <- select_best(out_tune, "pr_auc2")
+    best <- select_best(out_tune, "avg_prec2")
     out_tune %>% 
       collect_predictions() %>%
       filter(.config==best$.config) %>%
