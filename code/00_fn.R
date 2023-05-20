@@ -1425,8 +1425,7 @@ fit_model <- function(mod, resp, form.ls, d.ls, opts, tunes, out.dir, y, suffix=
       rename_with(~glue("{mod.prefix}{mod}_{resp}_A1"), .cols=".pred_A1") %>%
       saveRDS(glue("{out.dir}/cv/{fit_ID}_CV.rds"))
     out <- wf %>%
-      finalize_workflow(best) %>%
-      fit(d.ls[[resp]])
+      finalize_workflow(best)
   }
   
   # Fit Hierarchical Bayesian models
@@ -1451,9 +1450,11 @@ fit_model <- function(mod, resp, form.ls, d.ls, opts, tunes, out.dir, y, suffix=
                          save_model=glue("{out.dir}/meta/{fit_ID}.stan")),
                 formula=form.ls[[resp]]$HB_vars) %>%
       add_recipe(recipe(d.ls[[resp]], formula=form.ls[[resp]]$HB_vars))
-    out <- wf %>%
-      fit(data=d.ls[[resp]])
+    out <- wf
   }
+  out %>%
+    fit(data=d.ls[[resp]]) %>%
+    butcher::axe_env()
   saveRDS(out, glue("{out.dir}/{fit_ID}.rds"))
   cat("Saved ", y, "_", resp, "_", mod, " as ", out.dir, "*", suffix, "\n", sep="")
 }

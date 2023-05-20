@@ -7,7 +7,7 @@
 
 # setup -------------------------------------------------------------------
 pkgs <- c("tidyverse", "lubridate", "glue", "tidymodels", "nnet", "randomForest", "glmnet", 
-          "brms", "bayesian", "doParallel", "foreach")
+          "brms", "bayesian", "doParallel", "foreach", "butcher")
 lapply(pkgs, library, character.only=T)
 source("code/00_fn.R")
 
