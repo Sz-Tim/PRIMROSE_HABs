@@ -49,8 +49,8 @@ all_covs <- list(
 )
 
 covs_exclude <- switch(covSet,
-                       '1-noDtDeltaInt'="Xfetch|Dt|Delta",
-                       '2-noInt'="Xfetch",
+                       '1-noDtDeltaX'="Xfetch|Dt|Delta",
+                       '2-noX'="Xfetch",
                        '3-noDtDelta'="Dt|Delta",
                        '4-noDt'="Dt",
                        '5-full'="NA")
@@ -163,16 +163,16 @@ foreach(i=seq_along(obs.ls),
     set.seed(3001)
     foldsPCA <- vfold_cv(dPCA.y$train[[r]], strata=r)
     fit_model("Ridge", r, form.ls, d.y$train, folds, n_tuneVal, fit.dir, y)
-    fit_model("ENet", r, form.ls, d.y$train, folds, n_tuneVal, fit.dir, y)
-    fit_model("MARS", r, form.ls, d.y$train, folds, n_tuneVal, fit.dir, y)
-    fit_model("RF", r, form.ls, d.y$train, folds, n_tuneVal, fit.dir, y)
-    fit_model("NN", r, form.ls, d.y$train, folds, n_tuneVal, fit.dir, y)
-    fit_model("Boost", r, form.ls, d.y$train, folds, n_tuneVal, fit.dir, y)
     fit_model("Ridge", r, form.ls, dPCA.y$train, foldsPCA, n_tuneVal, fit.dir, y, "_PCA")
+    fit_model("ENet", r, form.ls, d.y$train, folds, n_tuneVal, fit.dir, y)
     fit_model("ENet", r, form.ls, dPCA.y$train, foldsPCA, n_tuneVal, fit.dir, y, "_PCA")
+    fit_model("MARS", r, form.ls, d.y$train, folds, n_tuneVal, fit.dir, y)
     fit_model("MARS", r, form.ls, dPCA.y$train, foldsPCA, n_tuneVal, fit.dir, y, "_PCA")
+    fit_model("RF", r, form.ls, d.y$train, folds, n_tuneVal, fit.dir, y)
     fit_model("RF", r, form.ls, dPCA.y$train, foldsPCA, n_tuneVal, fit.dir, y, "_PCA")
+    fit_model("NN", r, form.ls, d.y$train, folds, n_tuneVal, fit.dir, y)
     fit_model("NN", r, form.ls, dPCA.y$train, foldsPCA, n_tuneVal, fit.dir, y, "_PCA")
+    fit_model("Boost", r, form.ls, d.y$train, folds, n_tuneVal, fit.dir, y)
     fit_model("Boost", r, form.ls, dPCA.y$train, foldsPCA, n_tuneVal, fit.dir, y, "_PCA")
     # fit_model("HBL", r, form.ls, d.y$train, HB.i, priors, fit.dir, y)
     # fit_model("HBN", r, form.ls, d.y$train, HB.i, priors, fit.dir, y)

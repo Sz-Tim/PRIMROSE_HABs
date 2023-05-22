@@ -1452,7 +1452,7 @@ fit_model <- function(mod, resp, form.ls, d.ls, opts, tunes, out.dir, y, suffix=
       add_recipe(recipe(d.ls[[resp]], formula=form.ls[[resp]]$HB_vars))
     out <- wf
   }
-  out %>%
+  out <- out %>%
     fit(data=d.ls[[resp]]) %>%
     butcher::axe_env()
   saveRDS(out, glue("{out.dir}/{fit_ID}.rds"))
