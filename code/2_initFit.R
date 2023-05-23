@@ -200,9 +200,11 @@ foreach(i=seq_along(obs.ls),
   for(r in responses) {
     set.seed(3001)
     folds <- vfold_cv(d.y$train[[r]], strata=r)
-    run_Bayes_CV("HBL_PCA", folds, cv.dir, y, y_i.i, r, form.ls, HB.i, priors)
+    set.seed(3001)
+    foldsPCA <- vfold_cv(dPCA.y$train[[r]], strata=r)
+    run_Bayes_CV("HBL", foldsPCA, cv.dir, y, y_i.i, r, form.ls, HB.i, priors, PCA=T)
     run_Bayes_CV("HBL", folds, cv.dir, y, y_i.i, r, form.ls, HB.i, priors)
-    run_Bayes_CV("HBN_PCA", folds, cv.dir, y, y_i.i, r, form.ls, HB.i, priors)
+    run_Bayes_CV("HBN", foldsPCA, cv.dir, y, y_i.i, r, form.ls, HB.i, priors, PCA=T)
     run_Bayes_CV("HBN", folds, cv.dir, y, y_i.i, r, form.ls, HB.i, priors)
   }
   

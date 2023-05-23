@@ -1376,7 +1376,7 @@ createFoldsByYear <- function(data.df) {
 fit_model <- function(mod, resp, form.ls, d.ls, opts, tunes, out.dir, y, suffix=NULL) {
   library(glue); library(tidymodels)
   dir.create(glue("{out.dir}/meta/"), showWarnings=F, recursive=T)
-  PCA_run <- all(!is.null(suffix), suffix=="_PCA")
+  PCA_run <- all(!is.null(suffix), grepl("PCA", suffix))
   # Fit ML models
   if(mod %in% c("Ridge", "ENet", "RF", "NN", "MARS", "Boost")) {
     fit_ID <- glue("{y}_{resp}_{mod}{ifelse(is.null(suffix),'',suffix)}")
@@ -1491,16 +1491,17 @@ fit_model <- function(mod, resp, form.ls, d.ls, opts, tunes, out.dir, y, suffix=
 #' @export
 #'
 #' @examples
-run_Bayes_CV <- function(mod, folds, cv.dir, y, y_i.i, r, form.ls, HB.i, priors) {
+run_Bayes_CV <- function(mod, folds, cv.dir, y, y_i.i, r, form.ls, HB.i, priors, PCA=F) {
   for(f in 1:nrow(folds)) {
     f_ <- paste0("_f", str_pad(f, 2, side="left", pad="0"))
+    f_ <- ifelse(PCA, paste0("_PCA", f_), f_)
     d.cv <- list(train=list(alert=training(folds$splits[[f]])),
                  test=list(alert=testing(folds$splits[[f]])))
     if(!file.exists(glue("{cv.dir}/{y}_{r}_{mod}_CV{f_}.rds"))) {
-      fit_model("HBL", r, form.ls, d.cv$train, HB.i, priors, cv.dir, y, f_)
+      fit_model(mod, r, form.ls, d.cv$train, HB.i, priors, cv.dir, y, f_)
     }
     if(file.exists(glue("{cv.dir}/{y}_{r}_{mod}1{f_}.rds"))) {
-      summarise_predictions(d.cv$test, NULL, r, cv.dir, y_i.i, f_) %>%
+      summarise_predictions(d.cv$test, d.cv$test, r, cv.dir, y_i.i, f_) %>%
         saveRDS(glue("{cv.dir}/{y}_{r}_{mod}_CV{f_}.rds"))
       file.remove(glue("{cv.dir}/{y}_{r}_{mod}1{f_}.rds"))
     }
