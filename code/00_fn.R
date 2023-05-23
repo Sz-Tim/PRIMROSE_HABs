@@ -1413,7 +1413,7 @@ fit_model <- function(mod, resp, form.ls, d.ls, opts, tunes, out.dir, y, suffix=
                                           size=tunes[[mod]]),
                 metrics=metric_set(roc_auc2, pr_auc2, avg_prec2), 
                 control=control_grid(save_pred=T))
-    saveRDS(out_tune, glue("{out.dir}/meta/{fit_ID}_tune.rds"))
+    saveRDS(out_tune %>% butcher, glue("{out.dir}/meta/{fit_ID}_tune.rds"))
     best <- select_best(out_tune, "avg_prec2")
     out_tune %>% 
       collect_predictions() %>%
@@ -1454,7 +1454,7 @@ fit_model <- function(mod, resp, form.ls, d.ls, opts, tunes, out.dir, y, suffix=
   }
   out <- out %>%
     fit(data=d.ls[[resp]]) %>%
-    butcher::axe_env()
+    butcher()
   saveRDS(out, glue("{out.dir}/{fit_ID}.rds"))
   cat("Saved ", y, "_", resp, "_", mod, " as ", out.dir, "*", suffix, "\n", sep="")
 }
@@ -1896,6 +1896,50 @@ calc_null <- function(obs.ls, resp) {
   return(list(yday.df=temp.df,
               obs.df=left_join(out.df, temp.df) %>% select(-yday)))
 }
+
+
+
+
+
+
+
+
+
+
+
+
+
+#' Compute F-1 and J-index across probability thresholds
+#'
+#' @param L.df 
+#' @param prSteps 
+#'
+#' @return
+#' @export
+#'
+#' @examples
+compute_thresholds <- function(L.df, prSteps=0.01) {
+  library(tidyverse); library(yardstick)
+  pred.df <- map_dfr(seq(0, 1, by=prSteps), 
+                     ~L.df %>% mutate(thresh=.x)) %>%
+    mutate(pred=if_else(prA1 < thresh, "A0", "A1") %>% factor(levels=c("A0", "A1")))
+  J.df <- pred.df %>%
+    group_by(y, model, PCA, covSet, thresh) %>%
+    j_index(truth=alert, estimate=pred, event_level="second") %>%
+    rename(J=.estimate) %>%
+    select(-.metric, -.estimator)
+  F1.df <- pred.df %>%
+    group_by(y, model, PCA, covSet, thresh) %>%
+    f_meas(truth=alert, estimate=pred, event_level="second") %>%
+    rename(F1=.estimate) %>%
+    select(-.metric, -.estimator) 
+  return(full_join(J.df, F1.df))
+}
+
+
+
+
+
 
 
 

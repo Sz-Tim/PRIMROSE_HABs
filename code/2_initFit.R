@@ -196,9 +196,14 @@ foreach(i=seq_along(obs.ls),
       f_ <- paste0("_f", str_pad(f, 2, side="left", pad="0"))
       d.cv <- list(train=list(alert=training(folds$splits[[f]])),
                    test=list(alert=testing(folds$splits[[f]])))
-      fit_model("HBL", r, form.ls, d.cv$train, HB.i, priors, cv.dir, y, f_)
-      summarise_predictions(d.cv$test, NULL, r, cv.dir, y_i.i, f_) %>%
-        saveRDS(glue("{cv.dir}/{y}_{r}_HB_CV{f_}.rds"))
+      if(!file.exists(glue("{cv.dir}/{y}_{r}_HBL_CV{f_}.rds"))) {
+        fit_model("HBL", r, form.ls, d.cv$train, HB.i, priors, cv.dir, y, f_)
+      }
+      if(file.exists(glue("{cv.dir}/{y}_{r}_HBL1{f_}.rds"))) {
+        summarise_predictions(d.cv$test, NULL, r, cv.dir, y_i.i, f_) %>%
+          saveRDS(glue("{cv.dir}/{y}_{r}_HBL_CV{f_}.rds"))
+        file.remove(glue("{cv.dir}/{y}_{r}_HBL1{f_}.rds"))
+      }
     }
   }
   
@@ -209,7 +214,7 @@ foreach(i=seq_along(obs.ls),
   fit.ls <- merge_pred_dfs(dirf("out/compiled", glue("{y}_fit_ls.rds"), recursive=T))
   oos.ls <- merge_pred_dfs(dirf("out/compiled", glue("{y}_oos_ls.rds"), recursive=T))
   cv.ls <- list(alert=full_join(
-    merge_pred_dfs(dirf("out/model_fits", glue("{y}_.*_HB_CV"), recursive=T), CV="HB"),
+    merge_pred_dfs(dirf("out/model_fits", glue("{y}_.*_HBL_CV"), recursive=T), CV="HB"),
     merge_pred_dfs(dirf("out/model_fits", glue("{y}_.*_CV.rds"), recursive=T), CV="ML"), 
     by=c("y", "obsid"))
     )
