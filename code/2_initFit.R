@@ -117,14 +117,20 @@ foreach(i=seq_along(obs.ls),
   # formulas
   smooths <- list(b=glue("b{c(covs$main, covs$interact)}"),
                   p=glue("p{c(covs$main, covs$interact)}"))
+  smooths_PCA <- list(b=glue("b{covsPCA}"),
+                      p=glue("p{covsPCA}"))
   form.ls <- map(
     responses,
     ~list(HBL=make_HB_formula(.x, c(covs$main, covs$interact)),
+          HBL_PCA=make_HB_formula(.x, covsPCA),
           HBN=make_HB_formula(.x, c(covs$main, covs$interact), sTerms=smooths),
+          HBN_PCA=make_HB_formula(.x, covsPCA, sTerms=smooths_PCA),
           ML=formula(glue("{.x} ~ {paste(unlist(covs), collapse='+')}")),
           ML_PCA=formula(glue("{.x} ~ {paste(covsPCA, collapse='+')}")),
           HB_vars=formula(glue("{.x} ~ yday + lon + lat + siteid +",
-                               "{paste(unlist(covs), collapse='+')}"))
+                               "{paste(unlist(covs), collapse='+')}")),
+          HB_vars_PCA=formula(glue("{.x} ~ yday + lon + lat + siteid +",
+                                   "{paste(covsPCA, collapse='+')}"))
     )
   )
   
@@ -135,7 +141,9 @@ foreach(i=seq_along(obs.ls),
                    "3"=list(r1=0.1, r2=1, hs1=5, hs2=0.5, b=0.5, de=0.05, i=3)
   ) 
   priors <- map(responses, ~list(HBL=make_HB_priors(priStr, "HBL", .x, covs),
-                                 HBN=make_HB_priors(priStr, "HBN", .x, covs)))
+                                 HBL_PCA=make_HB_priors(priStr, "HBL", .x, covsPCA, PCA=T),
+                                 HBN=make_HB_priors(priStr, "HBN", .x, covs),
+                                 HBN_PCA=make_HB_priors(priStr, "HBN", .x, covsPCA, PCA=T)))
   
   # tuning controls
   n_tuneVal <- list(Ridge=1e3,
@@ -164,8 +172,6 @@ foreach(i=seq_along(obs.ls),
     foldsPCA <- vfold_cv(dPCA.y$train[[r]], strata=r)
     fit_model("Ridge", r, form.ls, d.y$train, folds, n_tuneVal, fit.dir, y)
     fit_model("Ridge", r, form.ls, dPCA.y$train, foldsPCA, n_tuneVal, fit.dir, y, "_PCA")
-    fit_model("ENet", r, form.ls, d.y$train, folds, n_tuneVal, fit.dir, y)
-    fit_model("ENet", r, form.ls, dPCA.y$train, foldsPCA, n_tuneVal, fit.dir, y, "_PCA")
     fit_model("MARS", r, form.ls, d.y$train, folds, n_tuneVal, fit.dir, y)
     fit_model("MARS", r, form.ls, dPCA.y$train, foldsPCA, n_tuneVal, fit.dir, y, "_PCA")
     fit_model("RF", r, form.ls, d.y$train, folds, n_tuneVal, fit.dir, y)
@@ -174,8 +180,10 @@ foreach(i=seq_along(obs.ls),
     fit_model("NN", r, form.ls, dPCA.y$train, foldsPCA, n_tuneVal, fit.dir, y, "_PCA")
     fit_model("Boost", r, form.ls, d.y$train, folds, n_tuneVal, fit.dir, y)
     fit_model("Boost", r, form.ls, dPCA.y$train, foldsPCA, n_tuneVal, fit.dir, y, "_PCA")
-    # fit_model("HBL", r, form.ls, d.y$train, HB.i, priors, fit.dir, y)
-    # fit_model("HBN", r, form.ls, d.y$train, HB.i, priors, fit.dir, y)
+    fit_model("HBL", r, form.ls, d.y$train, HB.i, priors, fit.dir, y)
+    fit_model("HBL", r, form.ls, dPCA.y$train, HB.i, priors, fit.dir, y, "_PCA")
+    fit_model("HBN", r, form.ls, d.y$train, HB.i, priors, fit.dir, y)
+    fit_model("HBN", r, form.ls, dPCA.y$train, HB.i, priors, fit.dir, y, "_PCA")
   }
   
   fit.ls <- map(responses, ~summarise_predictions(d.y$train, dPCA.y$train, .x, fit.dir, y_i.i))
@@ -192,19 +200,10 @@ foreach(i=seq_along(obs.ls),
   for(r in responses) {
     set.seed(3001)
     folds <- vfold_cv(d.y$train[[r]], strata=r)
-    for(f in 1:nrow(folds)) {
-      f_ <- paste0("_f", str_pad(f, 2, side="left", pad="0"))
-      d.cv <- list(train=list(alert=training(folds$splits[[f]])),
-                   test=list(alert=testing(folds$splits[[f]])))
-      if(!file.exists(glue("{cv.dir}/{y}_{r}_HBL_CV{f_}.rds"))) {
-        fit_model("HBL", r, form.ls, d.cv$train, HB.i, priors, cv.dir, y, f_)
-      }
-      if(file.exists(glue("{cv.dir}/{y}_{r}_HBL1{f_}.rds"))) {
-        summarise_predictions(d.cv$test, NULL, r, cv.dir, y_i.i, f_) %>%
-          saveRDS(glue("{cv.dir}/{y}_{r}_HBL_CV{f_}.rds"))
-        file.remove(glue("{cv.dir}/{y}_{r}_HBL1{f_}.rds"))
-      }
-    }
+    run_Bayes_CV("HBL_PCA", folds, cv.dir, y, y_i.i, r, form.ls, HB.i, priors)
+    run_Bayes_CV("HBL", folds, cv.dir, y, y_i.i, r, form.ls, HB.i, priors)
+    run_Bayes_CV("HBN_PCA", folds, cv.dir, y, y_i.i, r, form.ls, HB.i, priors)
+    run_Bayes_CV("HBN", folds, cv.dir, y, y_i.i, r, form.ls, HB.i, priors)
   }
   
   

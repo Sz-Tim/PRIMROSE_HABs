@@ -1279,7 +1279,7 @@ make_HB_formula <- function(resp, covs, sTerms=NULL,
 #' @export
 #'
 #' @examples
-make_HB_priors <- function(prior_i, mod, resp, covs) {
+make_HB_priors <- function(prior_i, mod, resp, covs, PCA=F) {
   library(tidyverse); library(brms)
   if(mod=="HBL") {
     p <- c(prior(normal(0, 1), class="Intercept"),
@@ -1297,8 +1297,14 @@ make_HB_priors <- function(prior_i, mod, resp, covs) {
     }
   }
   if(mod=="HBN") {
-    terms <- list(int="bIntercept",
-                  cov=c(covs$main, covs$interact))
+    if(PCA) {
+      terms <- list(int="bIntercept",
+                    cov=covs)
+    } else {
+      terms <- list(int="bIntercept",
+                    cov=c(covs$main, covs$interact))
+    }
+    
     if(resp=="lnN") {
       terms <- map(terms, ~c(.x, paste0(.x, "Hu")))
     }
@@ -1370,10 +1376,10 @@ createFoldsByYear <- function(data.df) {
 fit_model <- function(mod, resp, form.ls, d.ls, opts, tunes, out.dir, y, suffix=NULL) {
   library(glue); library(tidymodels)
   dir.create(glue("{out.dir}/meta/"), showWarnings=F, recursive=T)
+  PCA_run <- all(!is.null(suffix), suffix=="_PCA")
   # Fit ML models
   if(mod %in% c("Ridge", "ENet", "RF", "NN", "MARS", "Boost")) {
     fit_ID <- glue("{y}_{resp}_{mod}{ifelse(is.null(suffix),'',suffix)}")
-    PCA_run <- all(!is.null(suffix), suffix=="_PCA")
     mod.prefix <- ifelse(PCA_run, "PCA.", "")
     ML_form <- ifelse(PCA_run, "ML_PCA", "ML")
     ML_spec <- switch(mod,
@@ -1436,11 +1442,13 @@ fit_model <- function(mod, resp, form.ls, d.ls, opts, tunes, out.dir, y, suffix=
                         lnN=hurdle_lognormal,
                         tl=cumulative,
                         alert=bernoulli)
+    HB_form <- ifelse(PCA_run, paste0(mod, "_PCA"), paste0(mod))
+    HB_form_dummy <- ifelse(PCA_run, "HB_vars_PCA", "HB_vars")
     wf <- workflow() %>%
       add_model(bayesian(mode="classification", engine="brms", 
-                         formula.override=bayesian_formula(form.ls[[resp]][[mod]]),
+                         formula.override=bayesian_formula(form.ls[[resp]][[HB_form]]),
                          family=HB.family, 
-                         prior=tunes[[resp]][[mod]],
+                         prior=tunes[[resp]][[HB_form]],
                          init=0, 
                          iter=opts$iter,
                          warmup=opts$warmup,
@@ -1449,7 +1457,7 @@ fit_model <- function(mod, resp, form.ls, d.ls, opts, tunes, out.dir, y, suffix=
                          cores=opts$cores,
                          save_model=glue("{out.dir}/meta/{fit_ID}.stan")),
                 formula=form.ls[[resp]]$HB_vars) %>%
-      add_recipe(recipe(d.ls[[resp]], formula=form.ls[[resp]]$HB_vars))
+      add_recipe(recipe(d.ls[[resp]], formula=form.ls[[resp]][[HB_form_dummy]]))
     out <- wf
   }
   out <- out %>%
@@ -1459,6 +1467,45 @@ fit_model <- function(mod, resp, form.ls, d.ls, opts, tunes, out.dir, y, suffix=
   cat("Saved ", y, "_", resp, "_", mod, " as ", out.dir, "*", suffix, "\n", sep="")
 }
 
+
+
+
+
+
+
+
+
+#' Run cross-validation for Bayesian models
+#'
+#' @param mod 
+#' @param folds 
+#' @param cv.dir 
+#' @param y 
+#' @param y_i.i 
+#' @param r 
+#' @param form.ls 
+#' @param HB.i 
+#' @param priors 
+#'
+#' @return
+#' @export
+#'
+#' @examples
+run_Bayes_CV <- function(mod, folds, cv.dir, y, y_i.i, r, form.ls, HB.i, priors) {
+  for(f in 1:nrow(folds)) {
+    f_ <- paste0("_f", str_pad(f, 2, side="left", pad="0"))
+    d.cv <- list(train=list(alert=training(folds$splits[[f]])),
+                 test=list(alert=testing(folds$splits[[f]])))
+    if(!file.exists(glue("{cv.dir}/{y}_{r}_{mod}_CV{f_}.rds"))) {
+      fit_model("HBL", r, form.ls, d.cv$train, HB.i, priors, cv.dir, y, f_)
+    }
+    if(file.exists(glue("{cv.dir}/{y}_{r}_{mod}1{f_}.rds"))) {
+      summarise_predictions(d.cv$test, NULL, r, cv.dir, y_i.i, f_) %>%
+        saveRDS(glue("{cv.dir}/{y}_{r}_{mod}_CV{f_}.rds"))
+      file.remove(glue("{cv.dir}/{y}_{r}_{mod}1{f_}.rds"))
+    }
+  }
+}
 
 
 
@@ -1763,10 +1810,11 @@ calc_ensemble <- function(out.ls, wt.ls, resp, y_i.i, method="wtmean", out.path=
         tune_grid(resamples=folds,
                   grid=grid_latin_hypercube(extract_parameter_set_dials(ens_spec),
                                             size=5),
-                  metrics=metric_set(roc_auc2, pr_auc2, avg_prec2))
+                  metrics=metric_set(avg_prec2))
       out_lasso <- wf %>%
         finalize_workflow(select_best(out_tune, "avg_prec2")) %>%
-        fit(wt.ls[[resp]])
+        fit(wt.ls[[resp]]) %>%
+        butcher
       saveRDS(out_lasso, glue("{out.path}/{y_i.i$abbr}_EnsGLM.rds"))
     }
     if(method %in% c("lasso_fit", "lasso_oos")) {
