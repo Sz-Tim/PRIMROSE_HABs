@@ -1431,7 +1431,9 @@ fit_model <- function(mod, resp, form.ls, d.ls, opts, tunes, out.dir, y, suffix=
       rename_with(~glue("{mod.prefix}{mod}_{resp}_A1"), .cols=".pred_A1") %>%
       saveRDS(glue("{out.dir}/cv/{fit_ID}_CV.rds"))
     out <- wf %>%
-      finalize_workflow(best)
+      finalize_workflow(best) %>%
+      fit(data=d.ls[[resp]]) %>%
+      butcher()
   }
   
   # Fit Hierarchical Bayesian models
@@ -1458,11 +1460,10 @@ fit_model <- function(mod, resp, form.ls, d.ls, opts, tunes, out.dir, y, suffix=
                          save_model=glue("{out.dir}/meta/{fit_ID}.stan")),
                 formula=form.ls[[resp]]$HB_vars) %>%
       add_recipe(recipe(d.ls[[resp]], formula=form.ls[[resp]][[HB_form_dummy]]))
-    out <- wf
+    out <- wf %>%
+      fit(data=d.ls[[resp]]) %>%
+      axe_env_bayesian()
   }
-  out <- out %>%
-    fit(data=d.ls[[resp]]) %>%
-    butcher()
   saveRDS(out, glue("{out.dir}/{fit_ID}.rds"))
   cat("Saved ", y, "_", resp, "_", mod, " as ", out.dir, "*", suffix, "\n", sep="")
 }
@@ -2017,6 +2018,37 @@ dirf <- function(...) {
 
 
 
+
+
+
+
+
+
+
+#' Adapted from butcher::axe_env for bayesian(engine='brms')
+#'
+#' @param x 
+#' @param verbose 
+#' @param ... 
+#'
+#' @return
+#' @export
+#'
+#' @examples
+axe_env_bayesian <- function(x, verbose = FALSE, ...) {
+  old <- x
+  for(i in seq_along(x$fit$actions$model$spec$args)) {
+    attr(x$fit$actions$model$spec$args[[i]], ".Environment") <- rlang::base_env()
+  }
+  for(i in seq_along(x$fit$fit$spec$args)) {
+    attr(x$fit$fit$spec$args[[i]], ".Environment") <- rlang::base_env()
+  }
+  for(i in seq_along(x$fit$fit$spec$method$fit$args)) {
+    attr(x$fit$fit$spec$method$fit$args[[i]], ".Environment") <- rlang::base_env()
+  }
+  attr(x$fit$actions$model$formula, ".Environment") <- rlang::base_env()
+
+}
 
 
 
