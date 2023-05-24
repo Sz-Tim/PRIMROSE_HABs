@@ -2094,6 +2094,7 @@ axe_env_bayesian <- function(x, verbose = FALSE, ...) {
   }
   attr(x$fit$actions$model$formula, ".Environment") <- rlang::base_env()
 
+  return(x)
 }
 
 
