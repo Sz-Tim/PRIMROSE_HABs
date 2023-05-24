@@ -17,6 +17,7 @@ read_and_clean_sites <- function(url_sites, dateStart) {
     fromJSON() %>% as_tibble %>%
     filter(east < 7e5,
            north < 125e4,
+           !(east==0 & north==0),
            sin != "-99",
            !is.na(fromdate) & !is.na(todate),
            fromdate != todate,
@@ -80,6 +81,34 @@ read_and_clean_cefas <- function(url_cefas, tox_i, sites, dateStart="2016-01-01"
     rename(all_of(setNames(tox_i$full, tox_i$abbr))) %>%
     select(obsid, lon, lat, sin, date, all_of(tox_i$abbr)) %>%
     arrange(sin, date)
+}
+
+
+read_and_clean_fish <- function(url_mowi, url_ssf, fish_i, sites, dateStart="2016-01-01") {
+  bind_rows(url(url_mowi) %>% 
+              readLines(warn=F) %>%
+              fromJSON() %>% as_tibble,
+            url(url_ssf) %>% 
+              readLines(warn=F) %>%
+              fromJSON() %>% as_tibble) %>% 
+    filter(!is.na(date_collected)) %>%
+    mutate(datetime_collected=as_datetime(date_collected),
+           date=date(datetime_collected)) %>%
+    filter(date >= dateStart) %>%
+    mutate(across(any_of(fish_i$full), ~na_if(.x, -99))) %>%
+    group_by(sin) %>% mutate(N=n()) %>% ungroup %>% filter(N > 2) %>%
+    select(oid, sin, date, easting, northing, all_of(fish_i$full)) %>%
+    left_join(sites, by=c("sin", "date")) %>%
+    mutate(east=if_else(is.na(east), easting, east),
+           north=if_else(is.na(north), northing, north)) %>%
+    rename(obsid=oid) %>%
+    group_by(sin) %>% mutate(lon=median(east), lat=median(north)) %>% ungroup %>%
+    rename(all_of(setNames(fish_i$full, fish_i$abbr))) %>%
+    select(obsid, lon, lat, sin, date, all_of(fish_i$abbr)) %>%
+    arrange(sin, date) %>%
+    filter(sin!=0) %>%
+    group_by(date, sin) %>% 
+    summarise(across(where(is.numeric), ~mean(.x, na.rm=T)))
 }
 
 
@@ -1732,13 +1761,14 @@ merge_pred_dfs <- function(files, CV=NULL) {
 #' @export
 #'
 #' @examples
-calc_LL_wts <- function(cv.df, resp, wt.penalty=1) {
+calc_LL_wts <- function(cv.df, resp, wt.penalty=2) {
   library(yardstick)
   if(resp=="alert") {
     wt.df <- cv.df %>%
       pivot_longer(ends_with("_A1"), names_to="model", values_to="pr") %>%
       group_by(model) %>%
-      average_precision(pr, truth=alert, event_level="second") 
+      average_precision(pr, truth=alert, event_level="second") %>%
+      mutate(.estimate=log(.estimate))
   }
   if(resp=="tl") {
     wt.df <- cv.df %>%
@@ -1758,7 +1788,7 @@ calc_LL_wts <- function(cv.df, resp, wt.penalty=1) {
   }
   return(wt.df %>%
            ungroup %>%
-           mutate(wt=(.estimate^wt.penalty)/sum(.estimate^wt.penalty)))
+           mutate(wt=(1/.estimate^wt.penalty)/sum(1/.estimate^wt.penalty)))
 }
 
 
@@ -1778,8 +1808,8 @@ calc_LL_wts <- function(cv.df, resp, wt.penalty=1) {
 #' @examples
 calc_ensemble <- function(out.ls, wt.ls, resp, y_i.i, method="wtmean", out.path=NULL) {
   library(tidyverse); library(tidymodels)
-  if(grepl("lasso", method) & resp != "alert") {
-    stop("Lasso only implemented for alert")
+  if(grepl("ML", method) & resp != "alert") {
+    stop("ML only implemented for alert")
   }
   if(resp=="alert") {
     if(method=="wtmean") {
@@ -1788,42 +1818,58 @@ calc_ensemble <- function(out.ls, wt.ls, resp, y_i.i, method="wtmean", out.path=
           pivot_longer(ends_with("_A1"), names_to="model", values_to="pr"),
         wt.ls[[resp]]
       ) %>%
+        mutate(pr_logit=brms::logit_scaled(pr, lb=-0.01, ub=1.01)) %>%
         group_by(obsid) %>%
-        summarise(ens_alert_A1=sum(pr*wt, na.rm=T)) %>%
+        summarise(ens_alert_A1=sum(pr*wt, na.rm=T),
+                  ensLogitMn_alert_A1=brms::inv_logit_scaled(
+                    sum(pr_logit*wt, na.rm=T))) %>%
         ungroup
-    } else if(method=="lasso_fit") {
+    } else if(method=="ML_fit") {
       avg_prec2 <- metric_tweak("avg_prec2", average_precision, event_level="second")
-      pr_auc2 <- metric_tweak("pr_auc2", pr_auc, event_level="second")
-      roc_auc2 <- metric_tweak("roc_auc2", roc_auc, event_level="second")
       folds <- vfold_cv(wt.ls[[resp]], strata="alert")
-      ens_spec <- logistic_reg(penalty=tune(), mixture=0) %>%
+      GLM_spec <- logistic_reg(penalty=tune(), mixture=0) %>%
         set_engine("glmnet", lower.limits=0) %>% set_mode("classification")
-      ens_spec <- rand_forest(trees=tune(), 
+      RF_spec <- rand_forest(trees=tune(), 
                               min_n=tune()) %>%
         set_engine("randomForest") %>% set_mode("classification")
       ens_rec <- recipe(alert~., data=wt.ls[[resp]]) %>%
         update_role(y, obsid, siteid, date, new_role="ID") %>%
         step_logit(ends_with("_A1"), offset=0.01) %>%
         step_normalize(all_predictors())
-      wf <- workflow() %>%
-        add_model(ens_spec) %>%
+      GLM_wf <- workflow() %>%
+        add_model(GLM_spec) %>%
         add_recipe(ens_rec)
-      out_tune <- wf %>%
+      RF_wf <- workflow() %>%
+        add_model(RF_spec) %>%
+        add_recipe(ens_rec)
+      GLM_tune <- GLM_wf %>%
         tune_grid(resamples=folds,
-                  grid=grid_latin_hypercube(extract_parameter_set_dials(ens_spec),
-                                            size=5),
+                  grid=grid_latin_hypercube(extract_parameter_set_dials(GLM_spec),
+                                            size=1e3),
                   metrics=metric_set(avg_prec2))
-      out_lasso <- wf %>%
-        finalize_workflow(select_best(out_tune, "avg_prec2")) %>%
+      GLM_out <- GLM_wf %>%
+        finalize_workflow(select_best(GLM_tune, "avg_prec2")) %>%
         fit(wt.ls[[resp]]) %>%
         butcher
-      saveRDS(out_lasso, glue("{out.path}/{y_i.i$abbr}_EnsGLM.rds"))
+      saveRDS(GLM_out, glue("{out.path}/{y_i.i$abbr}_EnsGLM.rds"))
+      RF_tune <- RF_wf %>%
+        tune_grid(resamples=folds,
+                  grid=grid_latin_hypercube(extract_parameter_set_dials(RF_spec),
+                                            size=1e2),
+                  metrics=metric_set(avg_prec2))
+      RF_out <- RF_wf %>%
+        finalize_workflow(select_best(RF_tune, "avg_prec2")) %>%
+        fit(wt.ls[[resp]]) %>%
+        butcher
+      saveRDS(RF_out, glue("{out.path}/{y_i.i$abbr}_EnsRF.rds"))
     }
-    if(method %in% c("lasso_fit", "lasso_oos")) {
-      out_lasso <- readRDS(glue("{out.path}/{y_i.i$abbr}_EnsGLM.rds"))
+    if(method %in% c("ML_fit", "ML_oos")) {
+      GLM_out <- readRDS(glue("{out.path}/{y_i.i$abbr}_EnsGLM.rds"))
+      RF_out <- readRDS(glue("{out.path}/{y_i.i$abbr}_EnsRF.rds"))
       out <- out.ls[[resp]] %>%
-        mutate(ensLasso_alert_A1=predict(out_lasso, new_data=., type="prob")[[2]]) %>%
-        select(obsid, ensLasso_alert_A1) 
+        mutate(ensGLM_alert_A1=predict(GLM_out, new_data=., type="prob")[[2]],
+               ensRF_alert_A1=predict(RF_out, new_data=., type="prob")[[2]]) %>%
+        select(obsid, ensGLM_alert_A1, ensRF_alert_A1) 
     }
   }
   if(resp=="tl") {
