@@ -1818,7 +1818,7 @@ calc_ensemble <- function(out.ls, wt.ls, resp, y_i.i, method="wtmean", out.path=
           pivot_longer(ends_with("_A1"), names_to="model", values_to="pr"),
         wt.ls[[resp]]
       ) %>%
-        mutate(pr_logit=brms::logit_scaled(pr)) %>%
+        mutate(pr_logit=brms::logit_scaled(pr, lb=-0.01, ub=1.01)) %>%
         group_by(obsid) %>%
         summarise(ens_alert_A1=sum(pr*wt, na.rm=T),
                   ensLogitMn_alert_A1=brms::inv_logit_scaled(
@@ -1831,6 +1831,8 @@ calc_ensemble <- function(out.ls, wt.ls, resp, y_i.i, method="wtmean", out.path=
         update_role(y, obsid, siteid, date, new_role="ID") %>%
         step_logit(ends_with("_A1"), offset=0.01) %>%
         step_normalize(all_predictors())
+      ens_rec2 <- recipe(alert~., data=wt.ls[[resp]]) %>%
+        update_role(y, obsid, siteid, date, new_role="ID") 
       
       if(method=="GLM_fit") {
         size <- ifelse(is.null(opt), 1e3, opt)
@@ -1874,7 +1876,7 @@ calc_ensemble <- function(out.ls, wt.ls, resp, y_i.i, method="wtmean", out.path=
       if(method=="HB_fit") {
         mn <- ifelse(is.null(opt), 0.5, opt)
         library(brms)
-        wf <- workflow() %>%
+        wf1 <- workflow() %>%
           add_model(bayesian(mode="classification", engine="brms", 
                              family=bernoulli, 
                              prior=prior_string(glue("R2D2({mn})"), class="b"),
@@ -1883,12 +1885,60 @@ calc_ensemble <- function(out.ls, wt.ls, resp, y_i.i, method="wtmean", out.path=
                              warmup=1000,
                              chains=3,
                              cores=3,
-                             save_model=glue("{out.path}/{y_i.i$abbr}_EnsHB.stan")),
+                             save_model=glue("{out.path}/{y_i.i$abbr}_EnsHB1.stan")),
                     formula=alert~.) %>%
           add_recipe(ens_rec)
-        HB_out <- wf %>%
+        HB_out1 <- wf1 %>%
           fit(data=wt.ls[[resp]]) 
-        saveRDS(HB_out, glue("{out.path}/{y_i.i$abbr}_EnsHB.rds"))
+        saveRDS(HB_out1, glue("{out.path}/{y_i.i$abbr}_EnsHB1.rds"))
+        
+        wf2 <- workflow() %>%
+          add_model(bayesian(mode="classification", engine="brms", 
+                             family=bernoulli, 
+                             prior=prior(exponential(2), class=b, lb=0),
+                             init=0, 
+                             iter=1500,
+                             warmup=1000,
+                             chains=3,
+                             cores=3,
+                             save_model=glue("{out.path}/{y_i.i$abbr}_EnsHB2.stan")),
+                    formula=alert~.) %>%
+          add_recipe(ens_rec)
+        HB_out2 <- wf2 %>%
+          fit(data=wt.ls[[resp]]) 
+        saveRDS(HB_out2, glue("{out.path}/{y_i.i$abbr}_EnsHB2.rds"))
+        
+        wf3 <- workflow() %>%
+          add_model(bayesian(mode="classification", engine="brms", 
+                             family=bernoulli, 
+                             prior=prior_string(glue("R2D2({mn})"), class="b"),
+                             init=0, 
+                             iter=1500,
+                             warmup=1000,
+                             chains=3,
+                             cores=3,
+                             save_model=glue("{out.path}/{y_i.i$abbr}_EnsHB3.stan")),
+                    formula=alert~.) %>%
+          add_recipe(ens_rec2)
+        HB_out3 <- wf3 %>%
+          fit(data=wt.ls[[resp]]) 
+        saveRDS(HB_out3, glue("{out.path}/{y_i.i$abbr}_EnsHB3.rds"))
+        
+        wf4 <- workflow() %>%
+          add_model(bayesian(mode="classification", engine="brms", 
+                             family=bernoulli, 
+                             prior=prior(exponential(2), class=b, lb=0),
+                             init=0, 
+                             iter=1500,
+                             warmup=1000,
+                             chains=3,
+                             cores=3,
+                             save_model=glue("{out.path}/{y_i.i$abbr}_EnsHB4.stan")),
+                    formula=alert~.) %>%
+          add_recipe(ens_rec2)
+        HB_out4 <- wf4 %>%
+          fit(data=wt.ls[[resp]]) 
+        saveRDS(HB_out4, glue("{out.path}/{y_i.i$abbr}_EnsHB4.rds"))
       }
     }
     if(grepl("GLM", method)) {
@@ -1904,13 +1954,28 @@ calc_ensemble <- function(out.ls, wt.ls, resp, y_i.i, method="wtmean", out.path=
         select(obsid, ensRF_alert_A1) 
     }
     if(grepl("HB", method)) {
-      HB_out <- readRDS(glue("{out.path}/{y_i.i$abbr}_EnsHB.rds"))
-      pred <- parsnip::extract_fit_engine(HB_out) %>%
+      HB_out1 <- readRDS(glue("{out.path}/{y_i.i$abbr}_EnsHB1.rds"))
+      HB_out2 <- readRDS(glue("{out.path}/{y_i.i$abbr}_EnsHB2.rds"))
+      HB_out3 <- readRDS(glue("{out.path}/{y_i.i$abbr}_EnsHB3.rds"))
+      HB_out4 <- readRDS(glue("{out.path}/{y_i.i$abbr}_EnsHB4.rds"))
+      pred1 <- parsnip::extract_fit_engine(HB_out1) %>%
+        posterior_epred(out.ls[[resp]], allow_new_levels=T) %>%
+        summarise_post_preds(., resp, y_i.i)
+      pred2 <- parsnip::extract_fit_engine(HB_out2) %>%
+        posterior_epred(out.ls[[resp]], allow_new_levels=T) %>%
+        summarise_post_preds(., resp, y_i.i)
+      pred3 <- parsnip::extract_fit_engine(HB_out3) %>%
+        posterior_epred(out.ls[[resp]], allow_new_levels=T) %>%
+        summarise_post_preds(., resp, y_i.i)
+      pred4 <- parsnip::extract_fit_engine(HB_out4) %>%
         posterior_epred(out.ls[[resp]], allow_new_levels=T) %>%
         summarise_post_preds(., resp, y_i.i)
       out <- out.ls[[resp]] %>%
-        mutate(ensHB_alert_A1=pred[,1]) %>%
-        select(obsid, ensHB_alert_A1) 
+        mutate(ensHB1_alert_A1=pred1[,1],
+               ensHB2_alert_A1=pred2[,1],
+               ensHB3_alert_A1=pred3[,1],
+               ensHB4_alert_A1=pred4[,1]) %>%
+        select(obsid, starts_with("ensHB")) 
     }
   }
   if(resp=="tl") {
