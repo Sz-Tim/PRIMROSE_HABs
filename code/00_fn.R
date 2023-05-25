@@ -1872,17 +1872,17 @@ calc_ensemble <- function(out.ls, wt.ls, resp, y_i.i, method="wtmean", out.path=
       }
       
       if(method=="HB_fit") {
-        mn <- ifelse(is.null(opt), 0.2, opt)
+        mn <- ifelse(is.null(opt), 0.5, opt)
         library(brms)
         wf <- workflow() %>%
           add_model(bayesian(mode="classification", engine="brms", 
                              family=bernoulli, 
                              prior=prior_string(glue("R2D2({mn})"), class="b"),
                              init=0, 
-                             iter=15,
-                             warmup=10,
-                             chains=2,
-                             cores=2,
+                             iter=1500,
+                             warmup=1000,
+                             chains=3,
+                             cores=3,
                              save_model=glue("{out.path}/{y_i.i$abbr}_EnsHB.stan")),
                     formula=alert~.) %>%
           add_recipe(ens_rec)
