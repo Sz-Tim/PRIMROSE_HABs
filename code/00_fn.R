@@ -1838,19 +1838,33 @@ calc_ensemble <- function(out.ls, wt.ls, resp, y_i.i, method="wtmean", out.path=
         size <- ifelse(is.null(opt), 1e3, opt)
         GLM_spec <- logistic_reg(penalty=tune(), mixture=0) %>%
           set_engine("glmnet", lower.limits=0) %>% set_mode("classification")
-        GLM_wf <- workflow() %>%
+        GLM_wf1 <- workflow() %>%
           add_model(GLM_spec) %>%
           add_recipe(ens_rec)
-        GLM_tune <- GLM_wf %>%
+        GLM_tune1 <- GLM_wf1 %>%
           tune_grid(resamples=folds,
                     grid=grid_latin_hypercube(extract_parameter_set_dials(GLM_spec),
                                               size=size),
                     metrics=metric_set(avg_prec2))
-        GLM_out <- GLM_wf %>%
-          finalize_workflow(select_best(GLM_tune, "avg_prec2")) %>%
+        GLM_out1 <- GLM_wf1 %>%
+          finalize_workflow(select_best(GLM_tune1, "avg_prec2")) %>%
           fit(wt.ls[[resp]]) %>%
           butcher
-        saveRDS(GLM_out, glue("{out.path}/{y_i.i$abbr}_EnsGLM.rds"))
+        saveRDS(GLM_out1, glue("{out.path}/{y_i.i$abbr}_EnsGLM1.rds"))
+        
+        GLM_wf2 <- workflow() %>%
+          add_model(GLM_spec) %>%
+          add_recipe(ens_rec2)
+        GLM_tune2 <- GLM_wf2 %>%
+          tune_grid(resamples=folds,
+                    grid=grid_latin_hypercube(extract_parameter_set_dials(GLM_spec),
+                                              size=size),
+                    metrics=metric_set(avg_prec2))
+        GLM_out2 <- GLM_wf2 %>%
+          finalize_workflow(select_best(GLM_tune2, "avg_prec2")) %>%
+          fit(wt.ls[[resp]]) %>%
+          butcher
+        saveRDS(GLM_out2, glue("{out.path}/{y_i.i$abbr}_EnsGLM2.rds"))
       }
       
       if(method=="RF_fit") {
@@ -1858,19 +1872,33 @@ calc_ensemble <- function(out.ls, wt.ls, resp, y_i.i, method="wtmean", out.path=
         RF_spec <- rand_forest(trees=tune(), 
                                min_n=tune()) %>%
           set_engine("randomForest") %>% set_mode("classification")
-        RF_wf <- workflow() %>%
+        RF_wf1 <- workflow() %>%
           add_model(RF_spec) %>%
           add_recipe(ens_rec)
-        RF_tune <- RF_wf %>%
+        RF_tune1 <- RF_wf1 %>%
           tune_grid(resamples=folds,
                     grid=grid_latin_hypercube(extract_parameter_set_dials(RF_spec),
                                               size=size),
                     metrics=metric_set(avg_prec2))
-        RF_out <- RF_wf %>%
-          finalize_workflow(select_best(RF_tune, "avg_prec2")) %>%
+        RF_out1 <- RF_wf1 %>%
+          finalize_workflow(select_best(RF_tune1, "avg_prec2")) %>%
           fit(wt.ls[[resp]]) %>%
           butcher
-        saveRDS(RF_out, glue("{out.path}/{y_i.i$abbr}_EnsRF.rds"))
+        saveRDS(RF_out1, glue("{out.path}/{y_i.i$abbr}_EnsRF1.rds"))
+        
+        RF_wf2 <- workflow() %>%
+          add_model(RF_spec) %>%
+          add_recipe(ens_rec2)
+        RF_tune2 <- RF_wf2 %>%
+          tune_grid(resamples=folds,
+                    grid=grid_latin_hypercube(extract_parameter_set_dials(RF_spec),
+                                              size=size),
+                    metrics=metric_set(avg_prec2))
+        RF_out2 <- RF_wf2 %>%
+          finalize_workflow(select_best(RF_tune2, "avg_prec2")) %>%
+          fit(wt.ls[[resp]]) %>%
+          butcher
+        saveRDS(RF_out2, glue("{out.path}/{y_i.i$abbr}_EnsRF2.rds"))
       }
       
       if(method=="HB_fit") {
@@ -1942,16 +1970,20 @@ calc_ensemble <- function(out.ls, wt.ls, resp, y_i.i, method="wtmean", out.path=
       }
     }
     if(grepl("GLM", method)) {
-      GLM_out <- readRDS(glue("{out.path}/{y_i.i$abbr}_EnsGLM.rds"))
+      GLM_out1 <- readRDS(glue("{out.path}/{y_i.i$abbr}_EnsGLM1.rds"))
+      GLM_out2 <- readRDS(glue("{out.path}/{y_i.i$abbr}_EnsGLM2.rds"))
       out <- out.ls[[resp]] %>%
-        mutate(ensGLM_alert_A1=predict(GLM_out, new_data=., type="prob")[[2]]) %>%
-        select(obsid, ensGLM_alert_A1) 
+        mutate(ensGLM1_alert_A1=predict(GLM_out1, new_data=., type="prob")[[2]],
+               ensGLM2_alert_A1=predict(GLM_out2, new_data=., type="prob")[[2]]) %>%
+        select(obsid, starts_with("ensGLM")) 
     }
     if(grepl("RF", method)) {
-      RF_out <- readRDS(glue("{out.path}/{y_i.i$abbr}_EnsRF.rds"))
+      RF_out1 <- readRDS(glue("{out.path}/{y_i.i$abbr}_EnsRF1.rds"))
+      RF_out2 <- readRDS(glue("{out.path}/{y_i.i$abbr}_EnsRF2.rds"))
       out <- out.ls[[resp]] %>%
-        mutate(ensRF_alert_A1=predict(RF_out, new_data=., type="prob")[[2]]) %>%
-        select(obsid, ensRF_alert_A1) 
+        mutate(ensRF1_alert_A1=predict(RF_out1, new_data=., type="prob")[[2]],
+               ensRF2_alert_A1=predict(RF_out2, new_data=., type="prob")[[2]]) %>%
+        select(obsid, starts_with("ensRF")) 
     }
     if(grepl("HB", method)) {
       HB_out1 <- readRDS(glue("{out.path}/{y_i.i$abbr}_EnsHB1.rds"))
