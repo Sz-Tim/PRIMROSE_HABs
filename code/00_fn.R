@@ -1888,8 +1888,6 @@ calc_ensemble <- function(out.ls, wt.ls, resp, y_i.i, method="wtmean", out.path=
           add_recipe(ens_rec)
         HB_out <- wf %>%
           fit(data=wt.ls[[resp]]) 
-        out2 <- HB_out %>%
-          axe_env_bayesian()
         saveRDS(HB_out, glue("{out.path}/{y_i.i$abbr}_EnsHB.rds"))
       }
     }
