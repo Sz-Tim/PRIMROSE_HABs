@@ -224,11 +224,15 @@ foreach(i=seq_along(obs.ls),
   # cl <- makeCluster(cores_per_model)
   # registerDoParallel(cl)
   fit.ls <- map(responses, ~calc_ensemble(fit.ls, wt.ls, .x, y_i.i, "wtmean"))
-  fit.ls <- map(responses, ~calc_ensemble(fit.ls, cv.ls, .x, y_i.i, "ML_fit", cv.dir))
+  fit.ls <- map(responses, ~calc_ensemble(fit.ls, cv.ls, .x, y_i.i, "GLM_fit", cv.dir, 1e3))
+  fit.ls <- map(responses, ~calc_ensemble(fit.ls, cv.ls, .x, y_i.i, "RF_fit", cv.dir, 1e2))
+  fit.ls <- map(responses, ~calc_ensemble(fit.ls, cv.ls, .x, y_i.i, "HB_fit", cv.dir, 0.8))
   # stopCluster(cl)
   
   oos.ls <- map(responses, ~calc_ensemble(oos.ls, wt.ls, .x, y_i.i, "wtmean"))
-  oos.ls <- map(responses, ~calc_ensemble(oos.ls, cv.ls, .x, y_i.i, "ML_oos", cv.dir))
+  oos.ls <- map(responses, ~calc_ensemble(oos.ls, cv.ls, .x, y_i.i, "GLM_oos", cv.dir))
+  oos.ls <- map(responses, ~calc_ensemble(oos.ls, cv.ls, .x, y_i.i, "RF_oos", cv.dir))
+  oos.ls <- map(responses, ~calc_ensemble(oos.ls, cv.ls, .x, y_i.i, "HB_oos", cv.dir))
   
   saveRDS(fit.ls, glue("out/compiled/{y}_fit.rds"))
   saveRDS(oos.ls, glue("out/compiled/{y}_oos.rds"))

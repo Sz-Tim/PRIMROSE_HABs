@@ -1806,10 +1806,10 @@ calc_LL_wts <- function(cv.df, resp, wt.penalty=2) {
 #' @export
 #'
 #' @examples
-calc_ensemble <- function(out.ls, wt.ls, resp, y_i.i, method="wtmean", out.path=NULL) {
+calc_ensemble <- function(out.ls, wt.ls, resp, y_i.i, method="wtmean", out.path=NULL, opt=NULL) {
   library(tidyverse); library(tidymodels)
-  if(grepl("ML", method) & resp != "alert") {
-    stop("ML only implemented for alert")
+  if(grepl("RF|GLM|HB", method) & resp != "alert") {
+    stop("Models only implemented for alert")
   }
   if(resp=="alert") {
     if(method=="wtmean") {
@@ -1818,58 +1818,101 @@ calc_ensemble <- function(out.ls, wt.ls, resp, y_i.i, method="wtmean", out.path=
           pivot_longer(ends_with("_A1"), names_to="model", values_to="pr"),
         wt.ls[[resp]]
       ) %>%
-        mutate(pr_logit=brms::logit_scaled(pr, lb=-0.01, ub=1.01)) %>%
+        mutate(pr_logit=brms::logit_scaled(pr)) %>%
         group_by(obsid) %>%
         summarise(ens_alert_A1=sum(pr*wt, na.rm=T),
                   ensLogitMn_alert_A1=brms::inv_logit_scaled(
                     sum(pr_logit*wt, na.rm=T))) %>%
         ungroup
-    } else if(method=="ML_fit") {
+    } else if(grepl("[GLM|RF|HB]_fit", method)) {
       avg_prec2 <- metric_tweak("avg_prec2", average_precision, event_level="second")
       folds <- vfold_cv(wt.ls[[resp]], strata="alert")
-      GLM_spec <- logistic_reg(penalty=tune(), mixture=0) %>%
-        set_engine("glmnet", lower.limits=0) %>% set_mode("classification")
-      RF_spec <- rand_forest(trees=tune(), 
-                              min_n=tune()) %>%
-        set_engine("randomForest") %>% set_mode("classification")
       ens_rec <- recipe(alert~., data=wt.ls[[resp]]) %>%
         update_role(y, obsid, siteid, date, new_role="ID") %>%
         step_logit(ends_with("_A1"), offset=0.01) %>%
         step_normalize(all_predictors())
-      GLM_wf <- workflow() %>%
-        add_model(GLM_spec) %>%
-        add_recipe(ens_rec)
-      RF_wf <- workflow() %>%
-        add_model(RF_spec) %>%
-        add_recipe(ens_rec)
-      GLM_tune <- GLM_wf %>%
-        tune_grid(resamples=folds,
-                  grid=grid_latin_hypercube(extract_parameter_set_dials(GLM_spec),
-                                            size=1e3),
-                  metrics=metric_set(avg_prec2))
-      GLM_out <- GLM_wf %>%
-        finalize_workflow(select_best(GLM_tune, "avg_prec2")) %>%
-        fit(wt.ls[[resp]]) %>%
-        butcher
-      saveRDS(GLM_out, glue("{out.path}/{y_i.i$abbr}_EnsGLM.rds"))
-      RF_tune <- RF_wf %>%
-        tune_grid(resamples=folds,
-                  grid=grid_latin_hypercube(extract_parameter_set_dials(RF_spec),
-                                            size=1e2),
-                  metrics=metric_set(avg_prec2))
-      RF_out <- RF_wf %>%
-        finalize_workflow(select_best(RF_tune, "avg_prec2")) %>%
-        fit(wt.ls[[resp]]) %>%
-        butcher
-      saveRDS(RF_out, glue("{out.path}/{y_i.i$abbr}_EnsRF.rds"))
+      
+      if(method=="GLM_fit") {
+        size <- ifelse(is.null(opt), 1e3, opt)
+        GLM_spec <- logistic_reg(penalty=tune(), mixture=0) %>%
+          set_engine("glmnet", lower.limits=0) %>% set_mode("classification")
+        GLM_wf <- workflow() %>%
+          add_model(GLM_spec) %>%
+          add_recipe(ens_rec)
+        GLM_tune <- GLM_wf %>%
+          tune_grid(resamples=folds,
+                    grid=grid_latin_hypercube(extract_parameter_set_dials(GLM_spec),
+                                              size=size),
+                    metrics=metric_set(avg_prec2))
+        GLM_out <- GLM_wf %>%
+          finalize_workflow(select_best(GLM_tune, "avg_prec2")) %>%
+          fit(wt.ls[[resp]]) %>%
+          butcher
+        saveRDS(GLM_out, glue("{out.path}/{y_i.i$abbr}_EnsGLM.rds"))
+      }
+      
+      if(method=="RF_fit") {
+        size <- ifelse(is.null(opt), 1e2, opt)
+        RF_spec <- rand_forest(trees=tune(), 
+                               min_n=tune()) %>%
+          set_engine("randomForest") %>% set_mode("classification")
+        RF_wf <- workflow() %>%
+          add_model(RF_spec) %>%
+          add_recipe(ens_rec)
+        RF_tune <- RF_wf %>%
+          tune_grid(resamples=folds,
+                    grid=grid_latin_hypercube(extract_parameter_set_dials(RF_spec),
+                                              size=size),
+                    metrics=metric_set(avg_prec2))
+        RF_out <- RF_wf %>%
+          finalize_workflow(select_best(RF_tune, "avg_prec2")) %>%
+          fit(wt.ls[[resp]]) %>%
+          butcher
+        saveRDS(RF_out, glue("{out.path}/{y_i.i$abbr}_EnsRF.rds"))
+      }
+      
+      if(method=="HB_fit") {
+        mn <- ifelse(is.null(opt), 0.2, opt)
+        library(brms)
+        wf <- workflow() %>%
+          add_model(bayesian(mode="classification", engine="brms", 
+                             family=bernoulli, 
+                             prior=prior_string(glue("R2D2({mn})"), class="b"),
+                             init=0, 
+                             iter=15,
+                             warmup=10,
+                             chains=2,
+                             cores=2,
+                             save_model=glue("{out.path}/{y_i.i$abbr}_EnsHB.stan")),
+                    formula=alert~.) %>%
+          add_recipe(ens_rec)
+        HB_out <- wf %>%
+          fit(data=wt.ls[[resp]]) 
+        out2 <- HB_out %>%
+          axe_env_bayesian()
+        saveRDS(HB_out, glue("{out.path}/{y_i.i$abbr}_EnsHB.rds"))
+      }
     }
-    if(method %in% c("ML_fit", "ML_oos")) {
+    if(grepl("GLM", method)) {
       GLM_out <- readRDS(glue("{out.path}/{y_i.i$abbr}_EnsGLM.rds"))
+      out <- out.ls[[resp]] %>%
+        mutate(ensGLM_alert_A1=predict(GLM_out, new_data=., type="prob")[[2]]) %>%
+        select(obsid, ensGLM_alert_A1) 
+    }
+    if(grepl("RF", method)) {
       RF_out <- readRDS(glue("{out.path}/{y_i.i$abbr}_EnsRF.rds"))
       out <- out.ls[[resp]] %>%
-        mutate(ensGLM_alert_A1=predict(GLM_out, new_data=., type="prob")[[2]],
-               ensRF_alert_A1=predict(RF_out, new_data=., type="prob")[[2]]) %>%
-        select(obsid, ensGLM_alert_A1, ensRF_alert_A1) 
+        mutate(ensRF_alert_A1=predict(RF_out, new_data=., type="prob")[[2]]) %>%
+        select(obsid, ensRF_alert_A1) 
+    }
+    if(grepl("HB", method)) {
+      HB_out <- readRDS(glue("{out.path}/{y_i.i$abbr}_EnsHB.rds"))
+      pred <- parsnip::extract_fit_engine(HB_out) %>%
+        posterior_epred(out.ls[[resp]], allow_new_levels=T) %>%
+        summarise_post_preds(., resp, y_i.i)
+      out <- out.ls[[resp]] %>%
+        mutate(ensHB_alert_A1=pred[,1]) %>%
+        select(obsid, ensHB_alert_A1) 
     }
   }
   if(resp=="tl") {
