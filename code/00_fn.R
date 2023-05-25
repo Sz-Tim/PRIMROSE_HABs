@@ -1585,7 +1585,7 @@ summarise_predictions <- function(d.y, dPCA.y, resp, fit.dir, y_i.i, suffix=NULL
   }
   
   out.df <- d.y[[resp]] %>%
-    select(y, obsid, siteid, date, {{resp}}) 
+    select(y, obsid, siteid, date, prevAlert, {{resp}}) 
   if(!is.null(preds.d)) {
     out.df <- out.df %>% bind_cols(preds.d)
   }
