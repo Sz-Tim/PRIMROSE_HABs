@@ -1727,6 +1727,7 @@ merge_pred_dfs <- function(files, CV=NULL) {
     map_dfr(1:nrow(f.df), 
             ~readRDS(f.df$f[.x]) %>% mutate(covSet=paste0("d", f.df$covSet[.x], "."))) %>%
       pivot_longer(ends_with("A1"), names_to="model", values_to="prA1") %>%
+      na.omit() %>%
       mutate(model=paste0(covSet, model)) %>%
       select(-covSet) %>%
       pivot_wider(names_from="model", values_from="prA1")
@@ -1828,11 +1829,11 @@ calc_ensemble <- function(out.ls, wt.ls, resp, y_i.i, method="wtmean", out.path=
       avg_prec2 <- metric_tweak("avg_prec2", average_precision, event_level="second")
       folds <- vfold_cv(wt.ls[[resp]], strata="alert")
       ens_rec <- recipe(alert~., data=wt.ls[[resp]]) %>%
-        update_role(y, obsid, siteid, date, prevAlert, new_role="ID") %>%
+        update_role(y, obsid, siteid, date, new_role="ID") %>%
         step_logit(ends_with("_A1"), offset=0.01) %>%
         step_normalize(all_predictors())
       ens_rec2 <- recipe(alert~., data=wt.ls[[resp]]) %>%
-        update_role(y, obsid, siteid, date, prevAlert, new_role="ID") 
+        update_role(y, obsid, siteid, date, new_role="ID") 
       
       if(method=="GLM_fit") {
         size <- ifelse(is.null(opt), 1e3, opt)
