@@ -6,18 +6,20 @@
 
 
 # setup -------------------------------------------------------------------
-pkgs <- c("tidyverse", "lubridate", "glue", "tidymodels", "nnet", "randomForest", "glmnet", 
+pkgs <- c("tidyverse", "lubridate", "glue", "tidymodels", 
+          "nnet", "randomForest", "glmnet", "xgboost", "earth",
           "brms", "bayesian", "doParallel", "foreach", "butcher")
 lapply(pkgs, library, character.only=T)
 source("code/00_fn.R")
 
-covSet <- c("1-noDtDeltaX", "2-noX", "3-noDtDelta", "4-noDt", "5-full")[1]
-cores_per_model <- 5
-n_spp_parallel <- 5
-fit.dir <- glue("out/model_fits/{covSet}/")
+covSet <- c("1-noDtDeltaX", "2-noX", "3-noDtDelta", "4-noDt", "5-full", "6-autoX")[6]
+cores_per_model <- 4
+n_spp_parallel <- 4
+base.dir <- "out/0_init/" 
+fit.dir <- glue("{base.dir}/model_fits/{covSet}/")
 cv.dir <- glue("{fit.dir}/cv/")
-ens.dir <- "out/model_fits/ensembles/"
-out.dir <- glue("out/compiled/{covSet}/")
+ens.dir <- glue("{base.dir}/model_fits/ensembles/")
+out.dir <- glue("{base.dir}/compiled/{covSet}/")
 dir.create(fit.dir, recursive=T, showWarnings=F)
 dir.create(cv.dir, recursive=T, showWarnings=F)
 dir.create(ens.dir, recursive=T, showWarnings=F)
@@ -50,6 +52,7 @@ all_covs <- list(
   ),
   hab=c(outer(filter(y_i, type=="hab")$abbr, c("lnNAvg", "prA"), "paste0"))
 )
+all_covs$interact <- paste("lnNWt1", c(all_covs$main[-2]), sep="X")
 
 covs_exclude <- get_excluded_cov_regex(covSet)
 
@@ -82,6 +85,7 @@ foreach(i=seq_along(obs.ls),
   y_i.i <- filter(y_i, abbr==y)
   set.seed(1003)
   obs.split <- group_initial_split(obs.ls[[i]], group=year)
+  saveRDS(obs.split, glue("data/0_init/{y}_{covSet}_dataSplit.rds"))
   obs.train <- training(obs.split)
   obs.test <- testing(obs.split)
   
@@ -89,15 +93,13 @@ foreach(i=seq_along(obs.ls),
   
   # . prep ------------------------------------------------------------------
   
-  responses <- c(alert="alert", tl="tl")[1]
+  responses <- c(alert="alert")
   prep.ls <- map(responses, ~prep_recipe(obs.train, .x, covs_exclude))
   d.y <- list(train=map(prep.ls, ~bake(.x, obs.train)),
               test=map(prep.ls, ~bake(.x, obs.test)))
   prepPCA.ls <- map(responses, ~prep_recipe(obs.train, .x, covs_exclude, TRUE))
   dPCA.y <- list(train=map(prepPCA.ls, ~bake(.x, obs.train)),
                  test=map(prepPCA.ls, ~bake(.x, obs.test)))
-  # saveRDS(prep.ls, glue("data/0_init/data_prep_{y}_{covSet}.rds"))
-  # saveRDS(d.y, glue("data/0_init/data_baked_{y}_{covSet}.rds"))
   d.split <- dPCA.split <- map(responses, ~obs.split)
   for(r in responses) {
     d.split[[r]]$data <- d.split[[r]]$data %>% select(obsid) %>%
@@ -108,9 +110,6 @@ foreach(i=seq_along(obs.ls),
   
   covs <- filter_corr_covs(all_covs, d.y, covs_exclude)
   covsPCA <- names(dPCA.y$train[[1]] %>% select(starts_with("PC")))
-  if(any(table(d.y$train$tl$tl)==0)) {
-    responses <- grep("tl", responses, invert=T, value=T)
-  }
   
   # formulas
   smooths <- list(b=glue("b{c(covs$main, covs$interact)}"),
@@ -210,11 +209,11 @@ foreach(i=seq_along(obs.ls),
   
   # . ensemble --------------------------------------------------------------
   
-  fit.ls <- merge_pred_dfs(dirf("out/compiled", glue("{y}_fit_ls.rds"), recursive=T))
-  oos.ls <- merge_pred_dfs(dirf("out/compiled", glue("{y}_oos_ls.rds"), recursive=T))
+  fit.ls <- merge_pred_dfs(dirf(glue("{base.dir}/compiled"), glue("{y}_fit_ls.rds"), recursive=T))
+  oos.ls <- merge_pred_dfs(dirf(glue("{base.dir}/compiled"), glue("{y}_oos_ls.rds"), recursive=T))
   cv.ls <- list(alert=full_join(
-    merge_pred_dfs(dirf("out/model_fits", glue("{y}_.*_HBL_CV"), recursive=T), CV="HB"),
-    merge_pred_dfs(dirf("out/model_fits", glue("{y}_.*_CV.rds"), recursive=T), CV="ML"), 
+    merge_pred_dfs(dirf(glue("{base.dir}/model_fits"), glue("{y}_.*_HBL_CV"), recursive=T), CV="HB"),
+    merge_pred_dfs(dirf(glue("{base.dir}/model_fits"), glue("{y}_.*_CV.rds"), recursive=T), CV="ML"), 
     by=c("y", "obsid"))
     )
   wt.ls <- imap(cv.ls, ~calc_LL_wts(.x, .y))
@@ -232,16 +231,16 @@ foreach(i=seq_along(obs.ls),
   oos.ls <- map(responses, ~calc_ensemble(oos.ls, cv.ls, .x, y_i.i, "RF_oos", ens.dir))
   oos.ls <- map(responses, ~calc_ensemble(oos.ls, cv.ls, .x, y_i.i, "HB_oos", ens.dir))
   
-  saveRDS(fit.ls, glue("out/compiled/{y}_fit.rds"))
-  saveRDS(oos.ls, glue("out/compiled/{y}_oos.rds"))
-  saveRDS(wt.ls, glue("out/compiled/{y}_wt.rds"))
+  saveRDS(fit.ls, glue("{base.dir}/compiled/{y}_fit.rds"))
+  saveRDS(oos.ls, glue("{base.dir}/compiled/{y}_oos.rds"))
+  saveRDS(wt.ls, glue("{base.dir}/compiled/{y}_wt.rds"))
   
   
   
   # . null ------------------------------------------------------------------
   
-  fit.ls <- readRDS(glue("out/compiled/{y}_fit.rds")) 
-  oos.ls <- readRDS(glue("out/compiled/{y}_oos.rds"))
+  fit.ls <- readRDS(glue("{base.dir}/compiled/{y}_fit.rds")) 
+  oos.ls <- readRDS(glue("{base.dir}/compiled/{y}_oos.rds"))
   
   null.ls <- map(responses, ~calc_null(fit.ls, .x))
   fit.ls <- map(null.ls, ~.x$obs.df)
@@ -249,9 +248,9 @@ foreach(i=seq_along(obs.ls),
                  ~left_join(.x %>% mutate(yday=yday(date)), .y$yday.df) %>% select(-yday)) %>%
     map2(., fit.ls, ~bind_cols(.x, .y %>% select(contains("nullGrand")) %>% slice_head(n=1)))
   
-  saveRDS(fit.ls, glue("out/compiled/{y}_fit.rds"))
-  saveRDS(oos.ls, glue("out/compiled/{y}_oos.rds"))
-  saveRDS(map(null.ls, ~.x$yday.df), glue("out/compiled/{y}_null.rds"))
+  saveRDS(fit.ls, glue("{base.dir}/compiled/{y}_fit.rds"))
+  saveRDS(oos.ls, glue("{base.dir}/compiled/{y}_oos.rds"))
+  saveRDS(map(null.ls, ~.x$yday.df), glue("{base.dir}/compiled/{y}_null.rds"))
   
 }
 

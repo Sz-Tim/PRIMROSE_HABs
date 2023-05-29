@@ -1155,7 +1155,8 @@ get_excluded_cov_regex <- function(covSet) {
          '2-noX'="Xfetch",
          '3-noDtDelta'="Dt|Delta",
          '4-noDt'="Dt",
-         '5-full'="NA")
+         '5-full'="NA",
+         '6-autoX'="plus")
 }
 
 
@@ -1181,7 +1182,7 @@ prep_recipe <- function(train.df, response, covsExclude="NA", dimReduce=FALSE) {
     update_role(all_of(response), new_role="outcome") %>%
     update_role(obsid, y, date, siteid, year, new_role="ID") %>%
     update_role(lon, lat, new_role="RE") %>%
-    step_select(-any_of(respExclude)) %>%
+    step_select(-any_of(respExclude)) %>% 
     step_dummy(all_factor_predictors()) %>%
     step_logit(starts_with("prAlert"), offset=0.01) %>%
     step_logit(ends_with("A1"), offset=0.01) %>%
@@ -1190,6 +1191,10 @@ prep_recipe <- function(train.df, response, covsExclude="NA", dimReduce=FALSE) {
     step_rename(ydayCos=yday_cos_1, ydaySin=yday_sin_1) %>%
     step_mutate_at(lon, lat, fn=list(z=~.)) %>%
     step_interact(term=~ydaySin:ydayCos, sep="X")
+  if(covsExclude=="plus") {
+    rec <- rec %>%
+      step_interact(terms=~lnNWt1:all_predictors(), sep="X")
+  }
   if(include_interactions) {
     rec <- rec %>%
       step_interact(terms=~UWk:fetch:matches("Dir[EW]"), sep="X") %>%
