@@ -1141,6 +1141,25 @@ load_datasets <- function(sub.dir, target) {
 
 # Model preparation -------------------------------------------------------
 
+#' Get regex for excluded covariates given a covariate set
+#'
+#' @param covSet 
+#'
+#' @return
+#' @export
+#'
+#' @examples
+get_excluded_cov_regex <- function(covSet) {
+  switch(covSet,
+         '1-noDtDeltaX'="Xfetch|Dt|Delta",
+         '2-noX'="Xfetch",
+         '3-noDtDelta'="Dt|Delta",
+         '4-noDt'="Dt",
+         '5-full'="NA")
+}
+
+
+
 
 #' Create recipe and prepare using training data
 #'

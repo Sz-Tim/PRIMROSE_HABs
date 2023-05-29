@@ -48,12 +48,7 @@ all_covs <- list(
   hab=c(outer(filter(y_i, type=="hab")$abbr, c("lnNAvg", "prA"), "paste0"))
 )
 
-covs_exclude <- switch(covSet,
-                       '1-noDtDeltaX'="Xfetch|Dt|Delta",
-                       '2-noX'="Xfetch",
-                       '3-noDtDelta'="Dt|Delta",
-                       '4-noDt'="Dt",
-                       '5-full'="NA")
+covs_exclude <- get_excluded_cov_regex(covSet)
 
 obs.ls <- map_dfr(dirf("data/0_init", "data_.*_all.rds"), readRDS) %>%
   filter(y %in% y_i$abbr) %>%
