@@ -1510,6 +1510,7 @@ fit_model <- function(mod, resp, form.ls, d.ls, opts, tunes, out.dir, y, suffix=
       add_recipe(recipe(d.ls[[resp]], formula=form.ls[[resp]][[HB_form_dummy]]))
     out <- wf %>%
       fit(data=d.ls[[resp]]) %>%
+      axe_env_bayesian() %>%
       axe_env_bayesian()
   }
   saveRDS(out, glue("{out.dir}/{fit_ID}.rds"))
@@ -1746,6 +1747,7 @@ merge_pred_dfs <- function(files, CV=NULL) {
     map_dfr(1:nrow(f.df), 
             ~readRDS(f.df$f[.x]) %>% mutate(covSet=paste0("d", f.df$covSet[.x], "."))) %>%
       pivot_longer(ends_with("A1"), names_to="model", values_to="prA1") %>%
+      select(-prevAlert) %>%
       na.omit() %>%
       mutate(model=paste0(covSet, model)) %>%
       select(-covSet) %>%
