@@ -2081,21 +2081,34 @@ calc_null <- function(obs.ls, resp) {
 #' @export
 #'
 #' @examples
-compute_thresholds <- function(L.df, prSteps=0.01) {
+compute_thresholds <- function(L.df, prMin=0, prMax=0.5, prSteps=0.05, byPrevAlert=F) {
   library(tidyverse); library(yardstick)
-  pred.df <- map_dfr(seq(0, 1, by=prSteps), 
+  pred.df <- map_dfr(seq(prMin, prMax, by=prSteps), 
                      ~L.df %>% mutate(thresh=.x)) %>%
     mutate(pred=if_else(prA1 < thresh, "A0", "A1") %>% factor(levels=c("A0", "A1")))
-  J.df <- pred.df %>%
-    group_by(y, model, PCA, covSet, thresh) %>%
-    j_index(truth=alert, estimate=pred, event_level="second") %>%
-    rename(J=.estimate) %>%
-    select(-.metric, -.estimator)
-  F1.df <- pred.df %>%
-    group_by(y, model, PCA, covSet, thresh) %>%
-    f_meas(truth=alert, estimate=pred, event_level="second") %>%
-    rename(F1=.estimate) %>%
-    select(-.metric, -.estimator) 
+  if(byPrevAlert) {
+    J.df <- pred.df %>%
+      group_by(y, model, PCA, covSet, prevAlert, thresh) %>%
+      j_index(truth=alert, estimate=pred, event_level="second") %>%
+      rename(J=.estimate) %>%
+      select(-.metric, -.estimator)
+    F1.df <- pred.df %>%
+      group_by(y, model, PCA, covSet, prevAlert, thresh) %>%
+      f_meas(truth=alert, estimate=pred, event_level="second") %>%
+      rename(F1=.estimate) %>%
+      select(-.metric, -.estimator) 
+  } else {
+    J.df <- pred.df %>%
+      group_by(y, model, PCA, covSet, thresh) %>%
+      j_index(truth=alert, estimate=pred, event_level="second") %>%
+      rename(J=.estimate) %>%
+      select(-.metric, -.estimator)
+    F1.df <- pred.df %>%
+      group_by(y, model, PCA, covSet, thresh) %>%
+      f_meas(truth=alert, estimate=pred, event_level="second") %>%
+      rename(F1=.estimate) %>%
+      select(-.metric, -.estimator) 
+  }
   return(full_join(J.df, F1.df))
 }
 
