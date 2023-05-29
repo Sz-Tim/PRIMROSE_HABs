@@ -1913,7 +1913,8 @@ calc_ensemble <- function(out.ls, wt.ls, resp, y_i.i, method="wtmean", out.path=
         HB_out <- wf %>%
           fit(data=wt.ls[[resp]]) 
         saveRDS(HB_out, glue("{out.path}/{y_i.i$abbr}_EnsHB.rds"))
-        saveRDS(HB_out %>% axe_env_bayesian(), glue("{out.path}/{y_i.i$abbr}_EnsHB_axe.rds"))
+        saveRDS(HB_out %>% axe_env_bayesian() %>% axe_env_bayesian(), 
+                glue("{out.path}/{y_i.i$abbr}_EnsHB_axe.rds"))
       }
     }
     if(grepl("GLM", method)) {
