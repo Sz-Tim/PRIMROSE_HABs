@@ -16,8 +16,11 @@ cores_per_model <- 5
 n_spp_parallel <- 5
 fit.dir <- glue("out/model_fits/{covSet}/")
 cv.dir <- glue("{fit.dir}/cv/")
+ens.dir <- "out/model_fits/ensembles/"
 out.dir <- glue("out/compiled/{covSet}/")
+dir.create(fit.dir, recursive=T, showWarnings=F)
 dir.create(cv.dir, recursive=T, showWarnings=F)
+dir.create(ens.dir, recursive=T, showWarnings=F)
 dir.create(out.dir, recursive=T, showWarnings=F)
 
 y_i <- bind_rows(read_csv("data/i_hab.csv") %>% arrange(abbr) %>% mutate(type="hab"),
@@ -70,7 +73,7 @@ obs.ls <- map_dfr(dirf("data/0_init", "data_.*_all.rds"), readRDS) %>%
 registerDoParallel(n_spp_parallel)
 foreach(i=seq_along(obs.ls),
         .export=c("all_covs", "obs.ls", "covSet", "covs_exclude", 
-                  "fit.dir", "out.dir", "cv.dir", "y_i")
+                  "fit.dir", "out.dir", "cv.dir", "ens.dir", "y_i")
 ) %dopar% {
   
   lapply(pkgs, library, character.only=T)
@@ -219,15 +222,15 @@ foreach(i=seq_along(obs.ls),
   # cl <- makeCluster(cores_per_model)
   # registerDoParallel(cl)
   fit.ls <- map(responses, ~calc_ensemble(fit.ls, wt.ls, .x, y_i.i, "wtmean"))
-  fit.ls <- map(responses, ~calc_ensemble(fit.ls, cv.ls, .x, y_i.i, "GLM_fit", cv.dir, 1e3))
-  fit.ls <- map(responses, ~calc_ensemble(fit.ls, cv.ls, .x, y_i.i, "RF_fit", cv.dir, 1e2))
-  fit.ls <- map(responses, ~calc_ensemble(fit.ls, cv.ls, .x, y_i.i, "HB_fit", cv.dir, 0.8))
+  fit.ls <- map(responses, ~calc_ensemble(fit.ls, cv.ls, .x, y_i.i, "GLM_fit", ens.dir, 1e3))
+  fit.ls <- map(responses, ~calc_ensemble(fit.ls, cv.ls, .x, y_i.i, "RF_fit", ens.dir, 1e2))
+  fit.ls <- map(responses, ~calc_ensemble(fit.ls, cv.ls, .x, y_i.i, "HB_fit", ens.dir, 0.8))
   # stopCluster(cl)
   
   oos.ls <- map(responses, ~calc_ensemble(oos.ls, wt.ls, .x, y_i.i, "wtmean"))
-  oos.ls <- map(responses, ~calc_ensemble(oos.ls, cv.ls, .x, y_i.i, "GLM_oos", cv.dir))
-  oos.ls <- map(responses, ~calc_ensemble(oos.ls, cv.ls, .x, y_i.i, "RF_oos", cv.dir))
-  oos.ls <- map(responses, ~calc_ensemble(oos.ls, cv.ls, .x, y_i.i, "HB_oos", cv.dir))
+  oos.ls <- map(responses, ~calc_ensemble(oos.ls, cv.ls, .x, y_i.i, "GLM_oos", ens.dir))
+  oos.ls <- map(responses, ~calc_ensemble(oos.ls, cv.ls, .x, y_i.i, "RF_oos", ens.dir))
+  oos.ls <- map(responses, ~calc_ensemble(oos.ls, cv.ls, .x, y_i.i, "HB_oos", ens.dir))
   
   saveRDS(fit.ls, glue("out/compiled/{y}_fit.rds"))
   saveRDS(oos.ls, glue("out/compiled/{y}_oos.rds"))
