@@ -1191,12 +1191,9 @@ prep_recipe <- function(train.df, response, covsExclude="NA", dimReduce=FALSE) {
     step_rename(ydayCos=yday_cos_1, ydaySin=yday_sin_1) %>%
     step_mutate_at(lon, lat, fn=list(z=~.)) %>%
     step_interact(term=~ydaySin:ydayCos, sep="X")
-  if(covsExclude=="plus") {
-    rec <- rec %>%
-      step_interact(terms=~lnNWt1:all_predictors(), sep="X")
-  }
   if(include_interactions) {
     rec <- rec %>%
+      step_interact(terms=~lnNWt1:all_predictors(), sep="X") %>%
       step_interact(terms=~UWk:fetch:matches("Dir[EW]"), sep="X") %>%
       step_interact(terms=~VWk:fetch:matches("Dir[NS]"), sep="X")
   }
