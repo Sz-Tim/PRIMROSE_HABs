@@ -12,7 +12,7 @@ pkgs <- c("tidyverse", "lubridate", "glue", "tidymodels",
 lapply(pkgs, library, character.only=T)
 source("code/00_fn.R")
 
-covSet <- c("1-noDtDeltaX", "2-noX", "3-noDtDelta", "4-noDt", "5-full", "6-autoX")[6]
+covSet <- c("0-local", "1-noDtDeltaX", "2-noX", "3-noDtDelta", "4-noDt", "5-full", "6-autoX")[1]
 cores_per_model <- 4
 n_spp_parallel <- 4
 base.dir <- "out/0_init/" 
@@ -163,9 +163,9 @@ foreach(i=seq_along(obs.ls),
   # . train: fit models -----------------------------------------------------
   
   for(r in responses) {
-    set.seed(3001)
+    set.seed(1003)
     folds <- vfold_cv(d.y$train[[r]], strata=r)
-    set.seed(3001)
+    set.seed(1003)
     foldsPCA <- vfold_cv(dPCA.y$train[[r]], strata=r)
     fit_model("Ridge", r, form.ls, d.y$train, folds, n_tuneVal, fit.dir, y)
     fit_model("Ridge", r, form.ls, dPCA.y$train, foldsPCA, n_tuneVal, fit.dir, y, "_PCA")
@@ -195,9 +195,9 @@ foreach(i=seq_along(obs.ls),
   
   # Only necessary for Bayesian models; ML models use CV in fitting process
   for(r in responses) {
-    set.seed(3001)
+    set.seed(1003)
     folds <- vfold_cv(d.y$train[[r]], strata=r)
-    set.seed(3001)
+    set.seed(1003)
     foldsPCA <- vfold_cv(dPCA.y$train[[r]], strata=r)
     run_Bayes_CV("HBL", foldsPCA, cv.dir, y, y_i.i, r, form.ls, HB.i, priors, PCA=T)
     run_Bayes_CV("HBL", folds, cv.dir, y, y_i.i, r, form.ls, HB.i, priors)

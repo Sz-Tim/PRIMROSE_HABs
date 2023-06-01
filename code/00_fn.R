@@ -1151,6 +1151,7 @@ load_datasets <- function(sub.dir, target) {
 #' @examples
 get_excluded_cov_regex <- function(covSet) {
   switch(covSet,
+         '0-local'="Avg|Dt",
          '1-noDtDeltaX'="Xfetch|Dt|Delta",
          '2-noX'="Xfetch",
          '3-noDtDelta'="Dt|Delta",
@@ -1430,6 +1431,11 @@ fit_model <- function(mod, resp, form.ls, d.ls, opts, tunes, out.dir, y, suffix=
   # Fit ML models
   if(mod %in% c("Ridge", "ENet", "RF", "NN", "MARS", "Boost")) {
     fit_ID <- glue("{y}_{resp}_{mod}{ifelse(is.null(suffix),'',suffix)}")
+    if(file.exists(glue("{out.dir}/{fit_ID}.rds"))) {
+      cat("File already exists:", glue("{out.dir}/{fit_ID}.rds"), 
+          "\n  Remove to re-run model")
+      return()
+    }
     mod.prefix <- ifelse(PCA_run, "PCA.", "")
     ML_form <- ifelse(PCA_run, "ML_PCA", "ML")
     ML_spec <- switch(mod,
@@ -1490,6 +1496,11 @@ fit_model <- function(mod, resp, form.ls, d.ls, opts, tunes, out.dir, y, suffix=
   if(mod %in% c("HBL", "HBN")) {
     library(brms)
     fit_ID <- glue("{y}_{resp}_{mod}{opts$prior_i}{ifelse(is.null(suffix),'',suffix)}")
+    if(file.exists(glue("{out.dir}/{fit_ID}.rds"))) {
+      cat("File already exists:", glue("{out.dir}/{fit_ID}.rds"), 
+          "\n  Remove to re-run model")
+      return()
+    }
     HB.family <- switch(resp, 
                         lnN=hurdle_lognormal,
                         tl=cumulative,
@@ -1733,7 +1744,7 @@ summarise_post_preds <- function(post, resp, y_i.i) {
 merge_pred_dfs <- function(files, CV=NULL) {
   f.df <- tibble(f=files, 
                  covSet=str_split(files, "/") %>% 
-                   map_chr(~grep("^[1-9]", .x, value=T) %>% str_sub(1, 1)))
+                   map_chr(~grep("^[0-9]", .x, value=T) %>% str_sub(1, 1)))
   if(is.null(CV)) {
     map(1:nrow(f.df), 
         ~readRDS(f.df$f[.x]) %>% 
