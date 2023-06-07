@@ -447,18 +447,18 @@ extract_env_pts <- function(site.df, env_vars, env.df, id_env, site.v) {
     mutate(across(any_of(paste0(env_vars, "Wk")),
                   ~.x - lag(.x),
                   .names="{.col}Delta")) %>%
-    ungroup %>%
-    mutate(yday=yday(date)) %>%
-    group_by({{id_env}}) %>%
-    mutate(across(any_of(env_vars),
-                  ~detrend_loess(yday, .x, span=0.3), 
-                  .names="{.col}Dt")) %>%
+    # ungroup %>%
+    # mutate(yday=yday(date)) %>%
+    # group_by({{id_env}}) %>%
+    # mutate(across(any_of(env_vars),
+    #               ~detrend_loess(yday, .x, span=0.3), 
+    #               .names="{.col}Dt")) %>%
     ungroup
   env.site <- env.site %>% 
     select({{id_env}}, version, date, 
-           all_of(paste0(env_vars, "Wk")),
-           all_of(paste0(env_vars, "WkDelta")),
-           all_of(paste0(env_vars, "Dt")))
+           any_of(paste0(env_vars, "Wk")),
+           any_of(paste0(env_vars, "WkDelta")),
+           any_of(paste0(env_vars, "Dt")))
   return(env.site)
 }
 
@@ -533,17 +533,17 @@ extract_env_buffers <- function(site.buffer, vars, env.df, id_env) {
     mutate(across(any_of(paste0(vars$all, "AvgWk")),
                   ~.x - lag(.x),
                   .names="{.col}Delta")) %>%
-    ungroup %>%
-    mutate(yday=yday(date)) %>%
-    group_by(siteid, quadrant) %>%
-    mutate(across(any_of(vars$all),
-                  ~detrend_loess(yday, .x, span=0.3), 
-                  .names="{.col}AvgDt")) %>%
+    # ungroup %>%
+    # mutate(yday=yday(date)) %>%
+    # group_by(siteid, quadrant) %>%
+    # mutate(across(any_of(vars$all),
+    #               ~detrend_loess(yday, .x, span=0.3), 
+    #               .names="{.col}AvgDt")) %>%
     ungroup %>% 
     select(siteid, quadrant, date, 
-           all_of(paste0(vars$all, "AvgWk")),
-           all_of(paste0(vars$all, "AvgWkDelta")),
-           all_of(paste0(vars$all, "AvgDt"))) %>%
+           any_of(paste0(vars$all, "AvgWk")),
+           any_of(paste0(vars$all, "AvgWkDelta")),
+           any_of(paste0(vars$all, "AvgDt"))) %>%
     group_by(siteid, date) %>%
     mutate(across(where(is.numeric), na.aggregate)) %>%
     ungroup
@@ -1152,14 +1152,18 @@ load_datasets <- function(sub.dir, target) {
 #'
 #' @examples
 get_excluded_cov_regex <- function(covSet) {
-  switch(covSet,
-         '0-local'="Avg|Dt",
-         '1-noDtDeltaX'="Xfetch|Dt|Delta",
-         '2-noX'="Xfetch",
-         '3-noDtDelta'="Dt|Delta",
-         '4-noDt'="Dt",
-         '5-full'="NA",
-         '6-autoX'="plus")
+  covSet.df <- expand_grid(Avg=c(0,1), 
+                           Xf=c(0,1),
+                           XN=c(0,1),
+                           Del=c(0,1)) %>%
+    mutate(id=row_number(),
+           f=glue("{id}-Avg{Avg}_Xf{Xf}_XN{XN}_Del{Del}"),
+           exclude=glue("Dt|", 
+                        "{ifelse(Avg==0, 'Avg|', 'NA|')}",
+                        "{ifelse(Xf==0, 'Xfetch|', 'NA|')}",
+                        "{ifelse(XN==0, 'lnNWt1X|', 'NA|')}",
+                        "{ifelse(Del==0, 'Delta', 'NA')}"))
+  filter(covSet.df, f==covSet)$exclude
 }
 
 
@@ -1435,7 +1439,7 @@ fit_model <- function(mod, resp, form.ls, d.ls, opts, tunes, out.dir, y, suffix=
     fit_ID <- glue("{y}_{resp}_{mod}{ifelse(is.null(suffix),'',suffix)}")
     if(file.exists(glue("{out.dir}/{fit_ID}.rds"))) {
       cat("File already exists:", glue("{out.dir}/{fit_ID}.rds"), 
-          "\n  Remove to re-run model")
+          "\n  Remove to re-run model\n")
       return()
     }
     mod.prefix <- ifelse(PCA_run, "PCA.", "")
@@ -1477,7 +1481,7 @@ fit_model <- function(mod, resp, form.ls, d.ls, opts, tunes, out.dir, y, suffix=
                                           size=tunes[[mod]]),
                 metrics=metric_set(roc_auc2, pr_auc2, avg_prec2), 
                 control=control_grid(save_pred=T))
-    saveRDS(out_tune %>% butcher, glue("{out.dir}/meta/{fit_ID}_tune.rds"))
+    # saveRDS(out_tune %>% butcher, glue("{out.dir}/meta/{fit_ID}_tune.rds"))
     best <- select_best(out_tune, "avg_prec2")
     out_tune %>% 
       collect_predictions() %>%
