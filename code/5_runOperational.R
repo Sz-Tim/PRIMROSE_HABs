@@ -5,13 +5,6 @@
 
 
 
-# TODO: Make a lot of functions or subscripts that can be called as needed
-# Need to download new datasets, process them, and merge them without overwriting
-# anything that shouldn't be overwritten, This will take some thought to avoid
-# lots of repetitive code and clunky structure. 
-# Refitting models can be more manual
-# All new data just needs to be to be for a testing dataset
-
 # setup -------------------------------------------------------------------
 
 library(raster)
@@ -38,6 +31,28 @@ urls <- c(fsa="fsa_counts",
 # limited occurrence of TL2 and TL3. Models thus predict only presence/absence
 hab_i <- read_csv("data/i_hab.csv")
 tox_i <- read_csv("data/i_tox.csv")
+tl_hab <- read_csv("data/tl_thresholds_hab.csv") %>%
+  filter(min_ge != -99) %>%
+  group_by(abbr) %>%
+  mutate(alert=case_when(is.na(alert)~0,
+                         alert=="warn"~1,
+                         alert=="alert"~2),
+         A=paste0("A", as.numeric(alert>0)),
+         tl=factor(tl)) %>%
+  ungroup %>%
+  select(abbr, min_ge, A, alert, tl)
+tl_tox <- read_csv("data/tl_thresholds_tox.csv") %>%
+  filter(min_ge != -99) %>%
+  group_by(abbr) %>%
+  mutate(alert=case_when(is.na(alert)~0,
+                         alert=="warn"~1,
+                         alert=="alert"~2),
+         A=paste0("A", as.numeric(alert>0)),
+         tl=factor(tl)) %>%
+  ungroup %>%
+  select(abbr, min_ge, A, alert, tl) %>%
+  mutate(A=if_else(abbr %in% c("asp", "azas", "ytxs") & as.numeric(tl)>1, "A1", A),
+         alert=if_else(abbr %in% c("asp", "azas", "ytxs") & as.numeric(tl)>1, 2, alert))
 
 old_end <- readRDS("data/1_current/obs_end.rds") %>%
   map(~ymd(.x)-daysBuffer)
@@ -45,6 +60,7 @@ old_end <- readRDS("data/1_current/obs_end.rds") %>%
 # sampling locations and dates --------------------------------------------
 
 site_hab.df <- readRDS("data/site_hab_df.rds")
+fsa_sites <- read_and_clean_sites(urls$fsa_sites, "2015-01-01")
 fsa_1 <- readRDS("data/1_current/fsa_df.rds") %>% 
   filter(date < old_end$hab, !is.na(obsid))
 fsa_2 <- read_and_clean_fsa(urls$fsa, hab_i, fsa_sites, old_end$hab) %>%
@@ -58,6 +74,7 @@ fsa.df <- bind_rows(fsa_1, fsa_2 %>% select(-lon, -lat)) %>%
 saveRDS(fsa.df, "data/2_new/fsa_df.rds")
 
 site_tox.df <- readRDS("data/site_tox_df.rds")
+cefas_sites <- read_and_clean_sites(urls$cefas_sites, "2015-01-01")
 cefas_1 <- readRDS("data/1_current/cefas_df.rds") %>% 
   filter(date < old_end$tox, !is.na(obsid))
 cefas_2 <- read_and_clean_cefas(urls$cefas, tox_i, cefas_sites, old_end$tox) %>%
@@ -80,9 +97,13 @@ cmems_i <- read_csv("data/cmems_i.csv") %>% filter(source=="Analysis&Forecast")
 get_CMEMS(cmems_cred$userid, cmems_cred$pw, cmems_i, UK_bbox, daysBuffer, 
           c(old_end$cmems, Sys.Date()+7), "data/00_env/cmems/")
 anfo.f <- dirf("data/00_env/cmems", "cmems.*Forecast.rds")
-cmems.df <- map(anfo.f, readRDS) %>% 
-  reduce(full_join) %>%
-  arrange(date, lon, lat) %>%
+cmems.df <- map_dfr(anfo.f, ~readRDS(.x) %>%
+                      group_by(date, lat, lon) %>% 
+                      summarise(across(where(is.numeric), mean)) %>%
+                      ungroup %>%
+                      mutate(var=str_split_fixed(.x, "_", 4)[,3]) %>%
+                      rename_with(~"val", str_split_fixed(.x, "_", 4)[,3])) %>% 
+  pivot_wider(names_from="var", values_from="val") %>%
   na.omit() %>%
   group_by(date) %>%
   mutate(cmems_id=row_number()) %>%
@@ -153,12 +174,14 @@ get_WRF(wrf.dir="https", nDays_buffer=0,
         dateRng=c(old_end$wrf, Sys.Date()+7), out.dir=wrf.out, 
         forecast=T)
 new_obs <- dir(wrf.out, "^wrfF?_") %>% str_split_fixed("_", 2) %>% as_tibble %>% 
-  group_by(V2) %>% summarise(N=n()) %>% ungroup %>% filter(N>2)
+  group_by(V2) %>% summarise(N=n()) %>% ungroup %>% filter(N>1)
 if(nrow(new_obs) > 0) {
+  cat("Replacing WRF forecasts with corresponding hindcasts:", nrow(new_obs), "files\n")
   file.remove(glue("{wrf.out}wrfF_{new_obs$V2}"))
 }
-wrf.df <- aggregate_WRF(wrf.out)
+wrf.df <- aggregate_WRF(wrf.out, refreshStart=old_end$wrf)
 saveRDS(wrf.df, glue("data/0_init/wrf_end_{max(wrf.df$date)}.rds"))
+
 
 # . WRF  site:date --------------------------------------------------------
 wrf_i <- list(all=c("U", "V", "UV", "Shortwave", "Precip", "sst"),
@@ -174,13 +197,19 @@ wrf.df <- readRDS(last(dirf("data/2_new/", "wrf_end_.*rds")))
 # HABs
 site_hab.df <- readRDS("data/site_hab_df.rds")
 site_hab.versions <- grep("wrf_id", names(site_hab.df), value=T)
-wrf.site_hab <- extract_env_pts(site_hab.df, wrf_i$all, wrf.df, wrf_id, site_hab.versions)
+wrf.site_hab_1 <- readRDS("data/1_current/wrf_sitePt_hab.rds")
+wrf.site_hab_2 <- extract_env_pts(site_hab.df, wrf_i$all, wrf.df, wrf_id, site_hab.versions)
+wrf.site_hab <- bind_rows(wrf.site_hab_1 %>% filter(date < min(wrf.site_hab_2$date)),
+                          wrf.site_hab_2)
 saveRDS(wrf.site_hab, "data/2_new/wrf_sitePt_hab.rds")
 
 # toxins
 site_tox.df <- readRDS("data/site_tox_df.rds")
 site_tox.versions <- grep("wrf_id", names(site_tox.df), value=T)
-wrf.site_tox <- extract_env_pts(site_tox.df, wrf_i$all, wrf.df, wrf_id, site_tox.versions)
+wrf.site_tox_1 <- readRDS("data/1_current/wrf_sitePt_tox.rds")
+wrf.site_tox_2 <- extract_env_pts(site_tox.df, wrf_i$all, wrf.df, wrf_id, site_tox.versions)
+wrf.site_tox <- bind_rows(wrf.site_tox_1 %>% filter(date < min(wrf.site_tox_2$date)),
+                          wrf.site_tox_2)
 saveRDS(wrf.site_tox, "data/2_new/wrf_sitePt_tox.rds")
 
 
@@ -200,7 +229,10 @@ site.buffer_hab <- map(wrf_versions,
                        ~st_read("data/site_hab_sf.gpkg") %>% 
                          find_buffer_intersect_ids(., .x, "wrf_id")) %>%
   reduce(full_join, by=c("siteid", "quadrant"), suffix=paste0(".", seq_along(wrf_versions)))
-wrf.buffer_hab <- extract_env_buffers(site.buffer_hab, wrf_i, wrf.df, paste0("wrf_id.", 1:2))
+wrf.buffer_hab_1 <- readRDS("data/1_current/wrf_siteBufferNSEW_hab.rds")
+wrf.buffer_hab_2 <- extract_env_buffers(site.buffer_hab, wrf_i, wrf.df, paste0("wrf_id.", 1:2))
+wrf.buffer_hab <- bind_rows(wrf.buffer_hab_1 %>% filter(date < min(wrf.buffer_hab_2$date)),
+                            wrf.buffer_hab_2)
 saveRDS(wrf.buffer_hab, "data/2_new/wrf_siteBufferNSEW_hab.rds")
 
 # toxins
@@ -208,9 +240,15 @@ site.buffer_tox <- map(wrf_versions,
                        ~st_read("data/site_tox_sf.gpkg") %>% 
                          find_buffer_intersect_ids(., .x, "wrf_id")) %>%
   reduce(full_join, by=c("siteid", "quadrant"), suffix=paste0(".", seq_along(wrf_versions)))
-wrf.buffer_tox <- extract_env_buffers(site.buffer_tox, wrf_i, wrf.df, paste0("wrf_id.", 1:2))
+wrf.buffer_tox_1 <- readRDS("data/1_current/wrf_siteBufferNSEW_tox.rds")
+wrf.buffer_tox_2 <- extract_env_buffers(site.buffer_tox, wrf_i, wrf.df, paste0("wrf_id.", 1:2))
+wrf.buffer_tox <- bind_rows(wrf.buffer_tox_1 %>% filter(date < min(wrf.buffer_tox_2$date)),
+                            wrf.buffer_tox_2)
 saveRDS(wrf.buffer_tox, "data/2_new/wrf_siteBufferNSEW_tox.rds")
 
+
+
+# autoregression ----------------------------------------------------------
 # calculate y
 hab.df <- calc_y_features(readRDS("data/2_new/fsa_df.rds"),
                           hab_i, tl_hab,
@@ -232,6 +270,8 @@ habAvg_tox.df <- summarise_hab_states(
   hab.df=readRDS("data/2_new/hab_obs.rds")
 )
 saveRDS(habAvg_tox.df, "data/2_new/tox_habAvg.rds")
+
+
 
 # compile -----------------------------------------------------------------
 
@@ -268,15 +308,17 @@ if(write_to_current) {
 
 # load models -------------------------------------------------------------
 rm(list=ls()); gc()
-pkgs <- c("tidyverse", "lubridate", "glue", "tidymodels", "nnet", "randomForest", "glmnet", 
-          "brms", "bayesian", "doParallel", "foreach")
+pkgs <- c("tidyverse", "lubridate", "glue", "tidymodels", "jsonlite",
+          "nnet", "randomForest", "glmnet", "brms", "bayesian")
 lapply(pkgs, library, character.only=T)
 source("code/00_fn.R")
-fit.dir <- glue("out/model_fits/{covSet}/")
-cv.dir <- glue("{fit.dir}/cv/")
-out.dir <- glue("out/{covSet}/")
+
 y_i <- bind_rows(read_csv("data/i_hab.csv") %>% arrange(abbr) %>% mutate(type="hab"),
                  read_csv("data/i_tox.csv") %>% arrange(abbr) %>% mutate(type="tox"))
+site.df_all <- bind_rows(readRDS("data/site_hab_df.rds"),
+                         readRDS("data/site_tox_df.rds"))
+
+covSets <- c("1-noDtDeltaX", "2-noX", "3-noDtDelta", "4-noDt", "5-full")
 
 col_metadata <- c("obsid", "y", "date", "year", "yday", "siteid", "lon", "lat")
 col_resp <- c("lnN", "tl", "alert")
@@ -301,47 +343,58 @@ all_covs <- list(
   hab=c(outer(filter(y_i, type=="hab")$abbr, c("lnNAvg", "prA"), "paste0"))
 )
 
-covs_exclude <- switch(covSet,
-                       full="NA",
-                       test="Xfetch|Dt|Delta|Avg",
-                       noDt="Dt",
-                       noDtDelta="Dt|Delta",
-                       noInt="Xfetch",
-                       noDtDeltaInt="Xfetch|Dt|Delta")
 
-obs.ls <- map_dfr(dirf("data/1_current", "data_.*_all.rds"), readRDS) %>%
-  filter(date >= (Sys.Date()-daysBuffer)) %>%
-  select(all_of(col_metadata), all_of(col_resp), 
-         "alert1", "alert2", any_of(unname(unlist(all_covs)))) %>%
-  mutate(across(starts_with("alert"), ~factor(.x)),
-         across(starts_with("tl"), ~factor(.x, ordered=T))) %>%
-  group_by(y) %>%
-  group_split() %>%
-  map(~.x %>% select(where(~any(!is.na(.x)))) %>% na.omit)
+for(d in seq_along(covSets)) {
+  fit.dir <- glue("out/model_fits/1_current/{covSets[d]}/")
+  cv.dir <- glue("{fit.dir}/cv/")
+  ens.dir <- "out/model_fits/1_current/ensembles/"
+  out.dir <- glue("out/compiled/1_current/{covSets[d]}/")
 
-
-
-# generate predictions ----------------------------------------------------
+  covs_exclude <- get_excluded_cov_regex(covSets[d]) 
+  
+  obs.ls <- map_dfr(dirf("data/1_current", "data_.*_all.rds"), readRDS) %>%
+    filter(year(date)==year(Sys.Date())) %>%
+    select(all_of(col_metadata), all_of(col_resp), 
+           "alert1", "alert2", any_of(unname(unlist(all_covs)))) %>%
+    mutate(across(starts_with("alert"), ~factor(.x)),
+           across(starts_with("tl"), ~factor(.x, ordered=T))) %>%
+    group_by(y) %>%
+    group_split() %>%
+    map(~.x %>% select(where(~any(!is.na(.x)))) %>% na.omit)
+  
   for(i in seq_along(obs.ls)) {
     y <- obs.ls[[i]]$y[1]
     y_i.i <- filter(y_i, abbr==y)
-    responses <- c(alert="alert", tl="tl")
-    wt.ls <- readRDS(glue("{out.dir}/{y}_wt_ls.rds"))
+    responses <- c(alert="alert")
+    obs.train <- readRDS(glue("data/1_current/{y}_{covSet}_dataFit.rds"))
+    prep.ls <- map(responses, ~prep_recipe(obs.train, .x, covs_exclude))
+    d.y <- list(forecast=map(prep.ls, ~bake(.x, obs.ls[[i]])))
+    prepPCA.ls <- map(responses, ~prep_recipe(obs.train, .x, covs_exclude, TRUE))
+    dPCA.y <- list(forecast=map(prepPCA.ls, ~bake(.x, obs.ls[[i]])))
     
-    oos.ls <- map(responses, ~summarise_predictions(obs.ls[[i]], .x, fit.dir, y_i.i))
-    oos.ls$alert <- oos.ls %>%
-      map(~.x %>% select(y, obsid, siteid, date, ends_with("_A1"))) %>%
-      reduce(full_join)
-    
-    oos.ls <- map(responses, ~calc_ensemble(oos.ls, wt.ls, .x, y_i.i))
-    oos.ls$alert <- full_join(
-      oos.ls$alert, 
-      oos.ls[-which(responses=="alert")] %>%
-        map(~.x %>% select(y, obsid, siteid, date, matches("ens_.*_A1"))) %>%
-        reduce(full_join)
-    )
-    saveRDS(oos.ls, glue("{out.dir}/{y}_oos_ls.rds"))
+    fc.ls <- map(responses, ~summarise_predictions(d.y$forecast, dPCA.y$forecast, .x, fit.dir, y_i.i))
+    saveRDS(fc.ls, glue("{out.dir}/{y}_fc_ls.rds"))
   }
+}
+
+for(y in unique(y_i$abbr)) {
+  y_i.i <- filter(y_i, abbr==y)
+  responses <- c(alert="alert")
+  cv.ls <- readRDS(glue("{out.dir}/{y}_cv_ls.rds"))
+  wt.ls <- readRDS(glue("{out.dir}/{y}_wt_ls.rds"))
+  fc.ls <- readRDS(glue("{out.dir}/{y}_fc_ls.rds"))
+  fc.ls <- map(responses, ~calc_ensemble(fc.ls, wt.ls, .x, y_i.i, "wtmean"))
+  fc.ls <- map(responses, ~calc_ensemble(fc.ls, cv.ls, .x, y_i.i, "GLM_oos", ens.dir))
+  fc.ls <- map(responses, ~calc_ensemble(fc.ls, cv.ls, .x, y_i.i, "RF_oos", ens.dir))
+  fc.ls <- map(responses, ~calc_ensemble(fc.ls, cv.ls, .x, y_i.i, "HB_oos", ens.dir))
+  saveRDS(fc.ls, glue("{out.dir}/{y}_fc_ls.rds"))
+  
+  ens.pred <- fc.ls$alert %>% select(siteid, date, starts_with("ens")) %>%
+    left_join(site.df_all)
+  write_json(ens.pred, glue("out/forecast/{y}_{max(ens.pred$date)}.json"))
+}
+
+
 
 
 # store output ------------------------------------------------------------

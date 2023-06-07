@@ -352,7 +352,7 @@ nest_WRF_domains <- function(nc.ls) {
 #' @export
 #'
 #' @examples
-subset_WRF <- function(domain, wrf.out, v2_start=NULL) {
+subset_WRF <- function(domain, wrf.out, v2_start=NULL, refreshStart=NULL) {
   f.domain <- dirf(wrf.out, glue("wrfDomains_.*{domain}.rds"))
   f.wrf <- dirf(wrf.out, glue("wrfF?_.*{domain}.rds"))
   if(is.null(v2_start)) {
@@ -379,11 +379,13 @@ subset_WRF <- function(domain, wrf.out, v2_start=NULL) {
   wrf.ls <- vector("list", length(f.wrf))
   for(i in seq_along(f.wrf)) {
     date_i <- str_split_fixed(str_split_fixed(f.wrf[i], "/wrfF?_", 2)[,2], "_d0", 2)[,1]
-    v_i <- which(date_i >= v_dateRng$start & date_i < v_dateRng$end)
-    wrf.ls[[i]] <- readRDS(f.wrf[i]) %>%
-      select(-lon_i, -lat_i) %>%
-      right_join(domain.ls[[v_i]] %>% select(-row, -col), by="i") %>%
-      mutate(version=ifelse(is.null(v2_start), v_i, 1 + (date_i >= v2_start)))
+    if(is.null(refreshStart) | date_i >= refreshStart) {
+      v_i <- which(date_i >= v_dateRng$start & date_i < v_dateRng$end)
+      wrf.ls[[i]] <- readRDS(f.wrf[i]) %>%
+        select(-lon_i, -lat_i) %>%
+        right_join(domain.ls[[v_i]] %>% select(-row, -col), by="i") %>%
+        mutate(version=ifelse(is.null(v2_start), v_i, 1 + (date_i >= v2_start))) 
+    }
   }
   wrf.ls <- do.call('rbind', wrf.ls)
   return(wrf.ls)
@@ -393,10 +395,10 @@ subset_WRF <- function(domain, wrf.out, v2_start=NULL) {
 
 
 
-aggregate_WRF <- function(wrf.out, v2_start=ymd("2019-04-01")) {
-  wrf.df <- subset_WRF("d01", wrf.out, v2_start=ymd("2019-04-01")) %>%
-    bind_rows(subset_WRF("d02", wrf.out, v2_start=ymd("2019-04-01"))) %>%
-    bind_rows(subset_WRF("d03", wrf.out, v2_start=ymd("2019-04-01"))) %>%
+aggregate_WRF <- function(wrf.out, v2_start=ymd("2019-04-01"), refreshStart=NULL) {
+  wrf.df <- subset_WRF("d01", wrf.out, v2_start=ymd("2019-04-01"), refreshStart) %>%
+    bind_rows(subset_WRF("d02", wrf.out, v2_start=ymd("2019-04-01"), refreshStart)) %>%
+    bind_rows(subset_WRF("d03", wrf.out, v2_start=ymd("2019-04-01"), refreshStart)) %>%
     filter(!is.na(date)) %>%
     arrange(date, res, i) %>%
     group_by(date) %>%
@@ -2188,6 +2190,31 @@ axe_env_bayesian <- function(x, verbose = FALSE, ...) {
   attr(x$fit$actions$model$formula, ".Environment") <- rlang::base_env()
 
   return(x)
+}
+
+
+
+
+
+
+
+get_intervals <- function(df, y, type="hdci") {
+  library(tidybayes)
+  
+  ci_fun <- switch(type,
+                   "hdci"=hdci,
+                   "qi"=qi)
+  df %>%
+    summarise(mn=mean({{y}}),
+              med=median({{y}}),
+              L025=ci_fun({{y}}, 0.95)[,1],
+              L05=ci_fun({{y}}, 0.9)[,1],
+              L10=ci_fun({{y}}, 0.8)[,1],
+              L25=ci_fun({{y}}, 0.5)[,1],
+              L75=ci_fun({{y}}, 0.5)[,2],
+              L90=ci_fun({{y}}, 0.8)[,2],
+              L95=ci_fun({{y}}, 0.9)[,2],
+              L975=ci_fun({{y}}, 0.95)[,2])
 }
 
 
