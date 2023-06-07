@@ -1564,7 +1564,7 @@ run_Bayes_CV <- function(mod, folds, cv.dir, y, y_i.i, r, form.ls, HB.i, priors,
       fit_model(mod, r, form.ls, d.cv$train, HB.i, priors, cv.dir, y, f_)
     }
     if(file.exists(glue("{cv.dir}/{y}_{r}_{mod}1{f_}.rds"))) {
-      summarise_predictions(d.cv$test, d.cv$test, r, cv.dir, y_i.i, f_) %>%
+      summarise_predictions(d.cv$test, d.cv$test, r, cv.dir, y_i.i, glue("{mod}1{f_}")) %>%
         saveRDS(glue("{cv.dir}/{y}_{r}_{mod}_CV{f_}.rds"))
       file.remove(glue("{cv.dir}/{y}_{r}_{mod}1{f_}.rds"))
     }
