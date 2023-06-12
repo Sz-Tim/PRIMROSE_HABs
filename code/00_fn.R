@@ -1504,7 +1504,7 @@ fit_model <- function(mod, resp, form.ls, d.ls, opts, tunes, out.dir, y, suffix=
     fit_ID <- glue("{y}_{resp}_{mod}{opts$prior_i}{ifelse(is.null(suffix),'',suffix)}")
     if(file.exists(glue("{out.dir}/{fit_ID}.rds"))) {
       cat("File already exists:", glue("{out.dir}/{fit_ID}.rds"), 
-          "\n  Remove to re-run model")
+          "\n  Remove to re-run model\n")
       return()
     }
     HB.family <- switch(resp, 
