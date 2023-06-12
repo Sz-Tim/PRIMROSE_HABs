@@ -1750,7 +1750,9 @@ summarise_post_preds <- function(post, resp, y_i.i) {
 merge_pred_dfs <- function(files, CV=NULL) {
   f.df <- tibble(f=files, 
                  covSet=str_split(files, "/") %>% 
-                   map_chr(~grep("^[0-9]", .x, value=T) %>% str_sub(1, 1)))
+                   map_chr(~grep("^[0-9]", .x, value=T) %>% 
+                             str_split_fixed("-", 2) %>% 
+                             magrittr::extract(,1)))
   if(is.null(CV)) {
     map(1:nrow(f.df), 
         ~readRDS(f.df$f[.x]) %>% 
