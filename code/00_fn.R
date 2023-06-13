@@ -2089,11 +2089,34 @@ calc_null <- function(obs.ls, resp) {
 
 
 
+#' Calculate J, F-1, precision, and recall for a dataframe
+#' 
+#' This is a function to pass to future_map to avoid capturing large objects
+#' in the environment which makes it extraordinarily slow
+#'
+#' @param dat 
+#'
+#' @return
+#' @export
+#'
+#' @examples
+get_metrics <- function(dat) {
+  tibble(J=j_index(dat, alert, pred, event_level="second")$.estimate,
+         F1=f_meas(dat, alert, pred, event_level="second")$.estimate,
+         precision=precision(dat, alert, pred, event_level="second")$.estimate,
+         recall=recall(dat, alert, pred, event_level="second")$.estimate,
+         accuracy=accuracy(dat, alert, pred)$.estimate,)
+}
 
 
 
 
-#' Compute F-1 and J-index across probability thresholds
+
+
+
+
+
+#' Compute F-1, J-index, precision, and recall across probability thresholds
 #'
 #' @param L.df 
 #' @param prSteps 
@@ -2102,35 +2125,28 @@ calc_null <- function(obs.ls, resp) {
 #' @export
 #'
 #' @examples
-compute_thresholds <- function(L.df, prMin=0, prMax=0.5, prSteps=0.05, byPrevAlert=F) {
-  library(tidyverse); library(yardstick)
+compute_thresholds <- function(L.df, prMin=0, prMax=1, prSteps=0.1, byPrevAlert=F, cores=1) {
+  library(tidyverse); library(yardstick); library(furrr)
   pred.df <- map_dfr(seq(prMin, prMax, by=prSteps), 
                      ~L.df %>% mutate(thresh=.x)) %>%
     mutate(pred=if_else(prA1 < thresh, "A0", "A1") %>% factor(levels=c("A0", "A1")))
-  if(byPrevAlert) {
-    J.df <- pred.df %>%
-      group_by(y, model, PCA, covSet, prevAlert, thresh) %>%
-      j_index(truth=alert, estimate=pred, event_level="second") %>%
-      rename(J=.estimate) %>%
-      select(-.metric, -.estimator)
-    F1.df <- pred.df %>%
-      group_by(y, model, PCA, covSet, prevAlert, thresh) %>%
-      f_meas(truth=alert, estimate=pred, event_level="second") %>%
-      rename(F1=.estimate) %>%
-      select(-.metric, -.estimator) 
-  } else {
-    J.df <- pred.df %>%
-      group_by(y, model, PCA, covSet, thresh) %>%
-      j_index(truth=alert, estimate=pred, event_level="second") %>%
-      rename(J=.estimate) %>%
-      select(-.metric, -.estimator)
-    F1.df <- pred.df %>%
-      group_by(y, model, PCA, covSet, thresh) %>%
-      f_meas(truth=alert, estimate=pred, event_level="second") %>%
-      rename(F1=.estimate) %>%
-      select(-.metric, -.estimator) 
+  col_to_drop <- c("obsid", "siteid", "date", "prA1") 
+  if(!byPrevAlert) {
+    col_to_drop <- c(col_to_drop, "prevAlert")
   }
-  return(full_join(J.df, F1.df))
+  if(cores > 1) {
+    plan(multisession, workers=cores)
+  } else {
+    plan(sequential)
+  }
+  metric.df <- pred.df %>%
+    select(-all_of(col_to_drop)) %>%
+    nest(dat=c(alert, pred)) %>%
+    ungroup %>%
+    mutate(metrics=future_map(dat, get_metrics)) %>%
+    select(-dat) %>%
+    unnest(metrics)
+  return(metric.df)
 }
 
 
