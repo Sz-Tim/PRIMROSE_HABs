@@ -2157,6 +2157,30 @@ compute_thresholds <- function(L.df, prMin=0, prMax=1, prSteps=0.1, byPrevAlert=
 
 
 
+#' Find minimum possible PR-AUC
+#' 
+#' Following Boyd et al 2012
+#'
+#' @param df Dataframe
+#' @param ... Unquoted grouping variables
+#'
+#' @return
+#' @export
+#'
+#' @examples
+find_AUCPR_min <- function(df, ...) {
+  df_aucpr_min <- df %>% 
+    filter(model==levels(model)[1]) %>%
+    group_by(...) %>%
+    summarise(prop=mean(alert=="A1")) %>%
+    mutate(AUCPR_min=1+((1-prop)*log(1-prop))/prop) %>%
+    ungroup %>%
+    select(-prop)
+  return(left_join(df, df_aucpr_min))
+}
+
+
+
 
 
 
