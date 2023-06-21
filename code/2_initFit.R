@@ -25,8 +25,8 @@ dir.create(cv.dir, recursive=T, showWarnings=F)
 dir.create(ens.dir, recursive=T, showWarnings=F)
 dir.create(out.dir, recursive=T, showWarnings=F)
 
-y_i <- bind_rows(read_csv("data/i_hab.csv") %>% arrange(abbr) %>% mutate(type="hab"),
-                 read_csv("data/i_tox.csv") %>% arrange(abbr) %>% mutate(type="tox")) %>%
+y_i <- bind_rows(read_csv("data/i_hab.csv") |> arrange(abbr) |> mutate(type="hab"),
+                 read_csv("data/i_tox.csv") |> arrange(abbr) |> mutate(type="tox")) |>
   filter(! abbr %in% c("ASP", "AZP", "YTX"))
 
 col_metadata <- c("obsid", "y", "date", "year", "yday", "siteid", "lon", "lat")
@@ -56,18 +56,18 @@ all_covs$interact <- paste("lnNWt1", c(all_covs$main[-2]), sep="X")
 
 covs_exclude <- get_excluded_cov_regex(covSet)
 
-obs.ls <- map_dfr(dirf("data/0_init", "data_.*_all.rds"), readRDS) %>%
-  filter(y %in% y_i$abbr) %>%
-  filter(year(date) < 2023) %>%
+obs.ls <- map_dfr(dirf("data/0_init", "data_.*_all.rds"), readRDS) |>
+  filter(y %in% y_i$abbr) |>
+  filter(year(date) < 2023) |>
   select(all_of(col_metadata), all_of(col_resp), 
-         "alert1", "alert2", any_of(unname(unlist(all_covs)))) %>%
+         "alert1", "alert2", any_of(unname(unlist(all_covs)))) |>
   mutate(across(starts_with("alert"), ~factor(.x)),
-         across(starts_with("tl"), ~factor(.x, ordered=T))) %>%
-  group_by(y, obsid) %>%
-  slice_head(n=1) %>%
-  group_by(y) %>%
-  group_split() %>%
-  map(~.x %>% select(where(~any(!is.na(.x)))) %>% na.omit)
+         across(starts_with("tl"), ~factor(.x, ordered=T))) |>
+  group_by(y, obsid) |>
+  slice_head(n=1) |>
+  group_by(y) |>
+  group_split() |>
+  map(~.x |> select(where(~any(!is.na(.x)))) |> na.omit())
 
 
 
@@ -102,14 +102,14 @@ foreach(i=seq_along(obs.ls),
                  test=map(prepPCA.ls, ~bake(.x, obs.test)))
   d.split <- dPCA.split <- map(responses, ~obs.split)
   for(r in responses) {
-    d.split[[r]]$data <- d.split[[r]]$data %>% select(obsid) %>%
+    d.split[[r]]$data <- d.split[[r]]$data |> select(obsid) |>
       left_join(bind_rows(d.y$train[[r]], d.y$test[[r]]))
-    dPCA.split[[r]]$data <- dPCA.split[[r]]$data %>% select(obsid) %>%
+    dPCA.split[[r]]$data <- dPCA.split[[r]]$data |> select(obsid) |>
       left_join(bind_rows(dPCA.y$train[[r]], dPCA.y$test[[r]]))
   }
   
   covs <- filter_corr_covs(all_covs, d.y, covs_exclude)
-  covsPCA <- names(dPCA.y$train[[1]] %>% select(starts_with("PC")))
+  covsPCA <- names(dPCA.y$train[[1]] |> select(starts_with("PC")))
   
   # formulas
   smooths <- list(b=glue("b{c(covs$main, covs$interact)}"),
@@ -245,8 +245,8 @@ foreach(i=seq_along(obs.ls),
   null.ls <- map(responses, ~calc_null(fit.ls, .x))
   fit.ls <- map(null.ls, ~.x$obs.df)
   oos.ls <- map2(oos.ls, null.ls, 
-                 ~left_join(.x %>% mutate(yday=yday(date)), .y$yday.df) %>% select(-yday)) %>%
-    map2(., fit.ls, ~bind_cols(.x, .y %>% select(contains("nullGrand")) %>% slice_head(n=1)))
+                 ~left_join(.x |> mutate(yday=yday(date)), .y$yday.df) |> select(-yday)) |>
+    map2(., fit.ls, ~bind_cols(.x, .y |> select(contains("nullGrand")) |> slice_head(n=1)))
   
   saveRDS(fit.ls, glue("{base.dir}/compiled/{y}_fit.rds"))
   saveRDS(oos.ls, glue("{base.dir}/compiled/{y}_oos.rds"))
