@@ -1437,8 +1437,7 @@ fit_model <- function(mod, resp, form.ls, d.ls, opts, tunes, out.dir, y, suffix=
   if(mod %in% c("Ridge", "ENet", "RF", "NN", "MARS", "Boost")) {
     fit_ID <- glue("{y}_{resp}_{mod}{ifelse(is.null(suffix),'',suffix)}")
     if(file.exists(glue("{out.dir}/{fit_ID}.rds"))) {
-      cat("File already exists:", glue("{out.dir}/{fit_ID}.rds"), 
-          "\n  Remove to re-run model\n")
+      cat("File already exists:", glue("{out.dir}/{fit_ID}.rds\n"))
       return()
     }
     mod.prefix <- ifelse(PCA_run, "PCA.", "")
@@ -1502,8 +1501,7 @@ fit_model <- function(mod, resp, form.ls, d.ls, opts, tunes, out.dir, y, suffix=
     library(brms)
     fit_ID <- glue("{y}_{resp}_{mod}{opts$prior_i}{ifelse(is.null(suffix),'',suffix)}")
     if(file.exists(glue("{out.dir}/{fit_ID}.rds"))) {
-      cat("File already exists:", glue("{out.dir}/{fit_ID}.rds"), 
-          "\n  Remove to re-run model\n")
+      cat("File already exists:", glue("{out.dir}/{fit_ID}.rds"), "\n")
       return()
     }
     HB.family <- switch(resp, 
@@ -2319,7 +2317,7 @@ get_intervals <- function(df, y, type="hdci") {
 #' @export
 #' @references
 #' \insertRef{Schoener68}{kerneval}
-schoenr <- function (d1, d2, a = NULL, b = NULL) {
+schoenr2 <- function (d1, d2, a = NULL, b = NULL) {
   if (min(d1$x) > max(d2$x) | max(d1$x) < min(d2$x)){
     stop('no overlap in ranges over which densities are defined')
   }
