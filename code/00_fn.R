@@ -1962,15 +1962,14 @@ calc_ensemble <- function(out.ls, wt.ls, resp, y_i.i, method="wtmean", out.path=
           add_recipe(ens_rec2)
         HB_out <- wf |>
           fit(data=wt.ls[[resp]]) 
-        saveRDS(HB_out, glue("{out.path}/{y_i.i$abbr}_EnsHB.rds"))
         saveRDS(HB_out |> axe_env_bayesian() |> axe_env_bayesian(), 
-                glue("{out.path}/{y_i.i$abbr}_EnsHB_axe.rds"))
+                glue("{out.path}/{y_i.i$abbr}_EnsHB.rds"))
       }
     }
     if(grepl("GLM", method)) {
       GLM_out <- readRDS(glue("{out.path}/{y_i.i$abbr}_EnsGLM.rds"))
       GLM_out2 <- readRDS(glue("{out.path}/{y_i.i$abbr}_EnsGLM2.rds"))
-      out <- out.ls[[resp]] |>
+      out <- out.ls[[resp]] %>%
         mutate(ensGLM_alert_A1=predict(GLM_out, new_data=., type="prob")[[2]],
                ensGLM2_alert_A1=predict(GLM_out2, new_data=., type="prob")[[2]]) |>
         select(obsid, starts_with("ensGLM")) 
@@ -1978,7 +1977,7 @@ calc_ensemble <- function(out.ls, wt.ls, resp, y_i.i, method="wtmean", out.path=
     if(grepl("RF", method)) {
       RF_out <- readRDS(glue("{out.path}/{y_i.i$abbr}_EnsRF.rds"))
       RF_out2 <- readRDS(glue("{out.path}/{y_i.i$abbr}_EnsRF2.rds"))
-      out <- out.ls[[resp]] |>
+      out <- out.ls[[resp]] %>%
         mutate(ensRF_alert_A1=predict(RF_out, new_data=., type="prob")[[2]],
                ensRF2_alert_A1=predict(RF_out2, new_data=., type="prob")[[2]]) |>
         select(obsid, starts_with("ensRF")) 
@@ -1988,7 +1987,7 @@ calc_ensemble <- function(out.ls, wt.ls, resp, y_i.i, method="wtmean", out.path=
       pred <- parsnip::extract_fit_engine(HB_out) |>
         posterior_epred(out.ls[[resp]], allow_new_levels=T) |>
         summarise_post_preds(., resp, y_i.i)
-      out <- out.ls[[resp]] |>
+      out <- out.ls[[resp]] %>%
         mutate(ensHB_alert_A1=pred[,1]) |>
         select(obsid, starts_with("ensHB")) 
     }
