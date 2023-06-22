@@ -1437,7 +1437,7 @@ fit_model <- function(mod, resp, form.ls, d.ls, opts, tunes, out.dir, y, suffix=
   if(mod %in% c("Ridge", "ENet", "RF", "NN", "MARS", "Boost")) {
     fit_ID <- glue("{y}_{resp}_{mod}{ifelse(is.null(suffix),'',suffix)}")
     if(file.exists(glue("{out.dir}/{fit_ID}.rds"))) {
-      cat("File already exists:", glue("{out.dir}/{fit_ID}.rds\n"))
+      cat("File already exists:", glue("{out.dir}/{fit_ID}.rds"), "\n")
       return()
     }
     mod.prefix <- ifelse(PCA_run, "PCA.", "")
