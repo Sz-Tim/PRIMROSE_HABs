@@ -1755,7 +1755,7 @@ merge_pred_dfs <- function(files, CV=NULL) {
   if(is.null(CV)) {
     map(1:nrow(f.df), 
         ~readRDS(f.df$f[.x]) |> 
-          lapply(_, function(x) {x |> mutate(covSet=paste0("d", f.df$covSet[.x], "."))})) |>
+          lapply(function(x) {x |> mutate(covSet=paste0("d", f.df$covSet[.x], "."))})) |>
       list_transpose() |>
       map_depth(2, ~.x |> 
                   pivot_longer(ends_with("_A1"), names_to="model", values_to="prA1") |>
