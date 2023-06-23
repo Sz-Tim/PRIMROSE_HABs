@@ -206,8 +206,8 @@ get_WRF <- function(wrf.dir, nDays_buffer, dateRng, out.dir, forecast=F) {
     wrf_links <- map(seq(year(dateRng[1]), year(dateRng[2]), by=1), 
                      ~glue("{thredds_head}{.x}{catalog}") |>
                        read_html() |> html_nodes("a") |> html_attr("href") |> 
-                       grep("netcdf_20.*/wrf_", ., value=T) |>
-                       str_split_fixed(., glue("{Archive}/"), 2) |> 
+                       grep("netcdf_20.*/wrf_", x=_, value=T) |>
+                       str_split_fixed(glue("{Archive}/"), 2) |> 
                        magrittr::extract(,2)) |>
       do.call('c', .)
     wrf_i <- tibble(fname=wrf_links)
@@ -319,17 +319,17 @@ nest_WRF_domains <- function(nc.ls) {
   merge.wrf <- map(coord.wrf, ~.x |> mutate(in_d02=0, in_d03=0))
   if(nDomain==3) {
     merge.wrf <- map(merge.wrf, 
-                     ~.x |>
+                     ~.x %>%
                        mutate(in_d02=as.numeric(st_within(., hull.wrf[[2]], sparse=F)[,1]),
                               in_d03=as.numeric(st_within(., hull.wrf[[3]], sparse=F)[,1])))
   }
   if(nDomain==2) {
     merge.wrf <- map(merge.wrf, 
-                     ~.x |>
+                     ~.x %>%
                        mutate(in_d02=as.numeric(st_within(., hull.wrf[[2]], sparse=F)[,1])))
   }
   merge.wrf <- map(merge.wrf,
-                   ~.x |>
+                   ~.x %>%
                      mutate(lon=st_coordinates(.)[,1],
                             lat=st_coordinates(.)[,2]) |>
                      st_drop_geometry() |>
@@ -438,7 +438,7 @@ extract_env_pts <- function(site.df, env_vars, env.df, id_env, site.v) {
   env.site <- env.df |>
     group_by(version) |>
     group_split() |>
-    map2_dfr(., site.v, ~.x |> filter({{id_env}} %in% site.df[[.y]])) |>
+    map2_dfr(.x=_, .y=site.v, ~.x |> filter({{id_env}} %in% site.df[[.y]])) |>
     arrange({{id_env}}, date) |>
     group_by({{id_env}}) |>
     mutate(across(any_of(env_vars), 
@@ -570,7 +570,7 @@ extract_env_buffers <- function(site.buffer, vars, env.df, id_env) {
 find_nearest_feature_id <- function(site.df, env.sf, id_env) {
   site.df |>
     st_as_sf(coords=c("lon", "lat"), crs=27700, remove=F) |>
-    st_transform(4326) |>
+    st_transform(4326) %>%
     mutate(new_id=st_nearest_feature(., env.sf)) |>
     rename_with(~id_env, new_id) |>
     st_drop_geometry()
@@ -593,7 +593,7 @@ find_buffer_intersect_ids <- function(site.sf, env.sf, id_env) {
   site.sf |>
     select(siteid, quadrant, geom) |>
     st_transform(4326) |>
-    st_make_valid() |>
+    st_make_valid() %>%
     mutate(new_id=st_intersects(., env.sf)) |>
     rename_with(~id_env, new_id) |>
     st_drop_geometry()
@@ -637,7 +637,7 @@ get_shortestPaths <- function(ocean.path, site.df, transMx.path=NULL, recalc_tra
   site.spdf <- SpatialPointsDataFrame(site.df[,c("lon", "lat")],
                                       data=site.df[,"siteid"], 
                                       proj4string=CRS("+init=epsg:27700")) |>
-    points2nearestcell(., mesh.r) |>
+    points2nearestcell(mesh.r) |>
     as.data.frame()
   site.df_new <- site.df |> select(siteid, sin) |> left_join(site.spdf)
   if(!is.null(site_savePath)) {
@@ -762,29 +762,29 @@ points2nearestcell <- function (locs=NULL, ras=NULL, layer=1,
 get_fetch <- function(site.df, fetch.path) {
   library(tidyverse); library(sf)
   site.df |>
-    st_as_sf(coords=c("lon", "lat"), crs=27700, remove=F) |>
+    st_as_sf(coords=c("lon", "lat"), crs=27700, remove=F) %>%
     mutate(fetch=raster::extract(raster(fetch.path), ., 
-                                 small=T, buffer=1e2, fun=mean)) |>
+                                 small=T, buffer=1e2, fun=mean)) %>%
     mutate(fetch=if_else(is.na(fetch),
                          raster::extract(raster(fetch.path), ., 
                                          small=T, buffer=5e2, fun=mean),
-                         fetch)) |>
+                         fetch)) %>%
     mutate(fetch=if_else(is.na(fetch),
                          raster::extract(raster(fetch.path), ., 
                                          small=T, buffer=1e3, fun=mean),
-                         fetch)) |>
+                         fetch)) %>%
     mutate(fetch=if_else(is.na(fetch),
                          raster::extract(raster(fetch.path), ., 
                                          small=T, buffer=5e3, fun=mean),
-                         fetch)) |>
+                         fetch)) %>%
     mutate(fetch=if_else(is.na(fetch),
                          raster::extract(raster(fetch.path), ., 
                                          small=T, buffer=10e3, fun=mean),
-                         fetch)) |>
+                         fetch)) %>%
     mutate(fetch=if_else(is.na(fetch),
                          raster::extract(raster(fetch.path), ., 
                                          small=T, buffer=50e3, fun=mean),
-                         fetch)) |>
+                         fetch)) %>%
     st_drop_geometry()
 }
 
@@ -1030,7 +1030,7 @@ summarise_hab_states <- function(site_tox.sf, site_hab.sf, tox.obs, hab.df) {
   
   # identify hab sites within each toxin site buffer
   hab_ids <- site_tox.sf |>
-    select(siteid, geom) |>
+    select(siteid, geom) %>%
     mutate(hab_id=st_intersects(., site_hab.sf)) |>
     st_drop_geometry()
   
@@ -1653,7 +1653,7 @@ get_predictions <- function(fit, mod, resp, d.df, y_i.i) {
   if(grepl("HB", mod)) {
     pred <- parsnip::extract_fit_engine(fit) |>
       posterior_epred(d.df[[resp]], allow_new_levels=T) |>
-      summarise_post_preds(., resp, y_i.i)
+      summarise_post_preds(resp, y_i.i)
   } else {
     pred_type <- ifelse(resp=="lnN", "raw", "prob")
     preds <- predict(fit, d.df[[resp]], pred_type)
@@ -1984,7 +1984,7 @@ calc_ensemble <- function(out.ls, wt.ls, resp, y_i.i, method="wtmean", out.path=
       HB_out <- readRDS(glue("{out.path}/{y_i.i$abbr}_EnsHB.rds"))
       pred <- parsnip::extract_fit_engine(HB_out) |>
         posterior_epred(out.ls[[resp]], allow_new_levels=T) |>
-        summarise_post_preds(., resp, y_i.i)
+        summarise_post_preds(resp, y_i.i)
       out <- out.ls[[resp]] %>%
         mutate(ensHB_alert_A1=pred[,1]) |>
         select(obsid, starts_with("ensHB")) 
@@ -2409,7 +2409,7 @@ extract_wrf_pts <- function(site.df, site.versions, wrf_i, wrf.df) {
   wrf.site <- wrf.df |>
     group_by(version) |>
     group_split() |>
-    map2_dfr(., site.versions, 
+    map2_dfr(.x=_, .y=site.versions, 
              ~.x |> filter(wrf_id %in% site.df[[.y]])) |>
     arrange(wrf_id, date) |>
     group_by(wrf_id) |>
