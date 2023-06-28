@@ -209,7 +209,7 @@ get_WRF <- function(wrf.dir, nDays_buffer, dateRng, out.dir, forecast=F) {
                        grep("netcdf_20.*/wrf_", x=_, value=T) |>
                        str_split_fixed(glue("{Archive}/"), 2) |> 
                        magrittr::extract(,2)) |>
-      do.call('c', .)
+      do.call('c', args=_)
     wrf_i <- tibble(fname=wrf_links)
     wrf_base <- glue("{thredd_base}dodsC/scoats-wrf/{Archive}")
   } else {
@@ -1369,7 +1369,7 @@ make_HB_priors <- function(prior_i, mod, resp, covs, PCA=F) {
           ~c(prior_string("normal(0,1)", class="b", nlpar=.x),
              prior_string("normal(0,.5)", class="sd", nlpar=.x, lb=0),
              prior_string("student_t(3,0,2.5)", class="sds", nlpar=.x, lb=0))) |>
-        do.call('c', .),
+        do.call('c', args=_),
       map(terms$cov, 
           ~c(prior_string(glue("beta({prior_i$b},1)"), 
                           nlpar=paste0("p", .x), lb=0, ub=1),
@@ -1381,7 +1381,7 @@ make_HB_priors <- function(prior_i, mod, resp, covs, PCA=F) {
                           nlpar=paste0("p", .x), lb=0),
              prior_string(glue("double_exponential(0,{prior_i$de})"), class="sds", 
                           nlpar=paste0("b", .x), lb=0))) |>
-        do.call('c', .)
+        do.call('c', args=_)
     )
   }
   return(p)
