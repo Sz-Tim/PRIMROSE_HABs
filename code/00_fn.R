@@ -2297,54 +2297,44 @@ get_intervals <- function(df, y, type="hdci") {
 
 
 
-#' Calculate Schoener's D metric of niche overlap
+#' Calculate pseudo-R2s
+#' 
+#' Currently supports McFadden and the Veall-Zimmermann correction of the Aldrich-Nelson pseudo-R2
 #'
-#' Borrowed from GwenAntell
+#' @param dat.df 
+#' @param type 
 #'
-#' Schoener's D metric quantifies niche overlap between two discretised
-#' probability functions. The \code{schoenr} function modifies the metric for
-#' continuous probability distributions.
-#'
-#' D was originally defned as the sum of the absolute difference in resource use
-#' frequencies for every category i. The sum is rescaled by 0.5 to give the
-#' per-niche value, and then subtracted from 1 so as to be a similarity metric
-#' (i.e. D = 1 indicates identical niches). \code{schoenr} replaces the sum
-#' with an integral on the absolute difference between two estimated
-#' kernel density functions.
-#'
-#' @inheritParams hell
-#' @return A numeric value between 0 and 1 inclusive.
+#' @return
 #' @export
-#' @references
-#' \insertRef{Schoener68}{kerneval}
-schoenr2 <- function (d1, d2, a = NULL, b = NULL) {
-  if (min(d1$x) > max(d2$x) | max(d1$x) < min(d2$x)){
-    stop('no overlap in ranges over which densities are defined')
+#'
+#' @examples
+calc_R2 <- function(dat.df, type="mf", ...) {
+  if(type=="mf") {
+    return(
+      dat.df |>
+        group_by(..., model, PCA, covSet) |>
+        summarise(LL=sum(dbinom(alert, 1, prA1, log=T))) |>
+        group_by(...) |>
+        arrange(y, model) |>
+        mutate(R2=1 - LL/first(LL)) |>
+        select(-LL)
+    )
   }
-  
-  # standardise PDFs over the same x-interval
-  if (is.null(a)){
-    a <- max(min(d1$x), min(d2$x))
+  if(type=="vz") {
+    return(
+      dat.df |>
+        group_by(..., model, PCA, covSet) |>
+        summarise(LL=sum(dbinom(alert, 1, prA1, log=T)),
+                  N=n(),
+                  p=mean(alert)) |>
+        group_by(...) |>
+        arrange(y, model) |>
+        mutate(R2=(-2*(first(LL)-LL))/(-2*(first(LL)-LL)+N) / 
+                 ( (-2*(p*log(p)+(1-p)*log(1-p)))/(1-2*(p*log(p)+(1-p)*log(1-p))) )) |>
+        select(-N, -p, -LL)
+    )
   }
-  if (is.null(b)){
-    b <- min(max(d1$x), max(d2$x))
-  }
-  d1scl <- dscaler(d1, a, b)
-  d2scl <- dscaler(d2, a, b)
-  
-  fun1 <- stats::approxfun(d1scl$x, d1scl$y)
-  fun2 <- stats::approxfun(d2scl$x, d2scl$y)
-  difFun <- function(x){
-    abs(fun1(x) - fun2(x))
-  }
-  int <- pracma::integral(difFun, a, b)
-  if (int > 2){
-    int <- 2
-    #    warning('estimated integrated overlap greater than 2')
-  }
-  1 - (0.5 * int)
 }
-
 
 
 
