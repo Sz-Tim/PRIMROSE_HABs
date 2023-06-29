@@ -268,7 +268,7 @@ get_WRF <- function(wrf.dir, nDays_buffer, dateRng, out.dir, forecast=F) {
                     UV_mn=mean(sqrt(U^2 + V^2)),
                     Shortwave=sum(Shortwave),
                     Precip=sum(Precipitation),
-                    sst=mean(sst)) |>
+                    sst=mean(sst, na.rm=T)) |>
           ungroup() |>
           rename(U=U_mn, V=V_mn, UV=UV_mn) |>
           saveRDS(ifelse(forecast, j.fnameF, j.fname))
@@ -1113,14 +1113,14 @@ load_datasets <- function(sub.dir, target) {
   
   d.ls$compiled <- d.ls$site |> select(-sin) |>
     right_join(d.ls$obs, by="siteid", multiple="all") |>
-    left_join(d.ls$cmems.pt, by=c("cmems_id", "date")) |>
-    left_join(d.ls$cmems.buf |>
+    left_join(d.ls$cmems.pt |> select(-ends_with("Dt")), by=c("cmems_id", "date")) |>
+    left_join(d.ls$cmems.buf |> select(-ends_with("Dt")) |>
                 pivot_wider(names_from="quadrant", values_from=-(1:3), names_sep="Dir"),
               by=c("siteid", "date")) |>
     mutate(wrf_id=if_else(date < "2019-04-01", wrf_id.1, wrf_id.2)) |>
     select(-wrf_id.1, -wrf_id.2, -version) |>
-    left_join(d.ls$wrf.pt |> select(-version), by=c("wrf_id", "date")) |>
-    left_join(d.ls$wrf.buf |>
+    left_join(d.ls$wrf.pt |> select(-version, -ends_with("Dt")), by=c("wrf_id", "date")) |>
+    left_join(d.ls$wrf.buf |> select(-ends_with("Dt")) |>
                 pivot_wider(names_from="quadrant", values_from=-(1:3), names_sep="Dir"),
               by=c("siteid", "date")) |>
     mutate(year=year(date),
