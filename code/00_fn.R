@@ -951,13 +951,13 @@ get_trafficLights <- function(y.df, N, tl_i) {
 #' @export
 #'
 #' @examples
-calc_y_features <- function(yRaw.df, y_i, tl_i, dist.df=NULL) {
+calc_y_features <- function(yRaw.df, y_i, tl_i, dist.df=NULL, forecastStart="3000-01-01") {
   y.ls <- yRaw.df |> 
     group_by(siteid, date) |>
     slice_head(n=1) |>
     ungroup() |>
     pivot_longer(any_of(y_i$abbr), names_to="y", values_to="N") |>
-    filter(!is.na(N)) |>
+    filter((!is.na(N)) | (date >= forecastStart)) |>
     mutate(lnN=log1p(N)) |>
     get_trafficLights(N, tl_i) |>
     arrange(y, siteid, date) |>
@@ -1111,6 +1111,7 @@ load_datasets <- function(sub.dir, target) {
     d.ls$habAvg <- readRDS(glue("data/{sub.dir}/tox_habAvg.rds"))
   }
   
+  # TODO: These joins are truncating to prohibit forecasting to the future
   d.ls$compiled <- d.ls$site |> select(-sin) |>
     right_join(d.ls$obs, by="siteid", multiple="all") |>
     left_join(d.ls$cmems.pt |> select(-ends_with("Dt")), by=c("cmems_id", "date")) |>
@@ -1129,8 +1130,8 @@ load_datasets <- function(sub.dir, target) {
     d.ls$compiled <- d.ls$compiled |>
       left_join(d.ls$habAvg |> select(-date, -siteid), by="obsid")
   }
-  d.ls$compiled <- d.ls$compiled |> 
-    na.omit()
+  # d.ls$compiled <- d.ls$compiled |> 
+  #   na.omit()
   
   return(d.ls)
 }
@@ -1164,6 +1165,49 @@ get_excluded_cov_regex <- function(covSet) {
                         "{ifelse(Del==0, 'Delta', 'NA')}"))
   filter(covSet.df, f==covSet)$exclude
 }
+
+
+
+
+
+
+
+
+
+#' Add Dt dummy variables
+#' 
+#' Should only be necessary for initial model fitting since there were some
+#' where Dt variables were included but then excluded within the recipe. The
+#' bake() function still expects them initially even though they are excluded.
+#'
+#' @param df 
+#'
+#' @return
+#' @export
+#'
+#' @examples
+add_dummy_columns <- function(df) {
+  dummy_cols <- c("chlAvgDtDirE", "chlAvgDtDirN", "chlAvgDtDirS", "chlAvgDtDirW", "chlDt", 
+                  "kdAvgDtDirE", "kdAvgDtDirN", "kdAvgDtDirS", "kdAvgDtDirW", "kdDt", 
+                  "no3AvgDtDirE", "no3AvgDtDirN", "no3AvgDtDirS", "no3AvgDtDirW", "no3Dt", 
+                  "o2AvgDtDirE", "o2AvgDtDirN", "o2AvgDtDirS", "o2AvgDtDirW", "o2Dt",
+                  "phAvgDtDirE", "phAvgDtDirN", "phAvgDtDirS", "phAvgDtDirW", "phDt", 
+                  "phycAvgDtDirE", "phycAvgDtDirN", "phycAvgDtDirS", "phycAvgDtDirW", "phycDt", 
+                  "po4AvgDtDirE", "po4AvgDtDirN", "po4AvgDtDirS", "po4AvgDtDirW", "po4Dt", 
+                  "ppAvgDtDirE", "ppAvgDtDirN", "ppAvgDtDirS", "ppAvgDtDirW", "ppDt", 
+                  "PrecipAvgDtDirE", "PrecipAvgDtDirN", "PrecipAvgDtDirS", "PrecipAvgDtDirW", "PrecipDt",
+                  "ShortwaveAvgDtDirE", "ShortwaveAvgDtDirN", "ShortwaveAvgDtDirS", "ShortwaveAvgDtDirW", "ShortwaveDt", 
+                  "sstAvgDtDirE", "sstAvgDtDirN", "sstAvgDtDirS", "sstAvgDtDirW", "sstDt",
+                  "UAvgDtDirE", "UAvgDtDirN", "UAvgDtDirS", "UAvgDtDirW", "UDt", 
+                  "UVAvgDtDirE", "UVAvgDtDirN", "UVAvgDtDirS", "UVAvgDtDirW", "UVDt", 
+                  "VAvgDtDirE", "VAvgDtDirN", "VAvgDtDirS", "VAvgDtDirW", "VDt")
+  df |>
+    bind_cols(map_dfr(dummy_cols, ~tibble(x=.x, y=0)) |> pivot_wider(names_from=x, values_from=y))
+}
+
+
+
+
 
 
 

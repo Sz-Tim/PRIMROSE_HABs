@@ -18,6 +18,8 @@ library(jsonlite)
 library(WeStCOMS)
 source("code/00_fn.R")
 
+cat("Starting operational updates:", as.character(Sys.time()), "\n")
+
 daysBuffer <- 10
 daysForecast <- 7
 UK_bbox <- list(xmin=-11, xmax=3, ymin=49, ymax=61.5)
@@ -59,6 +61,9 @@ old_end <- readRDS("data/1_current/obs_end.rds") |>
 
 # sampling locations and dates --------------------------------------------
 
+
+cat("  Reading from database:", as.character(Sys.time()), "\n")
+
 site_hab.df <- readRDS("data/site_hab_df.rds")
 fsa_sites <- read_and_clean_sites(urls$fsa_sites, "2015-01-01")
 fsa_1 <- readRDS("data/1_current/fsa_df.rds") |> 
@@ -81,7 +86,12 @@ cefas_2 <- read_and_clean_cefas(urls$cefas, tox_i, cefas_sites, old_end$tox) |>
   left_join(site_tox.df |> select(sin, siteid))
 if(any(is.na(cefas_2$siteid))) {
   new_sin <- paste(unique(filter(cefas_2, is.na(siteid))$sin), collapse="\n")
-  stop(c("New toin sin found\n", new_sin))
+  stop(c("New toxin sin found\n", new_sin))
+}
+if(any(is.na(cefas_2$siteid))) {
+  new_sin <- paste(unique(filter(cefas_2, is.na(siteid))$sin), collapse="\n")
+  cefas_2 <- cefas_2 |>
+    filter(! is.na(siteid))
 }
 cefas.df <- bind_rows(cefas_1, cefas_2 |> select(-lon, -lat)) |>
   bind_rows(site_tox.df |> select(siteid, sin) |> mutate(date=max(cefas_2$date)+daysForecast))
@@ -90,6 +100,8 @@ saveRDS(cefas.df, "data/2_new/cefas_df.rds")
 
 
 # refresh datasets --------------------------------------------------------
+
+cat("  Reading CMEMS:", as.character(Sys.time()), "\n")
 
 # . CMEMS  download -------------------------------------------------------
 cmems_cred <- readRDS("data/cmems_cred.rds")
@@ -107,7 +119,7 @@ cmems.df <- map_dfr(anfo.f, ~readRDS(.x) |>
   na.omit() |>
   group_by(date) |>
   mutate(cmems_id=row_number()) |>
-  ungroup |>
+  ungroup() |>
   mutate(chl=log1p(chl),
          kd=log(kd),
          no3=log1p(no3),
@@ -124,49 +136,51 @@ cmems.df <- readRDS(last(dirf("data/2_new", "cmems_end.*rds"))) |> mutate(versio
 cmems.sf <- cmems.df |> 
   filter(date==min(date)) |>
   select(date, lon, lat, cmems_id) |>
-  st_as_sf(., coords=c("lon", "lat"), crs=4326)
+  st_as_sf(coords=c("lon", "lat"), crs=4326)
 
 # HABs
 site_hab.df <- readRDS("data/site_hab_df.rds") 
 cmems.site_hab_1 <- readRDS("data/1_current/cmems_sitePt_hab.rds")
 cmems.site_hab_2 <- extract_env_pts(site_hab.df, cmems_i$all, cmems.df, cmems_id, "cmems_id") |>
-  na.omit
+  na.omit()
 cmems.site_hab <- bind_rows(cmems.site_hab_1 |> filter(date < min(cmems.site_hab_2$date)),
                             cmems.site_hab_2)
-saveRDS(cmems.site_hab |> na.omit, "data/2_new/cmems_sitePt_hab.rds")
+saveRDS(cmems.site_hab |> select(-ends_with("Dt")) |> na.omit(), "data/2_new/cmems_sitePt_hab.rds")
 
 # toxins
 site_tox.df <- readRDS("data/site_tox_df.rds") 
 cmems.site_tox_1 <- readRDS("data/1_current/cmems_sitePt_tox.rds")
 cmems.site_tox_2 <- extract_env_pts(site_tox.df, cmems_i$all, cmems.df, cmems_id, "cmems_id") |>
-  na.omit
+  na.omit()
 cmems.site_tox <- bind_rows(cmems.site_tox_1 |> filter(date < min(cmems.site_tox_2$date)),
                             cmems.site_tox_2)
-saveRDS(cmems.site_tox |> na.omit, "data/2_new/cmems_sitePt_tox.rds")
+saveRDS(cmems.site_tox |> select(-ends_with("Dt")) |> na.omit(), "data/2_new/cmems_sitePt_tox.rds")
 
 
 # . CMEMS  buffer:date ----------------------------------------------------
 # HABs
 site.buffer_hab <- st_read("data/site_hab_sf.gpkg") |>
-  find_buffer_intersect_ids(., cmems.sf, "cmems_id")
+  find_buffer_intersect_ids(cmems.sf, "cmems_id")
 cmems.buffer_hab_1 <- readRDS("data/1_current/cmems_siteBufferNSEW_hab.rds")
 cmems.buffer_hab_2 <- extract_env_buffers(site.buffer_hab, cmems_i, cmems.df, "cmems_id") |>
-  na.omit
+  na.omit()
 cmems.buffer_hab <- bind_rows(cmems.buffer_hab_1 |> filter(date < min(cmems.buffer_hab_2$date)),
                               cmems.buffer_hab_2)
-saveRDS(cmems.buffer_hab, "data/2_new/cmems_siteBufferNSEW_hab.rds")
+saveRDS(cmems.buffer_hab |> select(-ends_with("Dt")), "data/2_new/cmems_siteBufferNSEW_hab.rds")
 
 # toxins
 site.buffer_tox <- st_read("data/site_tox_sf.gpkg") |>
-  find_buffer_intersect_ids(., cmems.sf, "cmems_id")
+  find_buffer_intersect_ids(cmems.sf, "cmems_id")
 cmems.buffer_tox_1 <- readRDS("data/1_current/cmems_siteBufferNSEW_tox.rds")
 cmems.buffer_tox_2 <- extract_env_buffers(site.buffer_tox, cmems_i, cmems.df, "cmems_id")
 cmems.buffer_tox <- bind_rows(cmems.buffer_tox_1 |> filter(date < min(cmems.buffer_tox_2$date)),
                               cmems.buffer_tox_2)
-saveRDS(cmems.buffer_tox, "data/2_new/cmems_siteBufferNSEW_tox.rds")
+saveRDS(cmems.buffer_tox |> select(-ends_with("Dt")), "data/2_new/cmems_siteBufferNSEW_tox.rds")
 
 
 # . WRF  download ---------------------------------------------------------
+cat("  Reading WRF:", as.character(Sys.time()), "\n")
+
 wrf.out <- "data/00_env/wrf/"
 get_WRF(wrf.dir="https", nDays_buffer=daysBuffer, 
         dateRng=c(old_end$wrf, Sys.Date()+7), out.dir=wrf.out)
@@ -201,7 +215,7 @@ wrf.site_hab_1 <- readRDS("data/1_current/wrf_sitePt_hab.rds")
 wrf.site_hab_2 <- extract_env_pts(site_hab.df, wrf_i$all, wrf.df, wrf_id, site_hab.versions)
 wrf.site_hab <- bind_rows(wrf.site_hab_1 |> filter(date < min(wrf.site_hab_2$date)),
                           wrf.site_hab_2)
-saveRDS(wrf.site_hab, "data/2_new/wrf_sitePt_hab.rds")
+saveRDS(wrf.site_hab |> select(-ends_with("Dt")), "data/2_new/wrf_sitePt_hab.rds")
 
 # toxins
 site_tox.df <- readRDS("data/site_tox_df.rds")
@@ -210,7 +224,7 @@ wrf.site_tox_1 <- readRDS("data/1_current/wrf_sitePt_tox.rds")
 wrf.site_tox_2 <- extract_env_pts(site_tox.df, wrf_i$all, wrf.df, wrf_id, site_tox.versions)
 wrf.site_tox <- bind_rows(wrf.site_tox_1 |> filter(date < min(wrf.site_tox_2$date)),
                           wrf.site_tox_2)
-saveRDS(wrf.site_tox, "data/2_new/wrf_sitePt_tox.rds")
+saveRDS(wrf.site_tox |> select(-ends_with("Dt")), "data/2_new/wrf_sitePt_tox.rds")
 
 
 # . WRF  buffer:date ------------------------------------------------------
@@ -227,37 +241,44 @@ wrf.df <- readRDS(last(dirf("data/2_new/", "wrf_end_.*rds")))
 # HABs
 site.buffer_hab <- map(wrf_versions, 
                        ~st_read("data/site_hab_sf.gpkg") |> 
-                         find_buffer_intersect_ids(., .x, "wrf_id")) |>
+                         find_buffer_intersect_ids(.x, "wrf_id")) |>
   reduce(full_join, by=c("siteid", "quadrant"), suffix=paste0(".", seq_along(wrf_versions)))
 wrf.buffer_hab_1 <- readRDS("data/1_current/wrf_siteBufferNSEW_hab.rds")
 wrf.buffer_hab_2 <- extract_env_buffers(site.buffer_hab, wrf_i, wrf.df, paste0("wrf_id.", 1:2))
 wrf.buffer_hab <- bind_rows(wrf.buffer_hab_1 |> filter(date < min(wrf.buffer_hab_2$date)),
                             wrf.buffer_hab_2)
-saveRDS(wrf.buffer_hab, "data/2_new/wrf_siteBufferNSEW_hab.rds")
+saveRDS(wrf.buffer_hab |> select(-ends_with("Dt")), "data/2_new/wrf_siteBufferNSEW_hab.rds")
 
 # toxins
 site.buffer_tox <- map(wrf_versions, 
                        ~st_read("data/site_tox_sf.gpkg") |> 
-                         find_buffer_intersect_ids(., .x, "wrf_id")) |>
+                         find_buffer_intersect_ids(.x, "wrf_id")) |>
   reduce(full_join, by=c("siteid", "quadrant"), suffix=paste0(".", seq_along(wrf_versions)))
 wrf.buffer_tox_1 <- readRDS("data/1_current/wrf_siteBufferNSEW_tox.rds")
 wrf.buffer_tox_2 <- extract_env_buffers(site.buffer_tox, wrf_i, wrf.df, paste0("wrf_id.", 1:2))
 wrf.buffer_tox <- bind_rows(wrf.buffer_tox_1 |> filter(date < min(wrf.buffer_tox_2$date)),
                             wrf.buffer_tox_2)
-saveRDS(wrf.buffer_tox, "data/2_new/wrf_siteBufferNSEW_tox.rds")
+saveRDS(wrf.buffer_tox |> select(-ends_with("Dt")), "data/2_new/wrf_siteBufferNSEW_tox.rds")
 
 
 
 # autoregression ----------------------------------------------------------
+
+cat("  Calculating autoregression:", as.character(Sys.time()), "\n")
+
 # calculate y
 hab.df <- calc_y_features(readRDS("data/2_new/fsa_df.rds"),
                           hab_i, tl_hab,
-                          readRDS("data/site_hab_neighbors_100km.rds"))
+                          readRDS("data/site_hab_neighbors_100km.rds"),
+                          forecastStart=min(filter(readRDS("data/2_new/fsa_df.rds"), 
+                                                   is.na(obsid))$date))
 saveRDS(hab.df, "data/2_new/hab_obs.rds")
 
 tox.df <- calc_y_features(readRDS("data/2_new/cefas_df.rds"),
                           tox_i, tl_tox,
-                          readRDS("data/site_tox_neighbors_100km.rds"))
+                          readRDS("data/site_tox_neighbors_100km.rds"),
+                          forecastStart=min(filter(readRDS("data/2_new/cefas_df.rds"), 
+                                                   is.na(obsid))$date))
 saveRDS(tox.df, "data/2_new/tox_obs.rds")
 
 # hab avg
@@ -275,6 +296,8 @@ saveRDS(habAvg_tox.df, "data/2_new/tox_habAvg.rds")
 
 # compile -----------------------------------------------------------------
 
+cat("  Compiling datasets:", as.character(Sys.time()), "\n")
+
 # HABs
 hab.ls <- load_datasets("2_new", "hab")
 saveRDS(hab.ls$compiled, "data/2_new/data_hab_all.rds")
@@ -291,49 +314,70 @@ obs_end <- list(
 )
 saveRDS(obs_end, "data/2_new/obs_end.rds")
 
-write_to_current <- F
+write_to_current <- T
 if(write_to_current) {
-  file.copy(dirf("data/2_new/", "fsa_df"), "data/1_current/")
-  file.copy(dirf("data/2_new/", "cefas_df"), "data/1_current/")
-  file.copy(dirf("data/2_new/", "_obs.rds"), "data/1_current/")
-  file.copy(dirf("data/2_new/", "_habAvg.rds"), "data/1_current/")
-  file.copy(dirf("data/2_new/", "_sitePt_"), "data/1_current/")
-  file.copy(dirf("data/2_new/", "_siteBufferNSEW_"), "data/1_current/")
-  file.copy(dirf("data/2_new/", "data_.*_all.rds"), "data/1_current/")
-  file.copy(dirf("data/2_new/", "obs_end"), "data/1_current/")
+  file.copy(dirf("data/2_new/", "fsa_df"), "data/1_current/", overwrite=T)
+  file.copy(dirf("data/2_new/", "cefas_df"), "data/1_current/", overwrite=T)
+  file.copy(dirf("data/2_new/", "_obs.rds"), "data/1_current/", overwrite=T)
+  file.copy(dirf("data/2_new/", "_habAvg.rds"), "data/1_current/", overwrite=T)
+  file.copy(dirf("data/2_new/", "_sitePt_"), "data/1_current/", overwrite=T)
+  file.copy(dirf("data/2_new/", "_siteBufferNSEW_"), "data/1_current/", overwrite=T)
+  file.copy(dirf("data/2_new/", "data_.*_all.rds"), "data/1_current/", overwrite=T)
+  file.copy(dirf("data/2_new/", "obs_end"), "data/1_current/", overwrite=T)
 }
 
 
 
 
-# load models -------------------------------------------------------------
+
+
+# generate forecasts ------------------------------------------------------
+
 rm(list=ls()); gc()
-pkgs <- c("tidyverse", "lubridate", "glue", "tidymodels", "jsonlite",
-          "nnet", "randomForest", "glmnet", "brms", "bayesian")
+pkgs <- c("tidyverse", "lubridate", "glue", "tidymodels", "jsonlite", "doParallel", "foreach",
+          "nnet", "randomForest", "glmnet", "brms", "bayesian", "butcher")
 lapply(pkgs, library, character.only=T)
 source("code/00_fn.R")
 
-y_i <- bind_rows(read_csv("data/i_hab.csv") |> arrange(abbr) |> mutate(type="hab"),
-                 read_csv("data/i_tox.csv") |> arrange(abbr) |> mutate(type="tox")) |>
-  filter(! abbr %in% c("ASP", "AZP", "YTX"))
+y_i <- bind_rows(read_csv("data/i_hab.csv", show_col_types=F) |> 
+                   arrange(abbr) |> mutate(type="hab"),
+                 read_csv("data/i_tox.csv", show_col_types=F) |> 
+                   arrange(abbr) |> mutate(type="tox")) |>
+  filter(! abbr %in% c("AZP", "YTX"))
 y_resp <- filter(y_i, abbr!="Prli")$abbr
 
-site.df_all <- bind_rows(readRDS("data/site_hab_df.rds"),
-                         readRDS("data/site_tox_df.rds"))
+covSet.df <- expand_grid(y=y_resp,
+                         Avg=c(0,1), 
+                         Xf=c(0,1),
+                         XN=c(0,1),
+                         Del=c(0,1)) |>
+  group_by(y) |>
+  mutate(id=row_number(),
+         f=glue("{id}-Avg{Avg}_Xf{Xf}_XN{XN}_Del{Del}")) |>
+  ungroup()
+out.dir <- glue("out/compiled/")
+ens.dir <- "out/ensembles/"
 
-for(d in seq_along(covSets)) {
-  covSet <- covSets[d]
+
+cat("  Generating forecasts at", as.character(Sys.time()), "\n")
+registerDoParallel(10)
+foreach(i=1:nrow(covSet.df)) %dopar% {
+# for(i in 1:nrow(covSet.df)) {
   
-  fit.dir <- glue("out/model_fits/{covSets[d]}/")
-  cv.dir <- glue("{fit.dir}/cv/")
+  covSet <- covSet.df$f[i]
+  
+  fit.dir <- glue("out/model_fits/{covSet}/")
   ens.dir <- "out/model_fits/ensembles/"
-  outSet.dir <- glue("out/compiled/{covSets[d]}/")
-  out.dir <- glue("out/compiled/")
+  outSet.dir <- glue("out/compiled/{covSet}/")
   
+  y_i <- bind_rows(read_csv("data/i_hab.csv", show_col_types=F) |> 
+                     arrange(abbr) |> mutate(type="hab"),
+                   read_csv("data/i_tox.csv", show_col_types=F) |> 
+                     arrange(abbr) |> mutate(type="tox")) |>
+    filter(! abbr %in% c("AZP", "YTX"))
   
-  y_i <- bind_rows(read_csv("data/i_hab.csv") |> arrange(abbr) |> mutate(type="hab"),
-                   read_csv("data/i_tox.csv") |> arrange(abbr) |> mutate(type="tox")) |>
-    filter(! abbr %in% c("ASP", "AZP", "YTX"))
+  y <- covSet.df$y[i]
+  y_i.i <- filter(y_i, abbr==y)
   
   col_metadata <- c("obsid", "y", "date", "year", "yday", "siteid", "lon", "lat")
   col_resp <- c("lnN", "tl", "alert")
@@ -362,39 +406,39 @@ for(d in seq_along(covSets)) {
   
   covs_exclude <- get_excluded_cov_regex(covSet)
   
-  for(i in seq_along(y_resp)) {
-    y <- y_resp[i]
-    y_i.i <- filter(y_i, abbr==y)
-    obs.ls <- map_dfr(dirf("data/1_current", "data_.*_all.rds"), readRDS) |>
-      filter(y %in% y_i$abbr) |>
-      filter(y != "Prli") |>
-      filter(year(date) == year(Sys.Date())) |>
-      select(all_of(col_metadata), all_of(col_resp),
-             "alert1", "alert2", any_of(unname(unlist(all_covs)))) |>
-      mutate(across(starts_with("alert"), ~factor(.x)),
-             across(starts_with("tl"), ~factor(.x, ordered=T))) |>
-      group_by(y, obsid) |>
-      slice_head(n=1) |>
-      filter(y==y_resp[i]) |>
-      select(where(~any(!is.na(.x)))) |>
-      na.omit()
-    
-    responses <- c(alert="alert")
-    obs.train <- training(readRDS(glue("data/0_init/{y}_{covSets[d]}_dataSplit.rds")))
-    prep.ls <- map(responses, ~prep_recipe(obs.train, .x, covs_exclude))
-    d.y <- list(forecast=map(prep.ls, ~bake(.x, obs.ls)))
-    prepPCA.ls <- map(responses, ~prep_recipe(obs.train, .x, covs_exclude, TRUE))
-    dPCA.y <- list(forecast=map(prepPCA.ls, ~bake(.x, obs.ls)))
-    
-    fc.ls <- map(responses, ~summarise_predictions(d.y$forecast, dPCA.y$forecast, .x, fit.dir, y_i.i))
-    saveRDS(fc.ls, glue("{outSet.dir}/{y}_fc_ls.rds"))
-  }
+  obs.ls <- map_dfr(dirf("data/1_current", "data_.*_all.rds"), readRDS) |>
+    filter(y %in% y_i$abbr) |>
+    filter(y != "Prli") |>
+    filter(year(date) == year(Sys.Date())) |>
+    select(all_of(col_metadata), all_of(col_resp),
+           "alert1", "alert2", any_of(unname(unlist(all_covs)))) |>
+    mutate(across(starts_with("alert"), ~factor(.x)),
+           across(starts_with("tl"), ~factor(.x, ordered=T))) |>
+    group_by(y, siteid, obsid) |>
+    slice_head(n=1) |>
+    filter(y==y_i.i$abbr) |>
+    select(where(~any(!is.na(.x)))) |>
+    add_dummy_columns() |>
+    na.omit(cols=grep(covs_exclude, unname(unlist(all_covs)), invert=T, value=T))
+  
+  responses <- c(alert="alert")
+  obs.train <- training(readRDS(glue("data/0_init/{y}_{covSet}_dataSplit.rds")))
+  prep.ls <- map(responses, ~prep_recipe(obs.train, .x, covs_exclude))
+  d.y <- list(forecast=map(prep.ls, ~bake(.x, obs.ls)))
+  prepPCA.ls <- map(responses, ~prep_recipe(obs.train, .x, covs_exclude, TRUE))
+  dPCA.y <- list(forecast=map(prepPCA.ls, ~bake(.x, obs.ls)))
+  
+  fc.ls <- map(responses, ~summarise_predictions(d.y$forecast, dPCA.y$forecast, .x, fit.dir, y_i.i))
+  saveRDS(fc.ls, glue("{outSet.dir}/{y}_fc.rds"))
 }
 
-for(y in unique(y_i$abbr)) {
+cat("  Generating ensembles at", as.character(Sys.time()), "\n")
+site_all.df <- bind_rows(readRDS("data/site_hab_df.rds") |> select(sin, siteid, lon, lat) |> mutate(type="HABs"),
+                         readRDS("data/site_tox_df.rds") |> select(sin, siteid, lon, lat) |> mutate(type="Biotoxins"))
+for(y in y_resp) {
   y_i.i <- filter(y_i, abbr==y)
   responses <- c(alert="alert")
-  cv.ls <- readRDS(glue("{outSet.dir}/{y}_cv.rds"))
+  cv.ls <- readRDS(glue("{out.dir}/{y}_cv.rds"))
   wt.ls <- readRDS(glue("{out.dir}/{y}_wt.rds"))
   fc.ls <- merge_pred_dfs(dirf("out/compiled", glue("{y}_fc_ls.rds"), recursive=T))
   
@@ -404,9 +448,11 @@ for(y in unique(y_i$abbr)) {
   # fc.ls <- map(responses, ~calc_ensemble(fc.ls, cv.ls, .x, y_i.i, "HB_oos", ens.dir))
   saveRDS(fc.ls, glue("{out.dir}/{y}_fc_ls.rds"))
   
-  ens.pred <- fc.ls$alert |> select(siteid, date, starts_with("ens")) |>
-    left_join(site.df_all)
+  ens.pred <- fc.ls$alert |> select(y, siteid, date, alert, starts_with("ens")) |>
+    mutate(type=if_else(y %in% c("ASP", "DSP", "PSP"), "Biotoxins", "HABs")) |>
+    left_join(site_all.df)
   write_json(ens.pred, glue("out/forecast/{y}_{max(ens.pred$date)}.json"))
+  saveRDS(ens.pred, glue("out/forecast/{y}_{max(ens.pred$date)}.rds"))
 }
 
 
