@@ -64,7 +64,7 @@ old_end <- readRDS("data/1_current/obs_end.rds") |>
 
 cat("  Reading from database:", as.character(Sys.time()), "\n")
 
-if(Sys.info()$sysname=="Windows") {
+if(Sys.info()["sysname"]=="Windows") {
   site_hab.df <- readRDS("data/site_hab_df.rds")
   fsa_sites <- read_and_clean_sites(urls$fsa_sites, "2015-01-01")
   fsa_1 <- readRDS("data/1_current/fsa_df.rds") |> 
