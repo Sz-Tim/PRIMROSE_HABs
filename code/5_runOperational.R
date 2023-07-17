@@ -64,38 +64,40 @@ old_end <- readRDS("data/1_current/obs_end.rds") |>
 
 cat("  Reading from database:", as.character(Sys.time()), "\n")
 
-site_hab.df <- readRDS("data/site_hab_df.rds")
-fsa_sites <- read_and_clean_sites(urls$fsa_sites, "2015-01-01")
-fsa_1 <- readRDS("data/1_current/fsa_df.rds") |> 
-  filter(date < old_end$hab, !is.na(obsid))
-fsa_2 <- read_and_clean_fsa(urls$fsa, hab_i, fsa_sites, old_end$hab) |>
-  left_join(site_hab.df |> select(sin, siteid))
-if(any(is.na(fsa_2$siteid))) {
-  new_sin <- paste(unique(filter(fsa_2, is.na(siteid))$sin), collapse="\n")
-  stop(c("New HAB sin found\n", new_sin))
+if(Sys.info()$sysname=="Windows") {
+  site_hab.df <- readRDS("data/site_hab_df.rds")
+  fsa_sites <- read_and_clean_sites(urls$fsa_sites, "2015-01-01")
+  fsa_1 <- readRDS("data/1_current/fsa_df.rds") |> 
+    filter(date < old_end$hab, !is.na(obsid))
+  fsa_2 <- read_and_clean_fsa(urls$fsa, hab_i, fsa_sites, old_end$hab) |>
+    left_join(site_hab.df |> select(sin, siteid))
+  if(any(is.na(fsa_2$siteid))) {
+    new_sin <- paste(unique(filter(fsa_2, is.na(siteid))$sin), collapse="\n")
+    stop(c("New HAB sin found\n", new_sin))
+  }
+  fsa.df <- bind_rows(fsa_1, fsa_2 |> select(-lon, -lat)) |>
+    bind_rows(site_hab.df |> select(siteid, sin) |> mutate(date=max(fsa_2$date)+daysForecast))
+  saveRDS(fsa.df, "data/2_new/fsa_df.rds")
+  
+  site_tox.df <- readRDS("data/site_tox_df.rds")
+  cefas_sites <- read_and_clean_sites(urls$cefas_sites, "2015-01-01")
+  cefas_1 <- readRDS("data/1_current/cefas_df.rds") |> 
+    filter(date < old_end$tox, !is.na(obsid))
+  cefas_2 <- read_and_clean_cefas(urls$cefas, tox_i, cefas_sites, old_end$tox) |>
+    left_join(site_tox.df |> select(sin, siteid))
+  if(any(is.na(cefas_2$siteid))) {
+    new_sin <- paste(unique(filter(cefas_2, is.na(siteid))$sin), collapse="\n")
+    stop(c("New toxin sin found\n", new_sin))
+  }
+  if(any(is.na(cefas_2$siteid))) {
+    new_sin <- paste(unique(filter(cefas_2, is.na(siteid))$sin), collapse="\n")
+    cefas_2 <- cefas_2 |>
+      filter(! is.na(siteid))
+  }
+  cefas.df <- bind_rows(cefas_1, cefas_2 |> select(-lon, -lat)) |>
+    bind_rows(site_tox.df |> select(siteid, sin) |> mutate(date=max(cefas_2$date)+daysForecast))
+  saveRDS(cefas.df, "data/2_new/cefas_df.rds")
 }
-fsa.df <- bind_rows(fsa_1, fsa_2 |> select(-lon, -lat)) |>
-  bind_rows(site_hab.df |> select(siteid, sin) |> mutate(date=max(fsa_2$date)+daysForecast))
-saveRDS(fsa.df, "data/2_new/fsa_df.rds")
-
-site_tox.df <- readRDS("data/site_tox_df.rds")
-cefas_sites <- read_and_clean_sites(urls$cefas_sites, "2015-01-01")
-cefas_1 <- readRDS("data/1_current/cefas_df.rds") |> 
-  filter(date < old_end$tox, !is.na(obsid))
-cefas_2 <- read_and_clean_cefas(urls$cefas, tox_i, cefas_sites, old_end$tox) |>
-  left_join(site_tox.df |> select(sin, siteid))
-if(any(is.na(cefas_2$siteid))) {
-  new_sin <- paste(unique(filter(cefas_2, is.na(siteid))$sin), collapse="\n")
-  stop(c("New toxin sin found\n", new_sin))
-}
-if(any(is.na(cefas_2$siteid))) {
-  new_sin <- paste(unique(filter(cefas_2, is.na(siteid))$sin), collapse="\n")
-  cefas_2 <- cefas_2 |>
-    filter(! is.na(siteid))
-}
-cefas.df <- bind_rows(cefas_1, cefas_2 |> select(-lon, -lat)) |>
-  bind_rows(site_tox.df |> select(siteid, sin) |> mutate(date=max(cefas_2$date)+daysForecast))
-saveRDS(cefas.df, "data/2_new/cefas_df.rds")
 
 
 
@@ -446,18 +448,13 @@ for(y in y_resp) {
   fc.ls <- map(responses, ~calc_ensemble(fc.ls, cv.ls, .x, y_i.i, "GLM_oos", ens.dir))
   # fc.ls <- map(responses, ~calc_ensemble(fc.ls, cv.ls, .x, y_i.i, "RF_oos", ens.dir))
   # fc.ls <- map(responses, ~calc_ensemble(fc.ls, cv.ls, .x, y_i.i, "HB_oos", ens.dir))
-  saveRDS(fc.ls, glue("{out.dir}/{y}_fc_ls.rds"))
+  saveRDS(fc.ls, glue("out/forecast/compiled/{y}_fc_ls.rds"))
   
-  ens.pred <- fc.ls$alert |> select(y, siteid, date, alert, starts_with("ens")) |>
+  ens.pred <- fc.ls$alert |> select(y, siteid, date, prevAlert, alert, starts_with("ens")) |>
     mutate(type=if_else(y %in% c("ASP", "DSP", "PSP"), "Biotoxins", "HABs")) |>
     left_join(site_all.df)
   write_json(ens.pred, glue("out/forecast/{y}_{max(ens.pred$date)}.json"))
   saveRDS(ens.pred, glue("out/forecast/{y}_{max(ens.pred$date)}.rds"))
 }
-
-
-
-
-# store output ------------------------------------------------------------
 
 
