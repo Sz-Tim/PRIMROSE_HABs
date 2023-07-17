@@ -311,8 +311,8 @@ saveRDS(tox.ls$compiled, "data/2_new/data_tox_all.rds")
 obs_end <- list(
   hab=max(hab.ls$obs$date),
   tox=max(tox.ls$obs$date),
-  cmems=ymd(str_sub(dir("data/2_new", "cmems_end"), 11, 20)),
-  wrf=ymd(str_sub(dir("data/2_new", "wrf_end"), 9, 18))
+  cmems=max(ymd(str_sub(dir("data/2_new", "cmems_end"), 11, 20))),
+  wrf=max(ymd(str_sub(dir("data/2_new", "wrf_end"), 9, 18)))
 )
 saveRDS(obs_end, "data/2_new/obs_end.rds")
 
