@@ -507,7 +507,9 @@ extract_env_buffers <- function(site.buffer, vars, env.df, id_env) {
         ij <- ij+1
       }
       if(i %% 50 == 0) {
-        cat(i, "of", nrow(site.buffer), "--", Sys.time()-startTime, "\n")
+        cat(i, "of", nrow(site.buffer), "--", 
+            round(as.numeric(difftime(Sys.time(), startTime, units="min")), 2), 
+            "minutes \n")
       }
     }
   } else {
@@ -524,7 +526,9 @@ extract_env_buffers <- function(site.buffer, vars, env.df, id_env) {
         ij <- ij+1
       }
       if(i %% 50 == 0) {
-        cat(i, "of", nrow(site.buffer), "--", Sys.time()-startTime, "\n")
+        cat(i, "of", nrow(site.buffer), "--", 
+            round(as.numeric(difftime(Sys.time(), startTime, units="min")), 2), 
+            "minutes \n")
       }
     }
   }

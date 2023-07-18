@@ -7,7 +7,10 @@
 
 # setup -------------------------------------------------------------------
 
-if(Sys.info()['sysname'] == "Linux") setwd("~/PRIMROSE_HABs/")
+if(Sys.info()['sysname'] == "Linux") {
+  setwd("~/PRIMROSE_HABs/")
+  sink("~/hab_pred.log")
+}
 library(raster)
 library(gdistance)
 library(tidyverse)
@@ -19,7 +22,7 @@ library(jsonlite)
 library(WeStCOMS)
 source("code/00_fn.R")
 
-cat("Starting operational updates:", as.character(Sys.time()), "\n")
+cat("-------- Starting operational updates:", as.character(Sys.time()), "\n")
 
 daysBuffer <- 10
 daysForecast <- 7
@@ -63,7 +66,7 @@ old_end <- readRDS("data/1_current/obs_end.rds") |>
 # sampling locations and dates --------------------------------------------
 
 
-cat("  Reading from database:", as.character(Sys.time()), "\n")
+cat("-------- Reading from database:", as.character(Sys.time()), "\n")
 
 if(Sys.info()["sysname"]=="Windows") {
   site_hab.df <- readRDS("data/site_hab_df.rds")
@@ -104,7 +107,7 @@ if(Sys.info()["sysname"]=="Windows") {
 
 # refresh datasets --------------------------------------------------------
 
-cat("  Reading CMEMS:", as.character(Sys.time()), "\n")
+cat("-------- Reading CMEMS:", as.character(Sys.time()), "\n")
 
 # . CMEMS  download -------------------------------------------------------
 cmems_cred <- readRDS("data/cmems_cred.rds")
@@ -182,7 +185,7 @@ saveRDS(cmems.buffer_tox |> select(-ends_with("Dt")), "data/2_new/cmems_siteBuff
 
 
 # . WRF  download ---------------------------------------------------------
-cat("  Reading WRF:", as.character(Sys.time()), "\n")
+cat("-------- Reading WRF:", as.character(Sys.time()), "\n")
 
 wrf.out <- "data/00_env/wrf/"
 get_WRF(wrf.dir="https", nDays_buffer=daysBuffer, 
@@ -267,7 +270,7 @@ saveRDS(wrf.buffer_tox |> select(-ends_with("Dt")), "data/2_new/wrf_siteBufferNS
 
 # autoregression ----------------------------------------------------------
 
-cat("  Calculating autoregression:", as.character(Sys.time()), "\n")
+cat("-------- Calculating autoregression:", as.character(Sys.time()), "\n")
 
 # calculate y
 hab.df <- calc_y_features(readRDS("data/2_new/fsa_df.rds"),
@@ -299,7 +302,7 @@ saveRDS(habAvg_tox.df, "data/2_new/tox_habAvg.rds")
 
 # compile -----------------------------------------------------------------
 
-cat("  Compiling datasets:", as.character(Sys.time()), "\n")
+cat("-------- Compiling datasets:", as.character(Sys.time()), "\n")
 
 # HABs
 hab.ls <- load_datasets("2_new", "hab")
@@ -362,7 +365,7 @@ out.dir <- glue("out/compiled/")
 ens.dir <- "out/ensembles/"
 
 
-cat("  Generating forecasts at", as.character(Sys.time()), "\n")
+cat("-------- Generating forecasts at", as.character(Sys.time()), "\n")
 registerDoParallel(10)
 foreach(i=1:nrow(covSet.df)) %dopar% {
 # for(i in 1:nrow(covSet.df)) {
@@ -435,7 +438,7 @@ foreach(i=1:nrow(covSet.df)) %dopar% {
   saveRDS(fc.ls, glue("{outSet.dir}/{y}_fc.rds"))
 }
 
-cat("  Generating ensembles at", as.character(Sys.time()), "\n")
+cat("-------- Generating ensembles at", as.character(Sys.time()), "\n")
 site_all.df <- bind_rows(readRDS("data/site_hab_df.rds") |> select(sin, siteid, lon, lat) |> mutate(type="HABs"),
                          readRDS("data/site_tox_df.rds") |> select(sin, siteid, lon, lat) |> mutate(type="Biotoxins"))
 for(y in y_resp) {
