@@ -7,6 +7,7 @@
 
 # setup -------------------------------------------------------------------
 
+if(Sys.info()['sysname'] == "Linux") setwd("~/PRIMROSE_HABs/")
 library(raster)
 library(gdistance)
 library(tidyverse)
