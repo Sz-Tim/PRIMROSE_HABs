@@ -366,14 +366,14 @@ ens.dir <- "out/ensembles/"
 
 
 cat("-------- Generating forecasts at", as.character(Sys.time()), "\n")
-registerDoParallel(10)
+registerDoParallel(20)
 foreach(i=1:nrow(covSet.df)) %dopar% {
 # for(i in 1:nrow(covSet.df)) {
   
   covSet <- covSet.df$f[i]
   
   fit.dir <- glue("out/model_fits/{covSet}/")
-  ens.dir <- "out/model_fits/ensembles/"
+  ens.dir <- "out/ensembles/"
   outSet.dir <- glue("out/compiled/{covSet}/")
   
   y_i <- bind_rows(read_csv("data/i_hab.csv", show_col_types=F) |> 
@@ -425,7 +425,7 @@ foreach(i=1:nrow(covSet.df)) %dopar% {
     filter(y==y_i.i$abbr) |>
     select(where(~any(!is.na(.x)))) |>
     add_dummy_columns() |>
-    na.omit(cols=grep(covs_exclude, unname(unlist(all_covs)), invert=T, value=T))
+    na_omit_col(grep(covs_exclude, unname(unlist(all_covs)), invert=T, value=T))
   
   responses <- c(alert="alert")
   obs.train <- training(readRDS(glue("data/0_init/{y}_{covSet}_dataSplit.rds")))
@@ -438,6 +438,9 @@ foreach(i=1:nrow(covSet.df)) %dopar% {
   saveRDS(fc.ls, glue("{outSet.dir}/{y}_fc.rds"))
 }
 
+
+
+
 cat("-------- Generating ensembles at", as.character(Sys.time()), "\n")
 site_all.df <- bind_rows(readRDS("data/site_hab_df.rds") |> select(sin, siteid, lon, lat) |> mutate(type="HABs"),
                          readRDS("data/site_tox_df.rds") |> select(sin, siteid, lon, lat) |> mutate(type="Biotoxins"))
@@ -446,7 +449,7 @@ for(y in y_resp) {
   responses <- c(alert="alert")
   cv.ls <- readRDS(glue("{out.dir}/{y}_cv.rds"))
   wt.ls <- readRDS(glue("{out.dir}/{y}_wt.rds"))
-  fc.ls <- merge_pred_dfs(dirf("out/compiled", glue("{y}_fc_ls.rds"), recursive=T))
+  fc.ls <- merge_pred_dfs(dirf("out/compiled", glue("{y}_fc.rds"), recursive=T))
   
   fc.ls <- map(responses, ~calc_ensemble(fc.ls, wt.ls, .x, y_i.i, "wtmean"))
   fc.ls <- map(responses, ~calc_ensemble(fc.ls, cv.ls, .x, y_i.i, "GLM_oos", ens.dir))

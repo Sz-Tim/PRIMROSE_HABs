@@ -2390,6 +2390,31 @@ calc_R2 <- function(dat.df, type="mf", ...) {
 
 
 
+
+
+
+#' Omit rows with NAs in any of the columns specified
+#' 
+#' Similar to na.omit, but only filters based on the columns given.
+#'
+#' @param df Dataframe
+#' @param ... Unquoted column names
+#'
+#' @return
+#' @export
+#'
+#' @examples
+na_omit_col <- function(df, ...) {
+  na_rows <- df |>
+    ungroup() |> 
+    select(any_of(...))|>
+    mutate(row_id=row_number()) |>
+    na.omit()
+  return(df[na_rows$row_id,])
+}
+
+
+
 # deprecated: to delete ---------------------------------------------------
 
 
