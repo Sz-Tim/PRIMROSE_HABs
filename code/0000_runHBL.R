@@ -29,9 +29,9 @@ covSet.df <- expand_grid(y=y_resp,
          f=glue("{id}-Avg{Avg}_Xf{Xf}_XN{XN}_Del{Del}")) %>%
   ungroup %>%
   arrange(y, id) %>%
-  filter(id %in% c(12,14,16)) 
+  filter(Xf==1 & Avg==1)
 cores_per_model <- 3
-n_spp_parallel <- 27
+n_spp_parallel <- 9
 
 
 registerDoParallel(n_spp_parallel)
