@@ -443,8 +443,8 @@ grep("wrf_id|date|siteid|version",
 obs_end <- list(
   hab=max(hab.ls$obs$date),
   tox=max(tox.ls$obs$date),
-  cmems=ymd(str_sub(dir("data/0_init", "cmems_end"), 11, 20)),
-  wrf=ymd(str_sub(dir("data/0_init", "wrf_end"), 9, 18))
+  cmems=max(ymd(str_sub(dir("data/0_init", "cmems_end"), 11, 20))),
+  wrf=max(ymd(str_sub(dir("data/0_init", "wrf_end"), 9, 18)))
 )
 saveRDS(obs_end, "data/0_init/obs_end.rds")
 
