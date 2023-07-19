@@ -17,19 +17,25 @@ y_i <- bind_rows(read_csv("data/i_hab.csv") |> arrange(abbr) |> mutate(type="hab
 y_resp <- c("Alsp", "PSP", "Disp", "DSP", "Pssp", "Psde", "Psse", "ASP", "Kami")
 
 mod_i <- tibble(levels=c("nullGrand", "null4wk", "nullAuto", "perfect",
-                         "ens", "ensLogitMn", "ensGLM",
-                         "ensHB", "ensRF1", 
+                         "ens", "ensLogitMn", "ensGLM", "ensGLM2",
+                         "ensHB", "ensRF", "ensRF2", 
                          "Ridge", "MARS", "NN", 
                          "RF", "Boost",
                          "HBL1"),
-                labels=c("Null (grand)", "Null (\u00B12wk avg)", "Null (auto)", "perfect", 
-                         "Ens-WtMn", "Ens-LogitWtMn", "Ens-Ridge", 
-                         "Ens-HB", "Ens-RF", 
-                         "Ridge GLM", "MARS", "NeuralNetwork",
-                         "RandForest", "XGBoost",
-                         "Bayes"))
+                labels=c("Null (int.)", "Null (\u00B12wk avg)", "Null (auto)", "perfect", 
+                         "Ens-WtMn", "Ens-LogitWtMn", "Ens-Ridge", "Ens-Ridge2", 
+                         "Ens-HB", "Ens-RF", "Ens-RF2", 
+                         "Ridge", "MARS", "NN",
+                         "RF", "XGB",
+                         "HB"))
+# labels=c("Null (intercept)", "Null (\u00B12wk avg)", "Null (auto)", "perfect", 
+#          "Ens-WtMn", "Ens-LogitWtMn", "Ens-Ridge", "Ens-Ridge2", 
+#          "Ens-HB", "Ens-RF", "Ens-RF2", 
+#          "Ridge GLM", "MARS", "NeuralNetwork",
+#          "RandForest", "XGBoost",
+#          "Bayes"))
 mod_cols <- c(rep("grey", 3), "grey30",
-              rep("black", 5),
+              rep("grey30", 7),
               "#b2df8a", "#33a02c", "#ff7f00", 
               "#cab2d6", "#6a3d9a",
               "#1f78b4") |>
@@ -58,11 +64,11 @@ fit.ls$alert_L <- fit.ls$alert |>
                        str_split_fixed(str_remove(model, "PCA."), "\\.", 2)[,2],
                        str_remove(model, "PCA."))) |> 
   mutate(model=factor(model, levels=mod_i$levels, labels=mod_i$labels),
-         covSet=factor(covSet, levels=c(paste0("d", 1:16), "ens", "ensLogitMn", "ensGLM",
+         covSet=factor(covSet, levels=c(paste0("d", 1:16), "ens", "ensLogitMn", "ensGLM", "ensGLM2",
                                         "null4wk", "nullAuto", "nullGrand", "perfect"))) |>
   left_join(d_i |> select(-f)) |>
   mutate(covSet=factor(covSet, levels=c(levels(d_i$covSet_reorder), 
-                                        "ens", "ensLogitMn", "ensGLM",
+                                        "ens", "ensLogitMn", "ensGLM", "ensGLM2",
                                         "null4wk", "nullAuto", "nullGrand", "perfect")),
          y=factor(y, levels=y_resp))
     
@@ -77,11 +83,11 @@ oos.ls$alert_L <- oos.ls$alert |>
                        str_split_fixed(str_remove(model, "PCA."), "\\.", 2)[,2],
                        str_remove(model, "PCA."))) |> 
   mutate(model=factor(model, levels=mod_i$levels, labels=mod_i$labels),
-         covSet=factor(covSet, levels=c(paste0("d", 1:16), "ens", "ensLogitMn", "ensGLM",
+         covSet=factor(covSet, levels=c(paste0("d", 1:16), "ens", "ensLogitMn", "ensGLM", "ensGLM2",
                                         "null4wk", "nullAuto", "nullGrand", "perfect"))) |>
   left_join(d_i |> select(-f)) |>
   mutate(covSet=factor(covSet, levels=c(levels(d_i$covSet_reorder), 
-                                        "ens", "ensLogitMn", "ensGLM",
+                                        "ens", "ensLogitMn", "ensGLM", "ensGLM2",
                                         "null4wk", "nullAuto", "nullGrand", "perfect")),
          y=factor(y, levels=y_resp))
 
@@ -94,9 +100,9 @@ oos.ls$alert_L <- oos.ls$alert |>
 gc()
 thresh.fit <- list(
   compute_thresholds(fit.ls$alert_L |> filter(!grepl("Null", model)), 
-                     0.01, 0.9, 0.02, byPrevAlert=T, cores=12),
+                     0.01, 0.9, 0.05, byPrevAlert=T, cores=20),
   compute_thresholds(fit.ls$alert_L |> filter(grepl("Null", model)), 
-                     0.01, 0.9, 0.02, byPrevAlert=F, cores=12)
+                     0.01, 0.9, 0.05, byPrevAlert=F, cores=20)
 )
 gc()
 opt.F1 <- list(
@@ -135,6 +141,10 @@ oos.ls$alert_L <- bind_rows(
   ) |>
   mutate(predF1=factor(if_else(prA1 > optF1, "A1", "A0"), levels=c("A0", "A1")),
          predF2=factor(if_else(prA1 > optF2, "A1", "A0"), levels=c("A0", "A1")))
+
+
+saveRDS(fit.ls$alert_L, "out/clean/out_fit.rds")
+saveRDS(oos.ls$alert_L, "out/clean/out_oos.rds")
 
 
 
@@ -217,7 +227,7 @@ oos.ls$alert_L |>
   mutate(AUCPR=map_dbl(dat, ~average_precision(.x, alert, prA1, event_level="second")$.estimate),
          AUCNPR=(AUCPR-AUCPR_min)/(1-AUCPR_min)) |>
   select(-dat) |>
-  filter(model != "Null (grand)") |>
+  filter(model != "Null (intercept)") |>
   ggplot(aes(covSet, AUCNPR, colour=model, shape=PCA)) + 
   geom_point() + 
   geom_line(aes(group=paste(model, PCA))) +
@@ -238,7 +248,7 @@ oos.ls$alert_L |>
   mutate(AUCPR=map_dbl(dat, ~average_precision(.x, alert, prA1, event_level="second")$.estimate),
          AUCNPR=(AUCPR-AUCPR_min)/(1-AUCPR_min)) |>
   select(-dat) |>
-  filter(model != "Null (grand)") |>
+  filter(model != "Null (intercept)") |>
   ggplot(aes(covSet, AUCNPR, colour=model, shape=PCA)) + 
   geom_point() + 
   geom_line(aes(group=paste(model, PCA))) +
@@ -304,17 +314,35 @@ oos.ls$alert_L |>
   facet_wrap(~y) +
   theme(axis.text.x=element_text(angle=270, hjust=0, vjust=0.5))
 
+
+
+oos.ls$alert_L |>
+  filter(!grepl("perfect", model)) |>
+  filter(grepl("intercept|2wk|Ens", model)) |>
+  mutate(prA1=if_else(prA1==0, 1e-5, prA1),
+         prA1=if_else(prA1==1, 1-1e-5, prA1),
+         alert=as.numeric(alert=="A1")) |>
+  group_by(y, model, PCA, covSet) |>
+  calc_R2(type="vz") |>
+  filter(!is.na(R2)) |>
+  ggplot(aes(covSet, R2, colour=model, linetype=PCA, shape=PCA)) + 
+  geom_point() +
+  geom_line(aes(group=paste(model, PCA)), linewidth=0.8) + 
+  scale_colour_manual(values=mod_cols) +
+  scale_shape_manual(values=c(19, 1)) +
+  labs(x="Model", y="VZ R2 (oos)") + 
+  facet_grid(.~y) + 
+  theme(panel.grid.minor=element_blank(), 
+        axis.text.x=element_text(angle=270, hjust=0, vjust=0.5),
+        legend.position="bottom")
+
 oos.ls$alert_L |>
   filter(!grepl("perfect", model)) |>
   mutate(prA1=if_else(prA1==0, 1e-5, prA1),
-         prA1=if_else(prA1==1, 1-1e-5, prA1)) |>
-  group_by(y, model, PCA, covSet) |>
-  mutate(alert=as.numeric(alert=="A1")) |>
-  summarise(LL=sum(dbinom(alert, 1, prA1, log=T))) |>
-  group_by(y) |>
-  arrange(y, model) |>
-  mutate(R2=1 - LL/first(LL)) |>
-  filter(model != "Null (grand)") |>
+         prA1=if_else(prA1==1, 1-1e-5, prA1),
+         alert=as.numeric(alert=="A1")) |>
+  calc_R2(type="mf", y) |>
+  filter(model != "Null (intercept)") |>
   filter(!is.na(R2)) |>
   ggplot(aes(covSet, R2, colour=model, linetype=PCA, shape=PCA)) + 
   geom_point() +
@@ -329,14 +357,10 @@ oos.ls$alert_L |>
 oos.ls$alert_L |>
   filter(!grepl("perfect", model)) |>
   mutate(prA1=if_else(prA1==0, 1e-5, prA1),
-         prA1=if_else(prA1==1, 1-1e-5, prA1)) |>
-  group_by(y, model, PCA, covSet, siteid) |>
-  mutate(alert=as.numeric(alert=="A1")) |>
-  summarise(LL=sum(dbinom(alert, 1, prA1, log=T))) |>
-  group_by(y, siteid) |>
-  arrange(y, model) |>
-  mutate(R2=1 - LL/first(LL)) |>
-  filter(model != "Null (grand)") |>
+         prA1=if_else(prA1==1, 1-1e-5, prA1),
+         alert=as.numeric(alert=="A1")) |>
+  calc_R2(type="mf", y, siteid) |>
+  filter(model != "Null (intercept)") |>
   group_by(y, model, PCA, covSet) |>
   summarise(R2_mn=mean(R2), se=sd(R2)/sqrt(n())) |>
   filter(!is.na(R2_mn)) |>
@@ -360,7 +384,7 @@ oos.ls$alert_L |>
   group_by(y, siteid) |>
   arrange(y, model) |>
   mutate(R2=1 - LL/first(LL)) |>
-  filter(model != "Null (grand)") |>
+  filter(model != "Null (intercept)") |>
   ggplot(aes(covSet, R2, fill=model)) + 
   geom_boxplot() +
   scale_fill_manual(values=mod_cols) +
@@ -447,7 +471,7 @@ oos.ls$alert_L |>
   group_by(y) |>
   arrange(y, model) |>
   mutate(R2=1 - LL/first(LL)) |>
-  filter(model != "Null (grand)") |>
+  filter(model != "Null (intercept)") |>
   filter(!is.na(R2)) |>
   mutate(R2=if_else(R2 < 0, 0, R2)) |>
   ggplot(aes(covSet, R2, colour=PCA, group=PCA)) + geom_point() + geom_line() +
@@ -466,6 +490,14 @@ oos.ls$alert_L |>
   geom_point() + geom_line() +
   scale_colour_manual(values=mod_cols) +
   facet_grid(PCA~y) + labs(x="", y="PR-AUC")
+oos.ls$alert_L |> 
+  filter(grepl("^d", covSet)) |>
+  na.omit() |>
+  group_by(y, model, covSet, PCA) |>
+  average_precision(prA1, truth=alert, event_level="second") |>
+  ggplot(aes(covSet, .estimate, colour=PCA, group=PCA)) + 
+  geom_point(size=2, alpha=0.5) + geom_line() +
+  facet_grid(model~y) + labs(x="", y="PR-AUC")
 
 oos.ls$alert_L |> 
   filter(grepl("^d", covSet)) |>
@@ -477,15 +509,6 @@ oos.ls$alert_L |>
   scale_colour_manual(values=mod_cols) +
   facet_grid(PCA~y) + labs(x="", y="F1")
 
-oos.ls$alert_L |> 
-  filter(grepl("^d", covSet)) |>
-  na.omit() |>
-  group_by(y, model, PCA, covSet) |>
-  j_index(predJ, truth=alert, event_level="second") |>
-  ggplot(aes(covSet, .estimate, colour=model, group=model)) + 
-  geom_point() + geom_line() +
-  scale_colour_manual(values=mod_cols) +
-  facet_grid(PCA~y) + labs(x="", y="J")
 
 oos.ls$alert_L |>
   filter(model != "perfect") |>
@@ -497,14 +520,14 @@ oos.ls$alert_L |>
   group_by(y) |>
   arrange(model) |>
   mutate(R2=1 - LL/first(LL)) |>
-  filter(model != "Null (grand)") |>
+  filter(model != "Null (intercept)") |>
   arrange(desc(R2)) |>
   slice_head(n=1) |>
   ungroup() |>
   arrange(desc(R2))
 
 oos.ls$alert_L |>
-  filter(grepl("grand|wk|Ens", model)) |>
+  filter(grepl("intercept|wk|Ens", model)) |>
   mutate(prA1=if_else(prA1==0, 1e-5, prA1),
          prA1=if_else(prA1==1, 1-1e-5, prA1)) |>
   group_by(y, model, PCA, covSet) |>
@@ -513,7 +536,7 @@ oos.ls$alert_L |>
   group_by(y) |>
   arrange(model) |>
   mutate(R2=1 - LL/first(LL)) |>
-  filter(model != "Null (grand)") |>
+  filter(model != "Null (intercept)") |>
   group_by(y) |>
   arrange(model) |>
   mutate(delta=R2-first(R2)) |>
@@ -535,7 +558,7 @@ oos.ls$alert_L |>
   group_by(y, siteid) |>
   arrange(y, model) |>
   mutate(R2=1 - LL/first(LL)) |>
-  filter(model != "Null (grand)") |>
+  filter(model != "Null (intercept)") |>
   group_by(y, model, PCA, covSet) |>
   summarise(R2_mn=mean(R2), se=sd(R2)/sqrt(n()), nA1=sum(nA1), mnPA1=mean(pA1)) |>
   ungroup() |>
@@ -546,7 +569,7 @@ oos.ls$alert_L |>
   arrange(desc(R2_mn))
 
 oos.ls$alert_L |>
-  filter(grepl("grand|wk|Ens", model)) |>
+  filter(grepl("intercept|wk|Ens", model)) |>
   mutate(prA1=if_else(prA1==0, 1e-5, prA1),
          prA1=if_else(prA1==1, 1-1e-5, prA1)) |>
   # filter(PCA != "lnN") |>
@@ -558,10 +581,10 @@ oos.ls$alert_L |>
   group_by(y, siteid) |>
   arrange(y, model) |>
   mutate(R2=1 - LL/first(LL)) |>
-  filter(model != "Null (grand)") |>
+  filter(model != "Null (intercept)") |>
   group_by(y, model, PCA, covSet) |>
   summarise(R2_mn=mean(R2), se=sd(R2)/sqrt(n()), nA1=sum(nA1), mnPA1=mean(pA1)) |>
-  filter(model != "Null (grand)") |>
+  filter(model != "Null (intercept)") |>
   group_by(y) |>
   arrange(model) |>
   mutate(delta=R2_mn-first(R2_mn)) |>
@@ -583,7 +606,7 @@ oos.ls$alert_L |>
   group_by(y, siteid) |>
   arrange(y, model) |>
   mutate(R2=1 - LL/first(LL)) |>
-  filter(model != "Null (grand)") |>
+  filter(model != "Null (intercept)") |>
   group_by(y, model, PCA, covSet) |>
   summarise(R2_mn=mean(R2), se=sd(R2)/sqrt(n()), nA1=sum(nA1), mnPA1=mean(pA1)) |>
   ungroup() |>
@@ -612,7 +635,7 @@ siteR2 <- oos.ls$alert_L |>
   group_by(y, siteid) |>
   arrange(y, model) |>
   mutate(R2=1 - LL/first(LL)) |>
-  filter(model != "Null (grand)") |>
+  filter(model != "Null (intercept)") |>
   mutate(type=y_i$type[match(y, y_i$abbr)]) |>
   left_join(site.df)
 
@@ -658,7 +681,7 @@ siteR2 |>
   facet_wrap(~y, nrow=2) + theme_classic()
 
 siteAUC <- oos.ls$alert_L |>
-  filter(!grepl("grand", model)) |>
+  filter(!grepl("intercept", model)) |>
   group_by(y, model, PCA, covSet, siteid) |>
   mutate(pA1=mean(alert=="A1")) |>
   ungroup() |>
@@ -721,7 +744,7 @@ sitePRAUC <- oos.ls$alert_L |>
 sitePRAUC <- oos.ls$alert_L |>
   filter(!is.na(prA1)) |>
   find_AUCPR_min(y, siteid) |>
-  filter(!grepl("grand", model)) |>
+  filter(!grepl("intercept", model)) |>
   group_by(y, model, PCA, covSet, siteid) |>
   mutate(pA1=mean(alert=="A1")) |>
   ungroup() |>
@@ -786,7 +809,7 @@ oos.ls$alert_L |>
   group_by(y, siteid) |>
   arrange(y, model) |>
   mutate(R2=1 - LL/first(LL)) |>
-  filter(model != "Null (grand)") |>
+  filter(model != "Null (intercept)") |>
   mutate(anyA1=pA1 > 0) |>
   ggplot(aes(anyA1, R2, fill=model)) + ylim(-1,1) + 
   scale_fill_manual(values=mod_cols) +
@@ -797,7 +820,7 @@ oos.ls$alert_L |>
 
 
 oos.ls$alert_L |> 
-  filter(model %in% c("Null (±2wk avg)", "Ens-WtMn", "Ens-LogitWtMn", "Ens-Ridge")) |>
+  filter(grepl("2wk|Ens-R", model)) |>
   # na.omit() |>
   group_by(y, model, PCA, covSet) |> 
   pr_curve(prA1, truth=alert, event_level="second") |> 
@@ -807,8 +830,7 @@ oos.ls$alert_L |>
   scale_colour_manual(values=mod_cols) + 
   facet_wrap(~y) + ggtitle("oos")
 oos.ls$alert_L |> 
-  filter(model %in% c("Null (grand)", "Null (±2wk avg)", "perfect",
-                      "Ens-WtMn", "Ens-LogitWtMn", "Ens-Ridge")) |>
+  filter(grepl("2wk|intercept|Ens|perfect", model)) |>
   group_by(y, model, PCA, covSet) |> 
   gain_curve(prA1, truth=alert, event_level="second") |> 
   ggplot(aes(.percent_tested, .percent_found, colour=model, group=paste(PCA, covSet, model))) + 
@@ -816,7 +838,7 @@ oos.ls$alert_L |>
   scale_colour_manual(values=mod_cols) + 
   facet_wrap(~y)
 oos.ls$alert_L |> 
-  filter(model %in% c("Null (±2wk avg)", "Ens-WtMn", "Ens-LogitWtMn", "Ens-Ridge")) |>
+  filter(grepl("2wk|Ens-R", model)) |>
   # na.omit() |>
   group_by(y, model, PCA, covSet) |> 
   roc_curve(prA1, truth=alert, event_level="second") |> 
@@ -827,7 +849,7 @@ oos.ls$alert_L |>
 
 fit.ls$alert_L |> 
   # na.omit() |>
-  filter(model %in% c("Null (±2wk avg)", "Ens-WtMn", "Ens-LogitWtMn", "Ens-Ridge")) |>
+  filter(grepl("2wk|Ens", model)) |>
   group_by(y, model, PCA, covSet) |> 
   pr_curve(prA1, truth=alert, event_level="second") |> 
   filter(recall > 0) |>
@@ -836,8 +858,7 @@ fit.ls$alert_L |>
   scale_colour_manual(values=mod_cols) + 
   facet_wrap(~y) + ggtitle("fit")
 fit.ls$alert_L |> 
-  filter(model %in% c("Null (grand)", "Null (±2wk avg)", "perfect",
-                      "Ens-WtMn", "Ens-LogitWtMn", "Ens-Ridge")) |>
+  filter(grepl("2wk|intercept|Ens|perfect", model)) |>
   group_by(y, model, PCA, covSet) |> 
   gain_curve(prA1, truth=alert, event_level="second") |> 
   ggplot(aes(.percent_tested, .percent_found, colour=model, group=paste(PCA, covSet, model))) + 
@@ -845,7 +866,7 @@ fit.ls$alert_L |>
   scale_colour_manual(values=mod_cols) + 
   facet_wrap(~y)
 fit.ls$alert_L |> 
-  filter(model %in% c("Null (±2wk avg)", "Ens-WtMn", "Ens-LogitWtMn", "Ens-Ridge")) |>
+  filter(grepl("2wk|Ens", model)) |>
   # na.omit() |>
   group_by(y, model, PCA, covSet) |> 
   roc_curve(prA1, truth=alert, event_level="second") |> 
@@ -859,84 +880,119 @@ fit.ls$alert_L |>
 # ranks -------------------------------------------------------------------
 
 
-
-oos.ls$alert_L |> 
-  filter(model != "perfect") |>
-  filter(!grepl("grand", model)) |>
+library(kerneval)
+rank.df <-  oos.ls$alert_L |> 
+  select(y, model, covSet, PCA, alert, prA1) |>
+  filter(!grepl("perfect|auto", model)) |>
   na.omit() |>
-  group_by(y, model, PCA, covSet) |>
-  average_precision(prA1, truth=alert, event_level="second") |>
-  arrange(y, desc(.estimate)) |>
+  find_AUCPR_min(y) |>
+  nest(dat=c(prA1, alert)) |>
+  mutate(AUCPR=map_dbl(dat, ~average_precision(.x, alert, prA1, event_level="second")$.estimate),
+         AUCNPR=(AUCPR-AUCPR_min)/(1-AUCPR_min)) |>
+  select(-dat) |>
   group_by(y) |>
-  mutate(rank=row_number()) |>
-  group_by(model, covSet) |>
-  summarise(mdRank=median(rank),
-            mnRank=mean(rank)) |>
-  ungroup() |>
-  arrange(mnRank) |>
-  print(n=36)
-
-
-
-rank.df <-  bind_rows(oos.ls$alert_L |> 
-                        select(y, model, covSet, PCA, alert, prA1) |>
-                        filter(model != "perfect") |>
-                        na.omit() |>
-                        find_AUCPR_min(y) |>
-                        nest(dat=c(prA1, alert)) |>
-                        mutate(AUCPR=map_dbl(dat, ~average_precision(.x, alert, prA1, event_level="second")$.estimate),
-                               AUCNPR=(AUCPR-AUCPR_min)/(1-AUCPR_min)) |>
-                        select(-dat) |>
-                        arrange(desc(AUCNPR)) |>
-                        group_by(y) |>
-                        mutate(rank=row_number(),
-                               .metric="PR-AUC",
-                               .estimator="binary") |>
-                        rename(.estimate=AUCNPR) |> select(-AUCPR),
-                      oos.ls$alert_L |> 
-                        filter(model != "perfect") |>
-                        filter(!grepl("grand", model)) |>
-                        group_by(y, model, PCA, covSet) |>
-                        roc_auc(prA1, truth=alert, event_level="second") |>
-                        arrange(y, desc(.estimate)) |>
-                        group_by(y) |>
-                        mutate(rank=row_number(),
-                               .metric="ROC-AUC")) |>
+  mutate(rank=min_rank(desc(AUCNPR)),
+         .metric="PR-AUC") |>
+  rename(.estimate=AUCNPR) |> select(-AUCPR) |>
+  bind_rows(oos.ls$alert_L |> 
+              filter(!grepl("perfect|auto", model)) |>
+              group_by(y, model, PCA, covSet) |>
+              roc_auc(prA1, truth=alert, event_level="second") |>
+              group_by(y) |>
+              mutate(rank=min_rank(desc(.estimate)),
+                     .metric="ROC-AUC") |>
+              select(-.estimator)) |>
   bind_rows(oos.ls$alert_L |>
-              filter(model != "perfect") |>
-              filter(!grepl("grand", model)) |>
+              filter(!grepl("perfect|auto", model)) |>
+              select(y, covSet, PCA, model, obsid, alert, prA1) %>%
+              filter(!is.na(prA1)) |>
+              pivot_wider(names_from="alert", values_from="prA1") |>
+              group_by(y, model, PCA, covSet) |>
+              summarise(.estimate=schoenr(density(A0, na.rm=T), density(A1, na.rm=T))) |>
+              group_by(y) |>
+              mutate(rank=min_rank(.estimate),
+                     .metric="Schoener's D")) |>
+  bind_rows(oos.ls$alert_L |>
+              filter(!grepl("perfect|auto", model)) |>
               group_by(y, model, PCA, covSet) |>
               f_meas(predF1, truth=alert, beta=1, event_level="second") |>
-              arrange(y, desc(.estimate)) |>
               group_by(y) |>
-              mutate(rank=row_number(),
-                     .metric="F1")) |>
+              mutate(rank=min_rank(desc(.estimate)),
+                     .metric="F1") |>
+              select(-.estimator)) |>
   bind_rows(oos.ls$alert_L |>
-              filter(model != "perfect") |>
-              filter(!grepl("grand", model)) |>
+              filter(!grepl("perfect|auto", model)) |>
               group_by(y, model, PCA, covSet) |>
               accuracy(predF1, truth=alert, event_level="second") |>
-              arrange(y, desc(.estimate)) |>
               group_by(y) |>
-              mutate(rank=row_number(),
-                     .metric="Accuracy (F1)")) |>
+              mutate(rank=min_rank(desc(.estimate)),
+                     .metric="Accuracy (F1)") |>
+              select(-.estimator)) |>
   bind_rows(oos.ls$alert_L |>
-              filter(model != "perfect") |>
-              mutate(prA1=if_else(prA1==0, 1e-5, prA1),
-                     prA1=if_else(prA1==1, 1-1e-5, prA1)) |>
+              filter(!grepl("perfect|auto", model)) |>
               group_by(y, model, PCA, covSet) |>
-              mutate(alert=as.numeric(alert=="A1")) |>
-              summarise(LL=sum(dbinom(alert, 1, prA1, log=T))) |>
+              summarise(.estimate=sum(predF1=="A1" & alert=="A1")/sum(predF1=="A1"))|>
               group_by(y) |>
-              arrange(model) |>
-              mutate(.estimate=1 - LL/first(LL)) |>
-              select(-LL) |>
-              filter(model != "Null (grand)") |>
+              mutate(rank=min_rank(.estimate),
+                     .metric="Precision: TP/(TP+FP) (F1)")) |>
+  bind_rows(oos.ls$alert_L |>
+              filter(!grepl("perfect|auto", model)) |>
+              group_by(y, model, PCA, covSet) |>
+              summarise(.estimate=sum(predF1=="A1" & alert=="A1")/sum(alert=="A1"))|>
+              group_by(y) |>
+              mutate(rank=min_rank(.estimate),
+                     .metric="Recall: TP/(TP+FN) (F1)")) |>
+  bind_rows(oos.ls$alert_L |>
+              filter(!grepl("perfect|auto", model)) |>
+              group_by(y, model, PCA, covSet) |>
+              summarise(.estimate=sum(predF1=="A1" & alert=="A0")/n())|>
+              group_by(y) |>
+              mutate(rank=min_rank(.estimate),
+                     .metric="FPR (F1)")) |>
+  bind_rows(oos.ls$alert_L |>
+              filter(!grepl("perfect|auto", model)) |>
+              group_by(y, model, PCA, covSet) |>
+              summarise(.estimate=sum(predF1=="A1" & alert=="A1")/n())|>
+              group_by(y) |>
+              mutate(rank=min_rank(desc(.estimate)),
+                     .metric="TPR (F1)")) |>
+  bind_rows(oos.ls$alert_L |>
+              filter(!grepl("perfect|auto", model)) |>
+              group_by(y, model, PCA, covSet) |>
+              summarise(.estimate=sum(predF1=="A0" & alert=="A1")/n())|>
+              group_by(y) |>
+              mutate(rank=min_rank(.estimate),
+                     .metric="FNR (F1)")) |>
+  bind_rows(oos.ls$alert_L |>
+              filter(!grepl("perfect|auto", model)) |>
+              group_by(y, model, PCA, covSet) |>
+              summarise(.estimate=sum(predF1=="A0" & alert=="A0")/n())|>
+              group_by(y) |>
+              mutate(rank=min_rank(desc(.estimate)),
+                     .metric="TNR (F1)")) |>
+  bind_rows(oos.ls$alert_L |>
+              filter(!grepl("perfect|auto", model)) |>
+              mutate(prA1=if_else(prA1==0, 1e-5, prA1),
+                     prA1=if_else(prA1==1, 1-1e-5, prA1),
+                     alert=as.numeric(alert=="A1")) |>
+              calc_R2(type="vz", y) |>
+              rename(.estimate=R2) |>
+              mutate(.estimate=pmin(pmax(.estimate, 0), 1)) |>
               na.omit() |>
-              arrange(desc(.estimate)) |>
-              mutate(rank=row_number(),
-                     .metric="McFadden's R2",
-                     .estimator="binary"))
+              mutate(rank=min_rank(desc(.estimate)),
+                     .metric="R2-VZ")) |>
+  bind_rows(oos.ls$alert_L |>
+              filter(!grepl("perfect|auto", model)) |>
+              mutate(prA1=if_else(prA1==0, 1e-5, prA1),
+                     prA1=if_else(prA1==1, 1-1e-5, prA1),
+                     alert=as.numeric(alert=="A1")) |>
+              calc_R2(type="mf", y) |>
+              rename(.estimate=R2) |>
+              na.omit() |>
+              mutate(rank=min_rank(desc(.estimate)),
+                     .metric="R2-MF"))
+
+saveRDS(rank.df, "out/clean/rank_oos.rds")
 
 rank.df |>
   filter(.metric!="roc_auc") |>
@@ -987,19 +1043,14 @@ rank.df |>
   scale_fill_viridis_d() + 
   labs(x="", y="Rank") + facet_wrap(~model)
 
-
-ggplot(rank.df, aes(.metric, rank, fill=model)) + 
-  geom_boxplot() +
-  scale_fill_manual(values=mod_cols) + 
-  labs(x="", y="Rank") +
-  facet_grid(y~.metric, scales="free_x")
-
 rank.df |>
+  filter(grepl("AUC|R2", .metric)) |>
   ggplot(aes(covSet, .estimate, colour=model, shape=PCA, group=paste(model, PCA))) + 
   geom_point() + geom_line() + 
   scale_colour_manual(values=mod_cols) + 
   scale_shape_manual(values=c(19, 1)) +
-  facet_grid(.metric~y, scales="free_y")
+  ylim(0, 1) + facet_grid(.metric~y) 
+  # ylim(0, NA) + facet_grid(.metric~y, scales="free_y")
 rank.df |>
   filter(grepl("4wk|ens", covSet)) |>
   ggplot(aes(covSet, .estimate, colour=model)) + 
@@ -1008,18 +1059,22 @@ rank.df |>
   scale_shape_manual(values=c(19, 1)) +
   facet_grid(.metric~y, scales="free_y")
 rank.df |>
-  filter(grepl("4wk|ens[LG]", covSet)) |>
+  filter(grepl("4wk|ensGLM|ensHB", covSet)) |>
+  filter(grepl("AUC|R2|D|Accuracy", .metric)) |>
+  # filter(grepl("Grand|4wk|ensG", covSet)) |>
   ggplot(aes(model, .estimate, colour=y, group=y)) + 
   geom_point() + geom_line() +
   scale_colour_brewer("", type="qual", palette=3) +
   ylab("Value") +
-  facet_wrap(~.metric, nrow=1, scales="free_y") +
+  facet_wrap(~.metric, nrow=1) + ylim(NA,1) +
+  # facet_wrap(~.metric, nrow=1, scales="free_y") +
   theme(axis.text.x=element_text(angle=270, hjust=0, vjust=0.5), 
         axis.title.x=element_blank(),
         legend.position="bottom")
 
 rank.df |>
   filter(grepl("Bayes", model)) |>
+  mutate(covSet=factor(covSet, levels=paste0("d", 1:16))) |>
   ggplot(aes(covSet, .estimate, colour=y, shape=PCA, group=paste(model, PCA, y))) + 
   geom_point() + geom_line() +
   scale_shape_manual(values=c(19, 1)) +
@@ -1060,7 +1115,7 @@ oos.ls$alert_L |>
 
 oos.ls$alert_L |>
   filter(grepl("2wk|Ens-Ridge", model)) |>
-  filter(!grepl("grand", model)) |>
+  filter(!grepl("intercept", model)) |>
   group_by(y, alert, model) |>
   get_intervals(prA1, "qi") |>
   ggplot(aes(med, xmin=L05, xmax=L95, model, colour=alert)) + 
@@ -1073,7 +1128,7 @@ oos.ls$alert_L |>
 
 oos.ls$alert_L |>
   filter(grepl("2wk|Ens-Ridge", model)) |>
-  filter(!grepl("grand", model)) |>
+  filter(!grepl("intercept", model)) |>
   group_by(y, prevAlert, alert, model) |>
   get_intervals(prA1, "qi") |>
   ggplot(aes(med, xmin=L05, xmax=L95, model, colour=alert)) + 
@@ -1102,7 +1157,7 @@ oos.ls$alert_L |>
 
 
 oos.ls$alert_L |>
-  filter(grepl("2wk|Ens-Ridge", model)) |>
+  filter(grepl("2wk|Ens-Ridge2", model)) |>
   mutate(pr_round=round(prA1, 1)) |>
   group_by(y, model, pr_round) |>
   summarise(true_alertPr=mean(alert=="A1"), N=n()) |>
@@ -1117,7 +1172,7 @@ oos.ls$alert_L |>
   labs(x="Forecast", y="Prorportion of true alerts")
 
 oos.ls$alert_L |>
-  filter(grepl("2wk|Ens-Ridge", model)) |>
+  filter(grepl("2wk|Ens-Ridge2", model)) |>
   mutate(pr_round=round(prA1, 1)) |>
   group_by(y, model, prevAlert, pr_round) |>
   summarise(true_alertPr=mean(alert=="A1"), N=n()) |>
@@ -1132,26 +1187,31 @@ oos.ls$alert_L |>
   labs(x="Forecast", y="Prorportion of true alerts")
 
 
-# Shoener's D
+
+
+# Mosaics
+library(ggmosaic)
 oos.ls$alert_L |>
-  filter(grepl("2wk|Ens-Ridge", model)) |>
-  select(y, model, obsid, alert, prA1) %>%
-  pivot_wider(names_from="alert", values_from="prA1") |>
-  group_by(y, model) |>
-  summarise(D=schoenr(density(A0, na.rm=T), density(A1, na.rm=T))) %>%
-  ggplot(aes(model, D, colour=y)) + geom_point() + geom_line(aes(group=y)) +
-  scale_colour_brewer("Schoener's D\nObs A0:A1", type="qual", palette=3) + 
-  ylim(0,1)
+  filter(grepl("2wk|Ens-Ridge2", model)) |>
+  rename(Obs=alert, Pred=predF1, Previous=prevAlert) |>
+  ggplot() + 
+  geom_mosaic(aes(x=product(Pred, Obs),
+                  fill=Pred)) + 
+  scale_fill_manual(values=c("grey", "red3")) +
+  facet_grid(y~model) +
+  theme(panel.grid=element_blank())
+
 oos.ls$alert_L |>
-  filter(grepl("2wk|Ens-Ridge", model)) |>
-  select(y, model, obsid, prevAlert, alert, prA1) %>%
-  pivot_wider(names_from="alert", values_from="prA1") |>
-  group_by(y, model, prevAlert) |>
-  summarise(D=schoenr(density(A0, na.rm=T), density(A1, na.rm=T))) %>%
-  ggplot(aes(model, D, colour=y)) + geom_point() + geom_line(aes(group=y)) +
-  scale_colour_brewer("Schoener's D\nObs A0:A1", type="qual", palette=3) +
-  facet_wrap(~prevAlert) +
-  ylim(0,1)
+  filter(grepl("2wk|Ens-Ridge2", model)) |>
+  mutate(Observed=factor(alert, labels=c("None", "Alert")),
+         Predicted=factor(predF1, labels=c("None", "Alert")),
+         Previous=factor(prevAlert, labels=c("t-1: None", "t-1: Alert"))) |>
+  ggplot() + 
+  geom_mosaic(aes(x=product(Predicted, Observed),
+                  fill=Predicted)) + 
+  scale_fill_manual(values=c("grey", "red3")) +
+  facet_grid(y~model*Previous) +
+  theme(panel.grid=element_blank())
 
 
 
@@ -1159,13 +1219,39 @@ oos.ls$alert_L |>
 
 # variable importance -----------------------------------------------------
 
-enet.f <- dirf("out/model_fits/", "_Ridge.rds", recursive=T)
-rf.f <- dirf("out/model_fits/", "_RF.rds", recursive=T)
-nn.f <- dirf("out/model_fits/", "_NN.rds", recursive=T)
+col_metadata <- c("obsid", "y", "date", "year", "yday", "siteid", "lon", "lat")
+col_resp <- c("lnN", "tl", "alert")
+col_cmems <- readRDS("data/cmems_vars.rds")
+col_wrf <- readRDS("data/wrf_vars.rds")
+
+varTypes <- list(
+  spacetime=c("ydayCos", "ydaySin", "ydaySinXydayCos",
+              "latz", "lonz", "lonzXlatz"),
+  main=c(
+    "fetch",
+    "lnNWt1", "lnNAvg1", "prAlertAvg1", "alert1A1",
+    "lnNWt2", "lnNAvg2", "prAlertAvg2", "alert2A1",
+    "lnNPrevYr", "lnNAvgPrevYr", "prAlertPrevYr", "prAlertAvgPrevYr",
+    col_cmems, col_wrf
+  ),
+  UV_interact=c(
+    paste("UWkXfetch", grep("Dir[EW]", col_cmems, value=T), sep="X"),
+    paste("VWkXfetch", grep("Dir[NS]", col_cmems, value=T), sep="X"),
+    paste("UWkXfetch", grep("^[Precip|Shortwave|sst].*Dir[EW]", col_wrf, value=T), sep="X"),
+    paste("VWkXfetch", grep("^[Precip|Shortwave|sst].*Dir[EW]", col_wrf, value=T), sep="X")
+  ),
+  hab=c(outer(filter(y_i, type=="hab")$abbr, c("lnNAvg", "prA"), "paste0"))
+)
+all_covs$interact <- paste("lnNWt1", c(all_covs$main[-2]), sep="X")
+
+enet.f <- dirf("out/model_fits", "_Ridge.rds", recursive=T)
+rf.f <- dirf("out/model_fits", "_RF.rds", recursive=T)
+nn.f <- dirf("out/model_fits", "_NN.rds", recursive=T)
+xgb.f <- dirf("out/model_fits", "_Boost.rds", recursive=T)
 
 vi.df <- bind_rows(
   enet.f |> 
-    map_dfr(~readRDS(.x) |> tidy |> mutate(f=.x)) |> 
+    map_dfr(~readRDS(.x) |> tidy() |> mutate(f=.x)) |> 
     filter(term!="(Intercept)") |>
     group_by(f) |> mutate(Importance=abs(estimate)/max(abs(estimate))) |> ungroup() |>
     rename(Variable=term) |> select(-estimate) |>
@@ -1174,18 +1260,27 @@ vi.df <- bind_rows(
     map_dfr(~readRDS(.x) |> extract_fit_engine() |> vip::vi(scale=T) |> mutate(f=.x)) |>
     group_by(f) |> mutate(Importance=Importance/max(Importance)) |> ungroup() |>
     mutate(model="RF"),
-  nn.f |>
+  # nn.f |>
+  #   map_dfr(~readRDS(.x) |> extract_fit_engine() |> vip::vi(scale=T) |> mutate(f=.x)) |>
+  #   group_by(f) |> mutate(Importance=abs(Importance)/max(abs(Importance))) |> ungroup() |>
+  #   mutate(model="NN"),
+  xgb.f |>
     map_dfr(~readRDS(.x) |> extract_fit_engine() |> vip::vi(scale=T) |> mutate(f=.x)) |>
     group_by(f) |> mutate(Importance=abs(Importance)/max(abs(Importance))) |> ungroup() |>
-    mutate(model="NN")
+    mutate(model="XGB")
 ) |>
   mutate(model=factor(model, levels=mod_i$levels, labels=mod_i$labels),
          y=str_split_fixed(str_split_fixed(f, "/", 4)[,4], "_", 3)[,1]) 
 
 vi.df |>
-  ggplot(aes(Importance, Variable, fill=model)) + 
-  geom_bar(stat="identity", colour="grey30", position="dodge") + 
-  scale_fill_manual(values=mod_cols) +
-  facet_grid(.~y)
+  group_by(y, Variable) |>
+  summarise(Importance_mean=mean(Importance)) |>
+  group_by(y) |>
+  arrange(desc(Importance_mean)) |>
+  slice_head(n = 10) |>
+  ggplot(aes(Importance_mean, Variable)) + 
+  geom_bar(stat="identity") + 
+  facet_wrap(~y, scales="free_y", nrow=1)
 
-
+vi.df |>
+  mutate(varType=)
