@@ -1,0 +1,6 @@
+hab_parameter,full,abbr,clean,N_thresh,tl_thresh,fig_long,fig_short
+ASP_in_mytilus_edulis,asp,ASP,Amnesic Shellfish Poison,0.001,TL1,ASP,ASP
+AZP_in_mytilus_edulis,azas,AZP,Azaspiracids,0.001,TL1,Azaspiracids,AZP
+PSP_in_mytilus_edulis,psp,PSP,Paralytic Shellfish Poison,400,TL2,PSP,PSP
+DSP_in_mytilus_edulis,oa_dtxs_ptxs,DSP,Okadaic Acid/Dinophysistoxins/Pectenotoxins,80,TL2,DSP (OA/DTXs/PTXs),DSP
+YTX_in_mytilus_edulis,ytxs,YTX,Yessotoxins,0.001,TL1,Yessotoxins,YTX

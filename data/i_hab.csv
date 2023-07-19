@@ -1,0 +1,8 @@
+hab_parameter,full,abbr,clean,N_thresh,tl_thresh,fig_long,fig_short
+Alexandrium_spp,alexandrium_sp,Alsp,Alexandrium sp.,1,TL1,Alexandrium,Alexandrium
+Dinophysis_spp,dinophysis_sp,Disp,Dinophysis sp.,80,TL2,Dinophysis,Dinophysis
+Karenia_mikimotoi,karenia_mikimotoi,Kami,Karenia mikimotoi,1.00E-05,TL1,Karenia mikimotoi,K. mikimotoi
+Prorocentrum_lima,prorocentrum_lima,Prli,Prorocentrum lima,80,TL2,P. lima,P. lima
+Pseudo_nitzschia_spp,pseudo_nitzschia_sp,Pssp,Pseudo-nitzschia sp.,40000,TL2,Pseudo-nitzschia,Ps-nitz.
+Pseudo_nitzschia_delicatissima_group,pseudo_nitzschia_delicatissima_group,Psde,Pseudo-nitzschia delicatissima,40000,TL2,Pseudo-nitzschia delicatissima,Ps-nitz. del.
+Pseudo_nitzschia_seriata_ group,pseudo_nitzschia_seriata_group,Psse,Pseudo-nitzschia seriata,40000,TL2,Pseudo-nitzschia seriata,Ps-nitz. ser.
