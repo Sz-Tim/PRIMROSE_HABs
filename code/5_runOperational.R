@@ -430,7 +430,7 @@ foreach(i=1:nrow(covSet.df)) %dopar% {
     na_omit_col(grep(covs_exclude, unname(unlist(all_covs)), invert=T, value=T))
   
   responses <- c(alert="alert")
-  obs.train <- training(readRDS(glue("data/0_init/{y}_{covSet}_dataSplit.rds")))
+  obs.train <- training(readRDS(glue("data/1_current/{y}_{covSet}_dataSplit.rds")))
   prep.ls <- map(responses, ~prep_recipe(obs.train, .x, covs_exclude))
   d.y <- list(forecast=map(prep.ls, ~bake(.x, obs.ls)))
   prepPCA.ls <- map(responses, ~prep_recipe(obs.train, .x, covs_exclude, TRUE))

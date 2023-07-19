@@ -109,7 +109,7 @@ for(i in 1:nrow(covSet.df)) {
   obs.test <- testing(obs.split)
   
   cat("Starting", covSet, "for", y, ":", as.character(Sys.time()), "\n",
-      file=glue("out/logs/d{d}_{y}_Boost-PCA.log"))
+      file=glue("out/logs/d{d}_{y}_ML.log"))
   
   
   
