@@ -191,11 +191,11 @@ library(gganimate)
 animS1 <- ggplot(coast) + 
   geom_sf(fill="grey70", colour="grey70") + 
   geom_point(data=site_month_sum.df, aes(lon, lat, colour=prA, group=sin), shape=1) + 
-  transition_states(month, transition_length=0, state_length=1) +
+  transition_manual(month) +
   scale_x_continuous("Longitude", breaks=c(-8, -4)) +
   scale_y_continuous("Latitude", breaks=c(55, 58, 61)) +
   scale_colour_viridis_c("(warnings+alerts)/N\n", option="rocket") +
-  ggtitle("{closest_state}") +
+  ggtitle("{current_frame}") +
   theme_ms +
   theme(legend.position=c(0.9, 0.2),
         legend.key.width=unit(1, "mm")) + 
