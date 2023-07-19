@@ -409,6 +409,8 @@ foreach(i=1:nrow(covSet.df)) %dopar% {
     hab=c(outer(filter(y_i, type=="hab")$abbr, c("lnNAvg", "prA"), "paste0"))
   )
   all_covs$interact <- paste("lnNWt1", c(all_covs$main[-2]), sep="X")
+  # all_covs$interact <- c(all_covs$interact,
+  #                        paste("lnNWt1", c(all_covs$main[-2]), sep="X"))
   
   covs_exclude <- get_excluded_cov_regex(covSet)
   

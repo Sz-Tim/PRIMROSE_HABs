@@ -27,17 +27,18 @@ covSet.df <- expand_grid(y=y_resp,
   group_by(y) %>%
   mutate(id=row_number(),
          f=glue("{id}-Avg{Avg}_Xf{Xf}_XN{XN}_Del{Del}")) %>%
-  ungroup 
+  ungroup %>%
+  arrange(y, id) %>%
+  filter(id %in% c(12,14,16)) 
 cores_per_model <- 3
-n_spp_parallel <- 8
-base.dir <- "out/" 
+n_spp_parallel <- 27
 
 
 registerDoParallel(n_spp_parallel)
 foreach(i=1:nrow(covSet.df)) %dopar% {
   lapply(pkgs, library, character.only=T)
   source("code/00_fn.R")
-  base.dir <- "out/" 
+  base.dir <- "out/0_init" 
   
   covSet <- covSet.df$f[i]
   d <- covSet.df$id[i]
@@ -81,7 +82,9 @@ foreach(i=1:nrow(covSet.df)) %dopar% {
     ),
     hab=c(outer(filter(y_i, type=="hab")$abbr, c("lnNAvg", "prA"), "paste0"))
   )
-  all_covs$interact <- paste("lnNWt1", c(all_covs$main[-2]), sep="X")
+  # all_covs$interact <- paste("lnNWt1", c(all_covs$main[-2]), sep="X")
+  all_covs$interact <- c(all_covs$interact,
+                         paste("lnNWt1", c(all_covs$main[-2]), sep="X"))
   
   covs_exclude <- get_excluded_cov_regex(covSet)
   
@@ -121,10 +124,10 @@ foreach(i=1:nrow(covSet.df)) %dopar% {
                  test=map(prepPCA.ls, ~bake(.x, obs.test)))
   d.split <- dPCA.split <- map(responses, ~obs.split)
   for(r in responses) {
-    d.split[[r]]$data <- d.split[[r]]$data %>% select(obsid) %>%
-      left_join(bind_rows(d.y$train[[r]], d.y$test[[r]]))
-    dPCA.split[[r]]$data <- dPCA.split[[r]]$data %>% select(obsid) %>%
-      left_join(bind_rows(dPCA.y$train[[r]], dPCA.y$test[[r]]))
+    d.split[[r]]$data <- d.split[[r]]$data %>% select(y, obsid) %>%
+      left_join(bind_rows(d.y$train[[r]], d.y$test[[r]]), by=c("y", "obsid"))
+    dPCA.split[[r]]$data <- dPCA.split[[r]]$data %>% select(y, obsid) %>%
+      left_join(bind_rows(dPCA.y$train[[r]], dPCA.y$test[[r]]), by=c("y", "obsid"))
   }
   
   covs <- filter_corr_covs(all_covs, d.y, covs_exclude)

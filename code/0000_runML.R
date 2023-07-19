@@ -7,7 +7,7 @@
 # setup -------------------------------------------------------------------
 pkgs <- c("tidyverse", "lubridate", "glue", "tidymodels", 
           "nnet", "randomForest", "glmnet", "xgboost", "earth",
-          "brms", "bayesian", "doParallel", "foreach", "butcher")
+          "brms", "bayesian", "doParallel", "butcher")
 lapply(pkgs, library, character.only=T)
 source("code/00_fn.R")
 
@@ -27,19 +27,18 @@ covSet.df <- expand_grid(y=y_resp,
   mutate(id=row_number(),
          f=glue("{id}-Avg{Avg}_Xf{Xf}_XN{XN}_Del{Del}")) %>%
   ungroup %>%
-  arrange(id) 
+  arrange(desc(y), desc(id)) 
 n_spp_parallel <- 1
-cores_per_model <- 50
-base.dir <- "out/" 
+cores_per_model <- 11
 
 
 registerDoParallel(cores_per_model)
-for(i in 72:nrow(covSet.df)) {
+for(i in 1:nrow(covSet.df)) {
 # registerDoParallel(n_spp_parallel)
 # foreach(i=1:nrow(covSet.df)) %dopar% {
   lapply(pkgs, library, character.only=T)
   source("code/00_fn.R")
-  base.dir <- "out/" 
+  base.dir <- "out/0_init" 
   
   covSet <- covSet.df$f[i]
   d <- covSet.df$id[i]
@@ -83,7 +82,9 @@ for(i in 72:nrow(covSet.df)) {
     ),
     hab=c(outer(filter(y_i, type=="hab")$abbr, c("lnNAvg", "prA"), "paste0"))
   )
-  all_covs$interact <- paste("lnNWt1", c(all_covs$main[-2]), sep="X")
+  # all_covs$interact <- paste("lnNWt1", c(all_covs$main[-2]), sep="X")
+  all_covs$interact <- c(all_covs$interact,
+                         paste("lnNWt1", c(all_covs$main[-2]), sep="X"))
   
   covs_exclude <- get_excluded_cov_regex(covSet)
   
@@ -108,7 +109,7 @@ for(i in 72:nrow(covSet.df)) {
   obs.test <- testing(obs.split)
   
   cat("Starting", covSet, "for", y, ":", as.character(Sys.time()), "\n",
-      file=glue("out/logs/d{d}_{y}_ML.log"))
+      file=glue("out/logs/d{d}_{y}_Boost-PCA.log"))
   
   
   
@@ -123,10 +124,10 @@ for(i in 72:nrow(covSet.df)) {
                  test=map(prepPCA.ls, ~bake(.x, obs.test)))
   d.split <- dPCA.split <- map(responses, ~obs.split)
   for(r in responses) {
-    d.split[[r]]$data <- d.split[[r]]$data %>% select(obsid) %>%
-      left_join(bind_rows(d.y$train[[r]], d.y$test[[r]]))
-    dPCA.split[[r]]$data <- dPCA.split[[r]]$data %>% select(obsid) %>%
-      left_join(bind_rows(dPCA.y$train[[r]], dPCA.y$test[[r]]))
+    d.split[[r]]$data <- d.split[[r]]$data %>% select(y, obsid) %>%
+      left_join(bind_rows(d.y$train[[r]], d.y$test[[r]]), by=c("y", "obsid"))
+    dPCA.split[[r]]$data <- dPCA.split[[r]]$data %>% select(y, obsid) %>%
+      left_join(bind_rows(dPCA.y$train[[r]], dPCA.y$test[[r]]), by=c("y", "obsid"))
   }
   
   covs <- filter_corr_covs(all_covs, d.y, covs_exclude)
@@ -163,12 +164,12 @@ for(i in 72:nrow(covSet.df)) {
     fit_model("Ridge", r, form.ls, d.y$train, folds, n_tuneVal, fit.dir, y)
     fit_model("MARS", r, form.ls, dPCA.y$train, foldsPCA, n_tuneVal, fit.dir, y, "_PCA")
     fit_model("MARS", r, form.ls, d.y$train, folds, n_tuneVal, fit.dir, y)
-    fit_model("RF", r, form.ls, dPCA.y$train, foldsPCA, n_tuneVal, fit.dir, y, "_PCA")
-    fit_model("RF", r, form.ls, d.y$train, folds, n_tuneVal, fit.dir, y)
-    fit_model("NN", r, form.ls, dPCA.y$train, foldsPCA, n_tuneVal, fit.dir, y, "_PCA")
-    fit_model("NN", r, form.ls, d.y$train, folds, n_tuneVal, fit.dir, y)
-    fit_model("Boost", r, form.ls, dPCA.y$train, foldsPCA, n_tuneVal, fit.dir, y, "_PCA")
-    fit_model("Boost", r, form.ls, d.y$train, folds, n_tuneVal, fit.dir, y)
+    # fit_model("RF", r, form.ls, dPCA.y$train, foldsPCA, n_tuneVal, fit.dir, y, "_PCA")
+    # fit_model("RF", r, form.ls, d.y$train, folds, n_tuneVal, fit.dir, y)
+    # fit_model("NN", r, form.ls, dPCA.y$train, foldsPCA, n_tuneVal, fit.dir, y, "_PCA")
+    # fit_model("NN", r, form.ls, d.y$train, folds, n_tuneVal, fit.dir, y)
+    # fit_model("Boost", r, form.ls, dPCA.y$train, foldsPCA, n_tuneVal, fit.dir, y, "_PCA")
+    # fit_model("Boost", r, form.ls, d.y$train, folds, n_tuneVal, fit.dir, y)
   }
   # stopCluster(cl)
   
@@ -176,6 +177,17 @@ for(i in 72:nrow(covSet.df)) {
 }
 
 closeAllConnections()
+
+
+
+
+
+
+
+
+
+
+
 
 
 
