@@ -1544,7 +1544,12 @@ fit_model <- function(mod, resp, form.ls, d.ls, opts, tunes, out.dir, y, suffix=
       saveRDS(glue("{out.dir}/cv/{fit_ID}_CV.rds"))
     out <- wf |>
       finalize_workflow(best) |>
-      fit(data=d.ls[[resp]]) |>
+      fit(data=d.ls[[resp]]) 
+    out |> 
+      extract_fit_engine() |>
+      vip::vi(scale=T) |>
+      saveRDS(glue("{out.dir}/vi/{fit_ID}_vi.rds"))
+    out <- out |>
       butcher()
   }
   
@@ -1577,7 +1582,13 @@ fit_model <- function(mod, resp, form.ls, d.ls, opts, tunes, out.dir, y, suffix=
                 formula=form.ls[[resp]]$HB_vars) |>
       add_recipe(recipe(d.ls[[resp]], formula=form.ls[[resp]][[HB_form_dummy]]))
     out <- wf |>
-      fit(data=d.ls[[resp]]) |>
+      fit(data=d.ls[[resp]])
+    out |> 
+      extract_fit_engine() |>
+      fixef() |>
+      as_tibble(rownames="Variable") |>
+      saveRDS(glue("{out.dir}/vi/{fit_ID}_vi.rds"))
+    out <- out |>
       axe_env_bayesian() |>
       axe_env_bayesian()
   }

@@ -24,6 +24,7 @@ dir.create(fit.dir, recursive=T, showWarnings=F)
 dir.create(cv.dir, recursive=T, showWarnings=F)
 dir.create(ens.dir, recursive=T, showWarnings=F)
 dir.create(out.dir, recursive=T, showWarnings=F)
+dir.create(glue("{fit.dir}/vi/"), recursive=T, showWarnings=F)
 
 y_i <- bind_rows(read_csv("data/i_hab.csv") |> arrange(abbr) |> mutate(type="hab"),
                  read_csv("data/i_tox.csv") |> arrange(abbr) |> mutate(type="tox")) |>

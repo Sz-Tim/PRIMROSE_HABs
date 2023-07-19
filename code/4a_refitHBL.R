@@ -48,6 +48,7 @@ foreach(i=1:nrow(covSet.df)) %dopar% {
   dir.create(ens.dir, recursive=T, showWarnings=F)
   dir.create(cv.dir, recursive=T, showWarnings=F)
   dir.create(out.dir, recursive=T, showWarnings=F)
+  dir.create(glue("{fit.dir}/vi/"), recursive=T, showWarnings=F)
   
   y_i <- bind_rows(read_csv("data/i_hab.csv", show_col_types=F) |> 
                      arrange(abbr) |> mutate(type="hab"),
