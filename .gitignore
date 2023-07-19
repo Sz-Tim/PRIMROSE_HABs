@@ -2,6 +2,30 @@
 .Rhistory
 .Rapp.history
 
+# temp data files
+data/0_init/*dataSplit.rds
+data/*/obs_end.rds
+data/*/tox_habAvg.rds
+data/*/cefas_df.rds
+data/*/fsa_df.rds
+data/*/hab_obs.rds
+data/*/tox_obs.rds
+data/*/wrf_*.rds
+data/*/cmems_*.rds
+data/mesh_tmx.rds
+data/cmems_cred.rds
+data/DB_structure.png
+data/*.xlsx
+
+# output
+out/model_fits
+out/0_init
+out/1_current
+out/logs
+
+# temp code files
+code/0000*R
+
 # Session Data files
 .RData
 
