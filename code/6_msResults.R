@@ -208,7 +208,38 @@ anim_save("figs/pub/anim_S1.gif", animS1, nframes=12, fps=2,
 
 # Fig 2 -------------------------------------------------------------------
 
-fig2 <- rank.oos  |>
+fig2 <- rank.oos |>
+  filter(covSet %in% c("nullGrand", "null4wk", "ensGLM")) |>
+  filter(.metric %in% c("PR-AUC", "R2-VZ", "F1", "Schoener's D", "Accuracy (F1)")) |>
+  mutate(.metric=factor(.metric, 
+                        levels=c("PR-AUC", "R2-VZ", "F1", 
+                                 "Accuracy (F1)", "Schoener's D"),
+                        labels=c("PR-AUC", "R['VZ']^2", "F[1]", 
+                                 "Accuracy~(F[1])", "D[overlap]"))) |>
+  mutate(model=factor(model, levels=c("Null (int.)", "Null (\u00B12wk avg)", "Ens-Ridge"),
+                      labels=c("Null (Int)", "Null (\u00B12wk)", "Ensemble"))) |>
+  ggplot(aes(model, .estimate, colour=y, group=y)) + 
+  geom_point(shape=1) + geom_line() +
+  scale_colour_brewer(type="qual", palette=3) +
+  scale_y_continuous("Value", breaks=c(0, 0.5, 1), limits=c(0,1)) +
+  facet_wrap(~.metric, nrow=1, labeller="label_parsed") + 
+  guides(colour=guide_legend(nrow=2)) + 
+  theme_ms +
+  theme(legend.position=c(0.325, 0.925),
+        legend.title=element_blank(),
+        legend.key.height=unit(3, "mm"),
+        axis.text.x=element_text(angle=270, hjust=0, vjust=0.5), 
+        axis.title.x=element_blank(),
+        panel.grid=element_blank())
+
+ggsave("figs/pub/Fig_2.png", fig2, width=140, height=90, units="mm", dpi=300)
+
+
+
+
+# Fig 3 -------------------------------------------------------------------
+
+fig3 <- rank.oos  |>
   filter(! covSet %in% c("nullGrand", "nullAuto", "ens", "ensLogitMn", "ensGLM2", "ensHB")) |>
   filter(.metric %in% c("PR-AUC", "R2-VZ", "F1", "Schoener's D", "Accuracy (F1)")) |>
   mutate(.metric=factor(.metric, 
@@ -235,39 +266,8 @@ fig2 <- rank.oos  |>
         axis.title.x=element_blank(),
         panel.grid=element_blank())
 
-ggsave("figs/pub/Fig_2.png", fig2, width=140, height=90, units="mm", dpi=300)
-
-
-
-
-
-# Fig 3 -------------------------------------------------------------------
-
-fig3 <- rank.oos |>
-  filter(covSet %in% c("nullGrand", "null4wk", "ensGLM")) |>
-  filter(.metric %in% c("PR-AUC", "R2-VZ", "F1", "Schoener's D", "Accuracy (F1)")) |>
-  mutate(.metric=factor(.metric, 
-                        levels=c("PR-AUC", "R2-VZ", "F1", 
-                                 "Accuracy (F1)", "Schoener's D"),
-                        labels=c("PR-AUC", "R['VZ']^2", "F[1]", 
-                                 "Accuracy~(F[1])", "D[overlap]"))) |>
-  mutate(model=factor(model, levels=c("Null (int.)", "Null (\u00B12wk avg)", "Ens-Ridge"),
-                      labels=c("Null (Int)", "Null (\u00B12wk)", "Ensemble"))) |>
-  ggplot(aes(model, .estimate, colour=y, group=y)) + 
-  geom_point(shape=1) + geom_line() +
-  scale_colour_brewer(type="qual", palette=3) +
-  scale_y_continuous("Value", breaks=c(0, 0.5, 1), limits=c(0,1)) +
-  facet_wrap(~.metric, nrow=1, labeller="label_parsed") + 
-  guides(colour=guide_legend(nrow=2)) + 
-  theme_ms +
-  theme(legend.position=c(0.325, 0.925),
-        legend.title=element_blank(),
-        legend.key.height=unit(3, "mm"),
-        axis.text.x=element_text(angle=270, hjust=0, vjust=0.5), 
-        axis.title.x=element_blank(),
-        panel.grid=element_blank())
-
 ggsave("figs/pub/Fig_3.png", fig3, width=140, height=90, units="mm", dpi=300)
+
 
 
 
