@@ -1484,6 +1484,7 @@ createFoldsByYear <- function(data.df) {
 fit_model <- function(mod, resp, form.ls, d.ls, opts, tunes, out.dir, y, suffix=NULL) {
   library(glue); library(tidymodels)
   dir.create(glue("{out.dir}/meta/"), showWarnings=F, recursive=T)
+  dir.create(glue("{out.dir}/vi/"), showWarnings=F, recursive=T)
   PCA_run <- all(!is.null(suffix), grepl("PCA", suffix))
   # Fit ML models
   if(mod %in% c("Ridge", "ENet", "RF", "NN", "MARS", "Boost")) {
