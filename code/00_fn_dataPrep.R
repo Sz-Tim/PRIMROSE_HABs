@@ -1111,8 +1111,16 @@ load_datasets <- function(sub.dir, target) {
   if(target=="tox") {
     d.ls$habAvg <- readRDS(glue("data/{sub.dir}/tox_habAvg.rds"))
   }
-  
-  # TODO: These joins are truncating to prohibit forecasting to the future
+  yday_env <- list(
+    cmems.pt=readRDS(glue("data/1_current/ydayAvg_cmems_sitePt_{target}.rds")) |> 
+      filter(version==max(version)) |> select(-version),
+    cmems.buf=readRDS(glue("data/1_current/ydayAvg_cmems_siteBufferNSEW_{target}.rds")) |>
+      pivot_wider(names_from="quadrant", values_from=-(1:3), names_sep="Dir"),
+    wrf.pt=readRDS(glue("data/1_current/ydayAvg_wrf_sitePt_{target}.rds")) |> 
+      filter(version==max(version)) |> select(-version),
+    wrf.buf=readRDS(glue("data/1_current/ydayAvg_wrf_siteBufferNSEW_{target}.rds")) |>
+      pivot_wider(names_from="quadrant", values_from=-(1:3), names_sep="Dir")
+  )
   d.ls$compiled <- d.ls$site |> select(-sin) |>
     right_join(d.ls$obs, by="siteid", multiple="all") |>
     left_join(d.ls$cmems.pt |> select(-ends_with("Dt")), by=c("cmems_id", "date")) |>
@@ -1127,6 +1135,24 @@ load_datasets <- function(sub.dir, target) {
               by=c("siteid", "date")) |>
     mutate(year=year(date),
            yday=yday(date))
+  for(i in seq_along(yday_env)) {
+    env_id_col <- switch(i,
+                         "1"=c("cmems_id", "yday"),
+                         "2"=c("siteid", "yday"),
+                         "3"=c("wrf_id", "yday"),
+                         "4"=c("siteid", "yday"))
+    varNames_i <- names(yday_env[[i]] |> select(-all_of(env_id_col)))
+    for(j in varNames_i) {
+      na_rows <- which(is.na(d.ls$compiled[[j]]))
+      if(length(na_rows > 0)) {
+        d_meta <- d.ls$compiled[na_rows, c("siteid", "cmems_id", "wrf_id", "yday")]
+        d.ls$compiled[[j]][na_rows] <- left_join(d_meta |> 
+                                                   select(all_of(env_id_col)),
+                                                 yday_env[[i]] |> 
+                                                   select(all_of(c(env_id_col, j))))[[j]]
+      }
+    }
+  }
   if(target=="tox") {
     d.ls$compiled <- d.ls$compiled |>
       left_join(d.ls$habAvg |> select(-date, -siteid), by="obsid")
