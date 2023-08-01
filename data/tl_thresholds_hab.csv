@@ -1,0 +1,58 @@
+full,abbr,min_ge,max_lt,label,alert,tl,symbol_colour,units,tf_amber,tf_red,tf_weeks,tf_amber_text,tf_red_text
+alexandrium_sp,Alsp,0,1e-5,0,NA,TL0,65365,cells\l,40,NA,2,Harvesting can continue with increased EPT/positive release,NA
+alexandrium_sp,Alsp,1,19,1-19,alert,TL1,65535,cells\l,40,NA,2,Harvesting can continue with increased EPT/positive release,NA
+alexandrium_sp,Alsp,20,39,20-39,alert,TL2,33023,cells\l,40,NA,2,Harvesting can continue with increased EPT/positive release,NA
+alexandrium_sp,Alsp,40,1999,"40-1,999",alert,TL3,255,cells\l,40,NA,2,Harvesting can continue with increased EPT/positive release,NA
+alexandrium_sp,Alsp,2000,4999,"2,000-4,999",alert,TL3,255,cells\l,40,NA,2,Harvesting can continue with increased EPT/positive release,NA
+alexandrium_sp,Alsp,5000,19999,"5,000-19,999",alert,TL3,255,cells\l,40,NA,2,Harvesting can continue with increased EPT/positive release,NA
+alexandrium_sp,Alsp,20000,100000,">=20,000",NA,TL3,255,cells\l,40,NA,2,Harvesting can continue with increased EPT/positive release,NA
+dinophysis_sp,Disp,0,1e-4,0,NA,TL0,65365,cells\l,NA,100,4,NA,No harvesting (Area closed due to toxin levels exceeding legal limits)
+dinophysis_sp,Disp,1e-4,80,0-80,NA,TL1,65535,cells\l,NA,100,4,NA,No harvesting (Area closed due to toxin levels exceeding legal limits)
+dinophysis_sp,Disp,80,100,80-100,warn,TL2,33023,cells\l,NA,100,4,NA,No harvesting (Area closed due to toxin levels exceeding legal limits)
+dinophysis_sp,Disp,100,400,100-400,alert,TL3,255,cells\l,NA,100,4,NA,No harvesting (Area closed due to toxin levels exceeding legal limits)
+dinophysis_sp,Disp,400,1000,"400-1,000",alert,TL3,255,cells\l,NA,100,4,NA,No harvesting (Area closed due to toxin levels exceeding legal limits)
+dinophysis_sp,Disp,1000,2000,"1,000-2,000",alert,TL3,255,cells\l,NA,100,4,NA,No harvesting (Area closed due to toxin levels exceeding legal limits)
+dinophysis_sp,Disp,2000,5000,"2,000-5,000",alert,TL3,255,cells\l,NA,100,4,NA,No harvesting (Area closed due to toxin levels exceeding legal limits)
+dinophysis_sp,Disp,5000,100000000,">=5,000",alert,TL3,255,cells\l,NA,100,4,NA,No harvesting (Area closed due to toxin levels exceeding legal limits)
+karenia_mikimotoi,Kami,-99,-1e-6,Not Analyzed,NA,NA,213277184,cells\l,NA,NA,NA,NA,NA
+karenia_mikimotoi,Kami,0,1e-5,0,NA,TL0,65408,cells\l,NA,NA,NA,NA,NA
+karenia_mikimotoi,Kami,1e-5,2500,"0-2,500",alert,TL1,8454143,cells\l,NA,NA,NA,NA,NA
+karenia_mikimotoi,Kami,2500,5000,"2,500-5,000",alert,TL2,33023,cells\l,NA,NA,NA,NA,NA
+karenia_mikimotoi,Kami,5000,20000,"5,000-20,000",alert,TL3,255,cells\l,NA,NA,NA,NA,NA
+karenia_mikimotoi,Kami,20000,100000,"20,000-100,000",alert,TL3,255,cells\l,NA,NA,NA,NA,NA
+karenia_mikimotoi,Kami,100000,500000,"100,000-500,000",alert,TL3,255,cells\l,NA,NA,NA,NA,NA
+karenia_mikimotoi,Kami,500000,1000000,"500,000-1,000,000",alert,TL3,255,cells\l,NA,NA,NA,NA,NA
+karenia_mikimotoi,Kami,1000000,3000000,"1,000,000-3,000,000",alert,TL3,255,cells\l,NA,NA,NA,NA,NA
+karenia_mikimotoi,Kami,3000000,10000000,">=3,000,000",alert,TL3,255,cells\l,NA,NA,NA,NA,NA
+prorocentrum_lima,Prli,0,0.999999,0,NA,TL0,65408,cells/l,NA,NA,NA,NA,NA
+prorocentrum_lima,Prli,1,80,1-80,NA,TL1,8454143,cells/l,NA,NA,NA,NA,NA
+prorocentrum_lima,Prli,80,100,80-99,warn,TL2,33023,cells/l,NA,NA,NA,NA,NA
+prorocentrum_lima,Prli,100,400,100-400,NA,TL3,255,cells/l,NA,NA,NA,NA,NA
+prorocentrum_lima,Prli,400,1000,"400-1,000",NA,TL3,255,cells/l,NA,NA,NA,NA,NA
+prorocentrum_lima,Prli,1000,2000,"1,000-2,000",NA,TL3,255,cells/l,NA,NA,NA,NA,NA
+prorocentrum_lima,Prli,2000,5000,"2,000-5,000",NA,TL3,255,cells/l,NA,NA,NA,NA,NA
+prorocentrum_lima,Prli,5000,100000000,">=5,000",NA,TL3,255,cells/l,NA,NA,NA,NA,NA
+pseudo_nitzschia_delicatissima_group,Psde,0,1e-4,0,NA,TL0,8454016,cells/l,NA,NA,NA,NA,NA
+pseudo_nitzschia_delicatissima_group,Psde,1e-4,40000,"0-39,999",NA,TL1,65535,cells/l,NA,NA,NA,NA,NA
+pseudo_nitzschia_delicatissima_group,Psde,40000,50000,"40,000-49,999",warn,TL2,43775,cells/l,NA,NA,NA,NA,NA
+pseudo_nitzschia_delicatissima_group,Psde,50000,100000,"50,000-100,000",alert,TL3,255,cells/l,NA,NA,NA,NA,NA
+pseudo_nitzschia_delicatissima_group,Psde,100000,200000,"100,000-200,000",alert,TL3,255,cells/l,NA,NA,NA,NA,NA
+pseudo_nitzschia_delicatissima_group,Psde,200000,500000,"200,000-500,000",alert,TL3,255,cells/l,NA,NA,NA,NA,NA
+pseudo_nitzschia_delicatissima_group,Psde,500000,1000000,"500,000-1,000,000",alert,TL3,255,cells/l,NA,NA,NA,NA,NA
+pseudo_nitzschia_delicatissima_group,Psde,1000000,100000000,">=1,000,000",alert,TL3,255,cells/l,NA,NA,NA,NA,NA
+pseudo_nitzschia_seriata_group,Psse,0,1e-4,0,NA,TL0,8454016,cells/l,NA,NA,NA,NA,NA
+pseudo_nitzschia_seriata_group,Psse,1e-4,40000,"0-39,999",NA,TL1,65535,cells/l,NA,NA,NA,NA,NA
+pseudo_nitzschia_seriata_group,Psse,40000,50000,"40,000-49,999",warn,TL2,43775,cells/l,NA,NA,NA,NA,NA
+pseudo_nitzschia_seriata_group,Psse,50000,100000,"50,000-100,000",alert,TL3,255,cells/l,NA,NA,NA,NA,NA
+pseudo_nitzschia_seriata_group,Psse,100000,200000,"100,000-200,000",alert,TL3,255,cells/l,NA,NA,NA,NA,NA
+pseudo_nitzschia_seriata_group,Psse,200000,500000,"200,000-500,000",alert,TL3,255,cells/l,NA,NA,NA,NA,NA
+pseudo_nitzschia_seriata_group,Psse,500000,1000000,"500,000-1,000,000",alert,TL3,255,cells/l,NA,NA,NA,NA,NA
+pseudo_nitzschia_seriata_group,Psse,1000000,100000000,">=1,000,000",alert,TL3,255,cells/l,NA,NA,NA,NA,NA
+pseudo_nitzschia_sp,Pssp,0,1e-4,0,NA,TL0,8454016,cells\l,150000,NA,2,Harvesting can continue with increased EPT/positive release,No harvesting (Area closed on voluntary basis unless evidence of product safety)sed on voluntary basis unless evidence of product safety
+pseudo_nitzschia_sp,Pssp,1e-4,40000,"0-39,999",NA,TL1,65535,cells\l,150000,NA,2,Harvesting can continue with increased EPT/positive release,No harvesting (Area closed on voluntary basis unless evidence of product safety)sed on voluntary basis unless evidence of product safety
+pseudo_nitzschia_sp,Pssp,40000,50000,"40,000-49,999",warn,TL2,43775,cells\l,150000,NA,2,Harvesting can continue with increased EPT/positive release,No harvesting (Area closed on voluntary basis unless evidence of product safety)sed on voluntary basis unless evidence of product safety
+pseudo_nitzschia_sp,Pssp,50000,100000,"50,000-100,000",alert,TL3,255,cells\l,150000,NA,2,Harvesting can continue with increased EPT/positive release,No harvesting (Area closed on voluntary basis unless evidence of product safety)sed on voluntary basis unless evidence of product safety
+pseudo_nitzschia_sp,Pssp,100000,200000,"100,000-200,000",alert,TL3,255,cells\l,150000,NA,2,Harvesting can continue with increased EPT/positive release,No harvesting (Area closed on voluntary basis unless evidence of product safety)sed on voluntary basis unless evidence of product safety
+pseudo_nitzschia_sp,Pssp,200000,500000,"200,000-500,000",alert,TL3,255,cells\l,150000,NA,2,Harvesting can continue with increased EPT/positive release,No harvesting (Area closed on voluntary basis unless evidence of product safety)sed on voluntary basis unless evidence of product safety
+pseudo_nitzschia_sp,Pssp,500000,1000000,"500,000-1,000,000",alert,TL3,255,cells\l,150000,NA,2,Harvesting can continue with increased EPT/positive release,No harvesting (Area closed on voluntary basis unless evidence of product safety)sed on voluntary basis unless evidence of product safety
+pseudo_nitzschia_sp,Pssp,1000000,100000000,">=1,000,000",alert,TL3,255,cells\l,150000,NA,2,Harvesting can continue with increased EPT/positive release,No harvesting (Area closed on voluntary basis unless evidence of product safety)sed on voluntary basis unless evidence of product safety
