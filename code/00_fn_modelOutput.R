@@ -557,7 +557,7 @@ get_metrics <- function(dat) {
          F2=f_meas(dat, alert, pred, beta=2, event_level="second")$.estimate,
          precision=precision(dat, alert, pred, event_level="second")$.estimate,
          recall=recall(dat, alert, pred, event_level="second")$.estimate,
-         accuracy=accuracy(dat, alert, pred)$.estimate,)
+         kappa=kap(dat, alert, pred)$.estimate)
 }
 
 
