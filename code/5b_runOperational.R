@@ -361,8 +361,8 @@ covSet.df <- expand_grid(y=y_resp,
   mutate(id=row_number(),
          f=glue("{id}-Avg{Avg}_Xf{Xf}_XN{XN}_Del{Del}")) |>
   ungroup()
-out.dir <- glue("out/compiled/")
-ens.dir <- "out/ensembles/"
+out.dir <- glue("out/0_init/compiled/")
+ens.dir <- "out/0_init/ensembles/"
 
 
 cat("-------- Generating forecasts at", as.character(Sys.time()), "\n")
@@ -372,9 +372,9 @@ foreach(i=1:nrow(covSet.df)) %dopar% {
   
   covSet <- covSet.df$f[i]
   
-  fit.dir <- glue("out/model_fits/{covSet}/")
+  fit.dir <- glue("out/0_init/model_fits/{covSet}/")
   ens.dir <- "out/ensembles/"
-  outSet.dir <- glue("out/compiled/{covSet}/")
+  outSet.dir <- glue("out/0_init/compiled/{covSet}/")
   
   y_i <- bind_rows(read_csv("data/i_hab.csv", show_col_types=F) |> 
                      arrange(abbr) |> mutate(type="hab"),
@@ -408,9 +408,9 @@ foreach(i=1:nrow(covSet.df)) %dopar% {
     ),
     hab=c(outer(filter(y_i, type=="hab")$abbr, c("lnNAvg", "prA"), "paste0"))
   )
-  all_covs$interact <- paste("lnNWt1", c(all_covs$main[-2]), sep="X")
-  # all_covs$interact <- c(all_covs$interact,
-  #                        paste("lnNWt1", c(all_covs$main[-2]), sep="X"))
+  # all_covs$interact <- paste("lnNWt1", c(all_covs$main[-2]), sep="X")
+  all_covs$interact <- c(all_covs$interact,
+                         paste("lnNWt1", c(all_covs$main[-2]), sep="X"))
   
   covs_exclude <- get_excluded_cov_regex(covSet)
   
@@ -451,7 +451,7 @@ for(y in y_resp) {
   responses <- c(alert="alert")
   cv.ls <- readRDS(glue("{out.dir}/{y}_cv.rds"))
   wt.ls <- readRDS(glue("{out.dir}/{y}_wt.rds"))
-  fc.ls <- merge_pred_dfs(dirf("out/compiled", glue("{y}_fc.rds"), recursive=T))
+  fc.ls <- merge_pred_dfs(dirf("out/0_init/compiled", glue("{y}_fc.rds"), recursive=T))
   
   fc.ls <- map(responses, ~calc_ensemble(fc.ls, wt.ls, .x, y_i.i, "wtmean"))
   fc.ls <- map(responses, ~calc_ensemble(fc.ls, cv.ls, .x, y_i.i, "GLM_oos", ens.dir))

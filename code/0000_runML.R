@@ -27,16 +27,15 @@ covSet.df <- expand_grid(y=y_resp,
   mutate(id=row_number(),
          f=glue("{id}-Avg{Avg}_Xf{Xf}_XN{XN}_Del{Del}")) %>%
   ungroup %>%
-  arrange(desc(y), desc(id)) %>%
-  filter(Xf==1 & Avg==1)
-n_spp_parallel <- 1
-cores_per_model <- 12
+  arrange(desc(y), desc(id)) 
+n_spp_parallel <- 18
+cores_per_model <- 1
 
 
 registerDoParallel(cores_per_model)
-for(i in 1:nrow(covSet.df)) {
-# registerDoParallel(n_spp_parallel)
-# foreach(i=1:nrow(covSet.df)) %dopar% {
+# for(i in 1:nrow(covSet.df)) {
+registerDoParallel(n_spp_parallel)
+foreach(i=1:nrow(covSet.df)) %dopar% {
   lapply(pkgs, library, character.only=T)
   source("code/00_fn.R")
   base.dir <- "out/0_init" 
@@ -170,8 +169,8 @@ for(i in 1:nrow(covSet.df)) {
     fit_model("RF", r, form.ls, d.y$train, folds, n_tuneVal, fit.dir, y)
     fit_model("NN", r, form.ls, dPCA.y$train, foldsPCA, n_tuneVal, fit.dir, y, "_PCA")
     fit_model("NN", r, form.ls, d.y$train, folds, n_tuneVal, fit.dir, y)
-    # fit_model("Boost", r, form.ls, dPCA.y$train, foldsPCA, n_tuneVal, fit.dir, y, "_PCA")
-    # fit_model("Boost", r, form.ls, d.y$train, folds, n_tuneVal, fit.dir, y)
+    fit_model("Boost", r, form.ls, dPCA.y$train, foldsPCA, n_tuneVal, fit.dir, y, "_PCA")
+    fit_model("Boost", r, form.ls, d.y$train, folds, n_tuneVal, fit.dir, y)
   }
   # stopCluster(cl)
   

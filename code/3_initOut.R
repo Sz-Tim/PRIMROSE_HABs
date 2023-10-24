@@ -45,13 +45,15 @@ d_i <- tibble(f=dir("out/model_fits")) |>
          EnvInt=grepl("Xf1", f),
          AutoInt=grepl("XN1", f),
          EnvDelta=grepl("Del1", f),
-         covSet=paste0("d", str_split_fixed(f, "-", 2)[,1])) |>
-  arrange(Regional, EnvDelta, AutoInt, EnvInt) |>
+         covSet=paste0("d", str_split_fixed(f, "-", 2)[,1]),
+         covSetNum=as.numeric(str_sub(covSet, 2, -1))) |>
+  arrange(covSetNum) |>
+  # arrange(Regional, EnvDelta, AutoInt, EnvInt) |>
   mutate(covSet_reorder=factor(covSet, levels=unique(covSet)))
 
-fit.ls <- dirf("out/compiled", "_fit.rds") |>
+fit.ls <- dirf("out/0_init/compiled", "_fit.rds") |>
   map(~readRDS(.x)) |> list_transpose() |> map(bind_rows)
-oos.ls <- dirf("out/compiled", "_oos.rds") |>
+oos.ls <- dirf("out/0_init/compiled", "_oos.rds") |>
   map(~readRDS(.x)) |> list_transpose() |> map(bind_rows)
 fit.ls$alert_L <- fit.ls$alert |> 
   mutate(perfect_A1=if_else(alert=="A0", 1e-3, 1-1e-3),
@@ -318,12 +320,12 @@ oos.ls$alert_L |>
 
 oos.ls$alert_L |>
   filter(!grepl("perfect", model)) |>
-  filter(grepl("intercept|2wk|Ens", model)) |>
+  # filter(grepl("intercept|2wk|Ens", model)) |>
   mutate(prA1=if_else(prA1==0, 1e-5, prA1),
          prA1=if_else(prA1==1, 1-1e-5, prA1),
          alert=as.numeric(alert=="A1")) |>
   group_by(y, model, PCA, covSet) |>
-  calc_R2(type="vz") |>
+  calc_R2(y, type="vz") |>
   filter(!is.na(R2)) |>
   ggplot(aes(covSet, R2, colour=model, linetype=PCA, shape=PCA)) + 
   geom_point() +
@@ -332,6 +334,7 @@ oos.ls$alert_L |>
   scale_shape_manual(values=c(19, 1)) +
   labs(x="Model", y="VZ R2 (oos)") + 
   facet_grid(.~y) + 
+  ylim(0, 1) +
   theme(panel.grid.minor=element_blank(), 
         axis.text.x=element_text(angle=270, hjust=0, vjust=0.5),
         legend.position="bottom")
@@ -912,64 +915,64 @@ rank.df <-  oos.ls$alert_L |>
               group_by(y) |>
               mutate(rank=min_rank(.estimate),
                      .metric="Schoener's D")) |>
-  bind_rows(oos.ls$alert_L |>
-              filter(!grepl("perfect|auto", model)) |>
-              group_by(y, model, PCA, covSet) |>
-              f_meas(predF1, truth=alert, beta=1, event_level="second") |>
-              group_by(y) |>
-              mutate(rank=min_rank(desc(.estimate)),
-                     .metric="F1") |>
-              select(-.estimator)) |>
-  bind_rows(oos.ls$alert_L |>
-              filter(!grepl("perfect|auto", model)) |>
-              group_by(y, model, PCA, covSet) |>
-              accuracy(predF1, truth=alert, event_level="second") |>
-              group_by(y) |>
-              mutate(rank=min_rank(desc(.estimate)),
-                     .metric="Accuracy (F1)") |>
-              select(-.estimator)) |>
-  bind_rows(oos.ls$alert_L |>
-              filter(!grepl("perfect|auto", model)) |>
-              group_by(y, model, PCA, covSet) |>
-              summarise(.estimate=sum(predF1=="A1" & alert=="A1")/sum(predF1=="A1"))|>
-              group_by(y) |>
-              mutate(rank=min_rank(.estimate),
-                     .metric="Precision: TP/(TP+FP) (F1)")) |>
-  bind_rows(oos.ls$alert_L |>
-              filter(!grepl("perfect|auto", model)) |>
-              group_by(y, model, PCA, covSet) |>
-              summarise(.estimate=sum(predF1=="A1" & alert=="A1")/sum(alert=="A1"))|>
-              group_by(y) |>
-              mutate(rank=min_rank(.estimate),
-                     .metric="Recall: TP/(TP+FN) (F1)")) |>
-  bind_rows(oos.ls$alert_L |>
-              filter(!grepl("perfect|auto", model)) |>
-              group_by(y, model, PCA, covSet) |>
-              summarise(.estimate=sum(predF1=="A1" & alert=="A0")/n())|>
-              group_by(y) |>
-              mutate(rank=min_rank(.estimate),
-                     .metric="FPR (F1)")) |>
-  bind_rows(oos.ls$alert_L |>
-              filter(!grepl("perfect|auto", model)) |>
-              group_by(y, model, PCA, covSet) |>
-              summarise(.estimate=sum(predF1=="A1" & alert=="A1")/n())|>
-              group_by(y) |>
-              mutate(rank=min_rank(desc(.estimate)),
-                     .metric="TPR (F1)")) |>
-  bind_rows(oos.ls$alert_L |>
-              filter(!grepl("perfect|auto", model)) |>
-              group_by(y, model, PCA, covSet) |>
-              summarise(.estimate=sum(predF1=="A0" & alert=="A1")/n())|>
-              group_by(y) |>
-              mutate(rank=min_rank(.estimate),
-                     .metric="FNR (F1)")) |>
-  bind_rows(oos.ls$alert_L |>
-              filter(!grepl("perfect|auto", model)) |>
-              group_by(y, model, PCA, covSet) |>
-              summarise(.estimate=sum(predF1=="A0" & alert=="A0")/n())|>
-              group_by(y) |>
-              mutate(rank=min_rank(desc(.estimate)),
-                     .metric="TNR (F1)")) |>
+  # bind_rows(oos.ls$alert_L |>
+  #             filter(!grepl("perfect|auto", model)) |>
+  #             group_by(y, model, PCA, covSet) |>
+  #             f_meas(predF1, truth=alert, beta=1, event_level="second") |>
+  #             group_by(y) |>
+  #             mutate(rank=min_rank(desc(.estimate)),
+  #                    .metric="F1") |>
+  #             select(-.estimator)) |>
+  # bind_rows(oos.ls$alert_L |>
+  #             filter(!grepl("perfect|auto", model)) |>
+  #             group_by(y, model, PCA, covSet) |>
+  #             accuracy(predF1, truth=alert, event_level="second") |>
+  #             group_by(y) |>
+  #             mutate(rank=min_rank(desc(.estimate)),
+  #                    .metric="Accuracy (F1)") |>
+  #             select(-.estimator)) |>
+  # bind_rows(oos.ls$alert_L |>
+  #             filter(!grepl("perfect|auto", model)) |>
+  #             group_by(y, model, PCA, covSet) |>
+  #             summarise(.estimate=sum(predF1=="A1" & alert=="A1")/sum(predF1=="A1"))|>
+  #             group_by(y) |>
+  #             mutate(rank=min_rank(.estimate),
+  #                    .metric="Precision: TP/(TP+FP) (F1)")) |>
+  # bind_rows(oos.ls$alert_L |>
+  #             filter(!grepl("perfect|auto", model)) |>
+  #             group_by(y, model, PCA, covSet) |>
+  #             summarise(.estimate=sum(predF1=="A1" & alert=="A1")/sum(alert=="A1"))|>
+  #             group_by(y) |>
+  #             mutate(rank=min_rank(.estimate),
+  #                    .metric="Recall: TP/(TP+FN) (F1)")) |>
+  # bind_rows(oos.ls$alert_L |>
+  #             filter(!grepl("perfect|auto", model)) |>
+  #             group_by(y, model, PCA, covSet) |>
+  #             summarise(.estimate=sum(predF1=="A1" & alert=="A0")/n())|>
+  #             group_by(y) |>
+  #             mutate(rank=min_rank(.estimate),
+  #                    .metric="FPR (F1)")) |>
+  # bind_rows(oos.ls$alert_L |>
+  #             filter(!grepl("perfect|auto", model)) |>
+  #             group_by(y, model, PCA, covSet) |>
+  #             summarise(.estimate=sum(predF1=="A1" & alert=="A1")/n())|>
+  #             group_by(y) |>
+  #             mutate(rank=min_rank(desc(.estimate)),
+  #                    .metric="TPR (F1)")) |>
+  # bind_rows(oos.ls$alert_L |>
+  #             filter(!grepl("perfect|auto", model)) |>
+  #             group_by(y, model, PCA, covSet) |>
+  #             summarise(.estimate=sum(predF1=="A0" & alert=="A1")/n())|>
+  #             group_by(y) |>
+  #             mutate(rank=min_rank(.estimate),
+  #                    .metric="FNR (F1)")) |>
+  # bind_rows(oos.ls$alert_L |>
+  #             filter(!grepl("perfect|auto", model)) |>
+  #             group_by(y, model, PCA, covSet) |>
+  #             summarise(.estimate=sum(predF1=="A0" & alert=="A0")/n())|>
+  #             group_by(y) |>
+  #             mutate(rank=min_rank(desc(.estimate)),
+  #                    .metric="TNR (F1)")) |>
   bind_rows(oos.ls$alert_L |>
               filter(!grepl("perfect|auto", model)) |>
               mutate(prA1=if_else(prA1==0, 1e-5, prA1),
@@ -979,6 +982,7 @@ rank.df <-  oos.ls$alert_L |>
               rename(.estimate=R2) |>
               mutate(.estimate=pmin(pmax(.estimate, 0), 1)) |>
               na.omit() |>
+              group_by(y) |>
               mutate(rank=min_rank(desc(.estimate)),
                      .metric="R2-VZ")) |>
   bind_rows(oos.ls$alert_L |>
@@ -989,10 +993,69 @@ rank.df <-  oos.ls$alert_L |>
               calc_R2(type="mf", y) |>
               rename(.estimate=R2) |>
               na.omit() |>
+              group_by(y) |>
               mutate(rank=min_rank(desc(.estimate)),
                      .metric="R2-MF"))
 
 saveRDS(rank.df, "out/clean/rank_oos.rds")
+
+
+library(kerneval)
+rank.df2 <-  oos.ls$alert_L |> 
+  select(y, model, covSet, PCA, alert, prA1, prevAlert) |>
+  filter(!grepl("perfect|auto", model)) |>
+  na.omit() |>
+  find_AUCPR_min(y) |>
+  nest(dat=c(prA1, alert)) |>
+  mutate(AUCPR=map_dbl(dat, ~average_precision(.x, alert, prA1, event_level="second")$.estimate),
+         AUCNPR=(AUCPR-AUCPR_min)/(1-AUCPR_min)) |>
+  select(-dat) |>
+  group_by(y, prevAlert) |>
+  mutate(rank=min_rank(desc(AUCNPR)),
+         .metric="PR-AUC") |>
+  rename(.estimate=AUCNPR) |> select(-AUCPR) |>
+  bind_rows(oos.ls$alert_L |> 
+              filter(!grepl("perfect|auto", model)) |>
+              group_by(y, model, PCA, covSet, prevAlert) |>
+              roc_auc(prA1, truth=alert, event_level="second") |>
+              group_by(y, prevAlert) |>
+              mutate(rank=min_rank(desc(.estimate)),
+                     .metric="ROC-AUC") |>
+              select(-.estimator)) |>
+  bind_rows(oos.ls$alert_L |>
+              filter(!grepl("perfect|auto", model)) |>
+              select(y, covSet, PCA, model, obsid, alert, prevAlert, prA1) %>%
+              filter(!is.na(prA1)) |>
+              pivot_wider(names_from="alert", values_from="prA1") |>
+              group_by(y, model, PCA, covSet, prevAlert) |>
+              summarise(.estimate=schoenr(density(A0, na.rm=T), density(A1, na.rm=T))) |>
+              group_by(y, prevAlert) |>
+              mutate(rank=min_rank(.estimate),
+                     .metric="Schoener's D")) |>
+  bind_rows(oos.ls$alert_L |>
+              filter(!grepl("perfect|auto", model)) |>
+              mutate(prA1=if_else(prA1==0, 1e-5, prA1),
+                     prA1=if_else(prA1==1, 1-1e-5, prA1),
+                     alert=as.numeric(alert=="A1")) |>
+              calc_R2(type="vz", y, prevAlert) |>
+              rename(.estimate=R2) |>
+              mutate(.estimate=pmin(pmax(.estimate, 0), 1)) |>
+              na.omit() |>
+              group_by(y, prevAlert) |>
+              mutate(rank=min_rank(desc(.estimate)),
+                     .metric="R2-VZ")) |>
+  bind_rows(oos.ls$alert_L |>
+              filter(!grepl("perfect|auto", model)) |>
+              mutate(prA1=if_else(prA1==0, 1e-5, prA1),
+                     prA1=if_else(prA1==1, 1-1e-5, prA1),
+                     alert=as.numeric(alert=="A1")) |>
+              calc_R2(type="mf", y, prevAlert) |>
+              rename(.estimate=R2) |>
+              na.omit() |>
+              group_by(y, prevAlert) |>
+              mutate(rank=min_rank(desc(.estimate)),
+                     .metric="R2-MF"))
+
 
 rank.df |>
   filter(.metric!="roc_auc") |>
@@ -1059,15 +1122,28 @@ rank.df |>
   scale_shape_manual(values=c(19, 1)) +
   facet_grid(.metric~y, scales="free_y")
 rank.df |>
-  filter(grepl("4wk|ensGLM|ensHB", covSet)) |>
+  filter(grepl("Grand|4wk|ens", covSet)) |>
+  filter(grepl("AUC|R2|D|Accuracy", .metric)) |>
+  # filter(grepl("Grand|4wk|ensG", covSet)) |>
+  ggplot(aes(covSet, .estimate, colour=y, group=y)) + 
+  geom_point() + geom_line() +
+  scale_colour_brewer("", type="qual", palette=3) +
+  ylab("Value") +
+  facet_wrap(~.metric, nrow=1) + ylim(0,1) +
+  theme(axis.text.x=element_text(angle=270, hjust=0, vjust=0.5), 
+        axis.title.x=element_blank(),
+        legend.position="bottom")
+rank.df2 |>
+  # filter(grepl("Grand|4wk|ensGLM|ensHB", covSet)) |>
+  filter(grepl("Null|Ens", model)) |>
   filter(grepl("AUC|R2|D|Accuracy", .metric)) |>
   # filter(grepl("Grand|4wk|ensG", covSet)) |>
   ggplot(aes(model, .estimate, colour=y, group=y)) + 
   geom_point() + geom_line() +
   scale_colour_brewer("", type="qual", palette=3) +
   ylab("Value") +
-  facet_wrap(~.metric, nrow=1) + ylim(NA,1) +
-  # facet_wrap(~.metric, nrow=1, scales="free_y") +
+  # facet_wrap(~.metric, nrow=1) + ylim(NA,1) +
+  facet_grid(prevAlert~.metric) + ylim(0,1) +
   theme(axis.text.x=element_text(angle=270, hjust=0, vjust=0.5), 
         axis.title.x=element_blank(),
         legend.position="bottom")
@@ -1091,14 +1167,14 @@ rank.df |>
 # probabilities -----------------------------------------------------------
 
 oos.ls$alert_L |>
-  filter(grepl("2wk|Ens-Ridge", model)) |>
+  filter(grepl("Date|Ensemble", model)) |>
   ggplot(aes(model, prA1, fill=alert)) + 
   geom_boxplot(outlier.size=0.5, outlier.shape=1, outlier.alpha=0.5) +
   scale_fill_manual("Truth", values=c("grey", "red3")) +
   facet_wrap(~y) + 
   theme(axis.text.x=element_text(angle=270, hjust=0, vjust=0.5))
 oos.ls$alert_L |>
-  filter(grepl("2wk|Ens-Ridge", model)) |>
+  filter(grepl("Date|Ensemble", model)) |>
   ggplot(aes(model, prA1, fill=alert)) + 
   geom_boxplot(outlier.size=0.5, outlier.shape=1, outlier.alpha=0.5) +
   scale_fill_manual("Truth", values=c("grey", "red3")) +
@@ -1106,7 +1182,7 @@ oos.ls$alert_L |>
   theme(axis.text.x=element_text(angle=270, hjust=0, vjust=0.5))
 
 oos.ls$alert_L |>
-  filter(grepl("2wk|Ens", model)) |>
+  filter(grepl("Date|Ensemble", model)) |>
   ggplot(aes(model, prA1, fill=alert)) + 
   geom_violin(scale="width") +
   scale_fill_manual("Truth", values=c("grey", "red3")) +
@@ -1114,8 +1190,7 @@ oos.ls$alert_L |>
   theme(axis.text.x=element_text(angle=270, hjust=0, vjust=0.5))
 
 oos.ls$alert_L |>
-  filter(grepl("2wk|Ens-Ridge", model)) |>
-  filter(!grepl("intercept", model)) |>
+  filter(grepl("Date|Ensemble", model)) |>
   group_by(y, alert, model) |>
   get_intervals(prA1, "qi") |>
   ggplot(aes(med, xmin=L05, xmax=L95, model, colour=alert)) + 
@@ -1127,7 +1202,7 @@ oos.ls$alert_L |>
   xlim(0,1)
 
 oos.ls$alert_L |>
-  filter(grepl("2wk|Ens-Ridge", model)) |>
+  filter(grepl("Date|Ensemble", model)) |>
   filter(!grepl("intercept", model)) |>
   group_by(y, prevAlert, alert, model) |>
   get_intervals(prA1, "qi") |>
@@ -1192,7 +1267,7 @@ oos.ls$alert_L |>
 # Mosaics
 library(ggmosaic)
 oos.ls$alert_L |>
-  filter(grepl("2wk|Ens-Ridge2", model)) |>
+  filter(grepl("Date|Ensemble", model)) |>
   rename(Obs=alert, Pred=predF1, Previous=prevAlert) |>
   ggplot() + 
   geom_mosaic(aes(x=product(Pred, Obs),
