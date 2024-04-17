@@ -78,7 +78,7 @@ foreach(i=1:nrow(covSet.df)) %dopar% {
       paste("UWkXfetch", grep("Dir[EW]", col_cmems, value=T), sep="X"),
       paste("VWkXfetch", grep("Dir[NS]", col_cmems, value=T), sep="X"),
       paste("UWkXfetch", grep("^[Precip|Shortwave|sst].*Dir[EW]", col_wrf, value=T), sep="X"),
-      paste("VWkXfetch", grep("^[Precip|Shortwave|sst].*Dir[EW]", col_wrf, value=T), sep="X")
+      paste("VWkXfetch", grep("^[Precip|Shortwave|sst].*Dir[NS]", col_wrf, value=T), sep="X")
     ),
     hab=c(outer(filter(y_i, type=="hab")$abbr, c("lnNAvg", "prA"), "paste0"))
   )
