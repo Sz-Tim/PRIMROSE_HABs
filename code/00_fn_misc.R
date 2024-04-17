@@ -103,6 +103,8 @@ get_intervals <- function(df, y, type="hdci") {
 #'
 #' @examples
 calc_R2 <- function(dat.df, type="mf", ...) {
+  # See Smith & McKenna. 2013. A comparison of logistic regression pseudo-R2 
+  #   indices. Multiple Linear Regression Viewpoints, 39(2)
   if(type=="mf") {
     return(
       dat.df |>
