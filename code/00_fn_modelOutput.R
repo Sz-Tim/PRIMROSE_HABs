@@ -554,10 +554,9 @@ calc_null <- function(obs.ls, resp) {
 #' @examples
 get_metrics <- function(dat) {
   tibble(F1=f_meas(dat, alert, pred, event_level="second")$.estimate,
-         F2=f_meas(dat, alert, pred, beta=2, event_level="second")$.estimate,
          precision=precision(dat, alert, pred, event_level="second")$.estimate,
          recall=recall(dat, alert, pred, event_level="second")$.estimate,
-         kappa=kap(dat, alert, pred)$.estimate)
+         mcc=mcc(dat, alert, pred)$.estimate)
 }
 
 
@@ -568,7 +567,7 @@ get_metrics <- function(dat) {
 
 
 
-#' Compute F-1, J-index, precision, and recall across probability thresholds
+#' Compute classification metrics across probability thresholds
 #'
 #' @param L.df 
 #' @param prSteps 
@@ -597,7 +596,8 @@ compute_thresholds <- function(L.df, prMin=0, prMax=1, prSteps=0.1, byPrevAlert=
     ungroup() |>
     mutate(metrics=future_map(dat, get_metrics)) |>
     select(-dat) |>
-    unnest(metrics)
+    unnest(metrics) |>
+    mutate(mcc=if_else(is.na(mcc), 0, mcc))
   return(metric.df)
 }
 

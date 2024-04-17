@@ -210,15 +210,15 @@ ggplot(obs.mo.Site, aes(dateStd, prA, group=dateStd)) + geom_boxplot() +
 
 # Fig 2 -------------------------------------------------------------------
 
-fig2_mod_labs <- c("italic(Null[0])", "italic(Null[Date])", "italic(Ensemble)")
+fig2_mod_labs <- c("italic(Null[Date])", "italic(Ensemble)")
 fig2_talk_labs <- c("italic(Null[0])", "italic(Null[Date])", "italic(Ens.)")
 
 fig2 <- rank.oos |>
   filter(covSet %in% c("nullGrand", "null4wk", "ensGLM2")) |>
-  filter(.metric %in% c("PR-AUC", "R2-VZ", "F1", "Schoener's D")) |>
+  filter(.metric %in% c("ROC-AUC", "PR-AUC", "R2-VZ", "MCC", "Schoener's D")) |>
   mutate(.metric=factor(.metric, 
-                        levels=c("PR-AUC", "R2-VZ", "F1", "Schoener's D"),
-                        labels=c("PR-AUC", "R['VZ']^2", "F[1]", "D[overlap]"))) |>
+                        levels=c("ROC-AUC", "PR-AUC", "MCC", "R2-VZ", "Schoener's D"),
+                        labels=c("ROC-AUC", "PR-AUC", "MCC", "R['VZ']^2", "D[overlap]"))) |> 
   mutate(model=factor(model, levels=c("Null[0]", "Null[Date]", "Ensemble"))) |>
   group_by(.metric, y) |>
   arrange(model) |>
@@ -226,6 +226,7 @@ fig2 <- rank.oos |>
          std_gain=diff_v_null / 
            if_else(.metric=="D[overlap]", -first(.estimate), (1-first(.estimate)))) |>
   ungroup() |>
+  filter(!grepl("Grand", covSet)) |>
   left_join(y_i |> select(y, fig_short)) |>
   ggplot(aes(model, std_gain, colour=fig_short, group=fig_short)) + 
   geom_hline(yintercept=0, linewidth=0.25, colour="grey30") +
@@ -238,22 +239,21 @@ fig2 <- rank.oos |>
   facet_wrap(~.metric, nrow=1, labeller="label_parsed") + 
   guides(colour=guide_legend(nrow=2)) + 
   theme_ms +
-  theme(legend.position=c(0.315, 0.925),
+  theme(legend.position=c(0.5, 0.925),
         legend.title=element_blank(),
         legend.key.height=unit(3, "mm"),
         legend.key.width=unit(4, "mm"),
         axis.text.x=element_text(angle=270, hjust=0, vjust=0.5), 
         axis.title.x=element_blank(),
         panel.grid=element_blank())
-
 ggsave("figs/pub/Fig_2.png", fig2, width=140, height=90, units="mm", dpi=300)
 
 fig2 <- rank.oos |>
   filter(covSet %in% c("nullGrand", "null4wk", "ensGLM2")) |>
-  filter(.metric %in% c("PR-AUC", "R2-VZ", "F1", "Schoener's D")) |>
+  filter(.metric %in% c("ROC-AUC", "PR-AUC", "R2-VZ", "MCC", "Schoener's D")) |>
   mutate(.metric=factor(.metric, 
-                        levels=c("PR-AUC", "R2-VZ", "F1", "Schoener's D"),
-                        labels=c("PR-AUC", "R['VZ']^2", "F[1]", "D[overlap]"))) |>
+                        levels=c("ROC-AUC", "PR-AUC", "MCC", "R2-VZ", "Schoener's D"),
+                        labels=c("ROC-AUC", "PR-AUC", "MCC", "R['VZ']^2", "D[overlap]"))) |> 
   mutate(model=factor(model, levels=c("Null[0]", "Null[Date]", "Ensemble"))) |>
   group_by(.metric, y) |>
   arrange(model) |>
@@ -261,36 +261,99 @@ fig2 <- rank.oos |>
          std_gain=diff_v_null / 
            if_else(.metric=="D[overlap]", -first(.estimate), (1-first(.estimate)))) |>
   ungroup() |>
+  filter(!grepl("Grand", covSet)) |>
   left_join(y_i |> select(y, fig_short)) |>
-  ggplot(aes(model, std_gain, colour=fig_short, group=fig_short)) + 
-  geom_hline(yintercept=0, linewidth=0.25, colour="grey30") +
+  ggplot(aes(model, .estimate, colour=fig_short, group=fig_short)) + 
+  # geom_hline(yintercept=0, linewidth=0.25, colour="grey30") +
   geom_point(shape=1) + geom_line() + 
   scale_colour_brewer(type="qual", palette=3) +
-  scale_x_discrete(labels=parse(text=fig2_talk_labs)) +
-  scale_y_continuous(expression(atop("Standardised gain", 
-                                     paste("(0: Null" [0]~~"1: Perfect)"))),
-                     breaks=c(0, 0.5, 1), limits=c(-0.05,1)) +
-  facet_wrap(~.metric, nrow=1, labeller="label_parsed") + 
+  scale_x_discrete(labels=parse(text=fig2_mod_labs)) +
+  ylab("Score") +
+  facet_wrap(~.metric, nrow=1, labeller="label_parsed", scales="free_y") + 
   guides(colour=guide_legend(nrow=2)) + 
-  theme_talk +
-  theme(legend.position=c(0.4, 0.925),
+  theme_ms +
+  theme(legend.position="bottom",
         legend.title=element_blank(),
         legend.key.height=unit(3, "mm"),
         legend.key.width=unit(4, "mm"),
         axis.text.x=element_text(angle=270, hjust=0, vjust=0.5), 
         axis.title.x=element_blank(),
         panel.grid=element_blank())
+ggsave("figs/pub/Fig_2_scores.png", fig2, width=140, height=90, units="mm", dpi=300)
 
-ggsave("figs/pub/Fig_2_talk.png", fig2, width=140, height=90, units="mm", dpi=300)
+fig2_metrics_df <- rank.oos |>
+  filter(covSet %in% c("nullGrand", "null4wk", "ensGLM2")) |>
+  filter(.metric %in% c("ROC-AUC", "PR-AUC", "R2-VZ", "MCC", "Schoener's D")) |>
+  mutate(.metric=factor(.metric, 
+                        levels=c("ROC-AUC", "PR-AUC", "MCC", "R2-VZ", "Schoener's D"),
+                        labels=c("ROC-AUC", "PR-AUC", "MCC", "R['VZ']^2", "D[overlap]"))) |> 
+  mutate(model=factor(model, levels=c("Null[0]", "Null[Date]", "Ensemble"))) |>
+  group_by(.metric, y) |>
+  arrange(model) |>
+  mutate(diff_v_null=.estimate - first(.estimate),
+         std_gain=diff_v_null / 
+           if_else(.metric=="D[overlap]", -first(.estimate), (1-first(.estimate)))) |>
+  ungroup()
+fig2_df <- bind_rows(fig2_metrics_df, 
+                     fig2_metrics_df |>
+                       group_by(y, model) |>
+                       summarise(across(where(is.numeric), mean)) |>
+                       mutate(.metric="Mean") |>
+                       ungroup()
+) |>
+  mutate(.metric=factor(.metric, 
+                        levels=c("ROC-AUC", "PR-AUC", "R['VZ']^2", "MCC", "D[overlap]", "Mean"))) |>
+  filter(!grepl("0", model)) |> 
+  left_join(y_i |> select(y, fig_short, fig_long))
+fig2_means <- fig2_df |>
+  group_by(model, .metric) |>
+  summarise(across(where(is.numeric), mean))
+fig2 <- fig2_df |>
+  ggplot(aes(model, std_gain, colour=fig_short)) + 
+  geom_hline(yintercept=0, linewidth=0.25, colour="grey30") +
+  geom_point() + geom_line(aes(group=fig_short)) + 
+  geom_point(data=fig2_means, shape=1, size=4, colour="black") +
+  scale_colour_brewer(type="qual", palette=3) +
+  scale_x_discrete(labels=parse(text=fig2_talk_labs[-1])) +
+  scale_y_continuous(expression(atop("Standardised gain", 
+                                     paste("(0: Null" [0]~~"1: Perfect)"))),
+                     breaks=c(0, 0.5, 1), limits=c(-0.05,1)) +
+  facet_wrap(~.metric, nrow=1, labeller="label_parsed") + 
+  theme_talk +
+  theme(legend.position="none", 
+        legend.title=element_blank(),
+        legend.key.height=unit(3, "mm"),
+        legend.key.width=unit(4, "mm"),
+        axis.text.x=element_text(angle=270, hjust=0, vjust=0.5), 
+        axis.title.x=element_blank(),
+        panel.grid.major.y=element_line(colour="grey80", linewidth=0.25),
+        panel.grid.minor.y=element_line(colour="grey80", linewidth=0.25))
+ggsave("figs/pub/Fig_2_talk.png", fig2, width=160, height=120, units="mm", dpi=300)
+fig2 <- fig2_df |>
+  ggplot(aes(model, std_gain, colour=fig_short)) + 
+  geom_hline(yintercept=0, linewidth=0.25, colour="grey30") +
+  geom_point() + geom_line(aes(group=fig_short)) + 
+  geom_point(data=fig2_means, shape=1, size=3, colour="black") +
+  scale_colour_brewer(type="qual", palette=3) +
+  scale_x_discrete(labels=parse(text=fig2_talk_labs[-1])) +
+  scale_y_continuous(expression(atop("Standardised gain", 
+                                     paste("(0: Null" [0]~~"1: Perfect)"))),
+                     breaks=c(0, 0.5, 1), limits=c(-0.05,1)) +
+  facet_wrap(~.metric, nrow=1, labeller="label_parsed") + 
+  theme_talk +
+  theme(legend.title=element_blank(),
+        axis.text.x=element_text(angle=270, hjust=0, vjust=0.5), 
+        axis.title.x=element_blank(),
+        panel.grid.major.y=element_line(colour="grey80"),
+        panel.grid.minor.y=element_line(colour="grey80"))
+ggsave("figs/pub/Fig_2_talk_legend.png", fig2, width=140, height=120, units="mm", dpi=300)
 
 fig2_alt <- rank.oos |>
   filter(covSet %in% c("nullGrand", "null4wk", "ensGLM2")) |>
-  filter(.metric %in% c("PR-AUC", "R2-VZ", "F1", "Schoener's D", "Accuracy (F1)")) |>
+  filter(.metric %in% c("ROC-AUC", "PR-AUC", "R2-VZ", "MCC", "Schoener's D")) |>
   mutate(.metric=factor(.metric, 
-                        levels=c("PR-AUC", "R2-VZ", "F1", 
-                                 "Accuracy (F1)", "Schoener's D"),
-                        labels=c("PR-AUC", "R['VZ']^2", "F[1]", 
-                                 "Accuracy['F1-thresh']", "D[overlap]"))) |>
+                        levels=c("ROC-AUC", "PR-AUC", "MCC", "R2-VZ", "Schoener's D"),
+                        labels=c("ROC-AUC", "PR-AUC", "MCC", "R['VZ']^2", "D[overlap]"))) |> 
   mutate(model=factor(model, levels=c("Null[0]", "Null[Date]", "Ensemble"))) |>
   left_join(y_i |> select(y, fig_short)) |>
   ggplot(aes(model, .estimate, colour=fig_short, group=fig_short)) + 
@@ -314,7 +377,7 @@ ggsave("figs/pub/Fig_2_alt.png", fig2_alt, width=140, height=90, units="mm", dpi
 
 sp_rankOrder <- rank.oos |>
   filter(covSet %in% c("nullGrand", "null4wk", "ensGLM2")) |>
-  filter(.metric %in% c("PR-AUC", "R2-VZ", "F1", "Schoener's D", "Accuracy (F1)")) |>
+  filter(.metric %in% c("ROC-AUC", "PR-AUC", "R2-VZ", "MCC", "Schoener's D")) |>
   group_by(.metric, y) |>
   arrange(model) |>
   mutate(diff_v_null=.estimate - first(.estimate),
@@ -329,12 +392,10 @@ sp_rankOrder <- rank.oos |>
 
 fig2_alt <- rank.oos |>
   filter(covSet %in% c("nullGrand", "null4wk", "ensGLM")) |>
-  filter(.metric %in% c("PR-AUC", "R2-VZ", "F1", "Schoener's D", "Accuracy (F1)")) |>
+  filter(.metric %in% c("ROC-AUC", "PR-AUC", "R2-VZ", "MCC", "Schoener's D")) |>
   mutate(.metric=factor(.metric, 
-                        levels=c("PR-AUC", "R2-VZ", "F1", 
-                                 "Accuracy (F1)", "Schoener's D"),
-                        labels=c("PR-AUC", "R['VZ']^2", "F[1]", 
-                                 "Accuracy~(F[1])", "D[overlap]"))) |>
+                        levels=c("ROC-AUC", "PR-AUC", "MCC", "R2-VZ", "Schoener's D"),
+                        labels=c("ROC-AUC", "PR-AUC", "MCC", "R['VZ']^2", "D[overlap]"))) |> 
   mutate(model=factor(model, levels=c("Null[0]", "Null[Date]", "Ensemble"))) |>
   group_by(.metric, y) |>
   arrange(model) |>
@@ -363,17 +424,20 @@ ggsave("figs/pub/Fig_2_alt2.png", fig2_alt, width=140, height=90, units="mm", dp
 
 fig2_alt <- rankPrev.oos |>
   filter(covSet %in% c("nullGrand", "null4wk", "ensGLM2")) |>
-  filter(.metric %in% c("PR-AUC", "R2-VZ", "F1", "Schoener's D", "Accuracy (F1)")) |>
+  filter(.metric %in% c("ROC-AUC", "PR-AUC", "R2-VZ", "MCC", "Schoener's D")) |>
   mutate(.metric=factor(.metric, 
-                        levels=c("PR-AUC", "R2-VZ", "F1", 
-                                 "Accuracy (F1)", "Schoener's D"),
-                        labels=c("PR-AUC", "R['VZ']^2", "F[1]", 
-                                 "Accuracy~(F[1])", "D[overlap]"))) |>
+                        levels=c("ROC-AUC", "PR-AUC", "MCC", "R2-VZ", "Schoener's D"),
+                        labels=c("ROC-AUC", "PR-AUC", "MCC", "R['VZ']^2", "D[overlap]"))) |> 
   mutate(model=factor(model, levels=c("Null[0]", "Null[Date]", "Ensemble"))) |>
-  ggplot(aes(model, .estimate, colour=y, group=y)) + 
+  group_by(.metric, y, prevAlert) |>
+  arrange(model) |>
+  mutate(diff_v_null=.estimate - first(.estimate),
+         std_gain=diff_v_null / 
+           if_else(.metric=="D[overlap]", -first(.estimate), (1-first(.estimate)))) |>
+  ggplot(aes(model, std_gain, colour=y, group=y)) + 
   geom_point(shape=1) + geom_line() +
   scale_colour_brewer(type="qual", palette=3) +
-  scale_y_continuous("Value", breaks=c(0, 0.5, 1), limits=c(0,1)) +
+  scale_y_continuous("Value", breaks=c(0, 0.5, 1), limits=c(-0.1,1)) +
   scale_x_discrete(labels=parse(text=fig2_mod_labs)) +
   facet_grid(prevAlert~.metric, labeller="label_parsed") + 
   guides(colour=guide_legend(nrow=2)) + 
@@ -386,6 +450,13 @@ fig2_alt <- rankPrev.oos |>
         panel.grid=element_blank())
 
 ggsave("figs/pub/Fig_2_alt3.png", fig2_alt, width=140, height=90, units="mm", dpi=300)
+
+
+
+
+
+
+
 
 
 
@@ -589,47 +660,238 @@ ggsave("figs/pub/Fig_3_alt4.png", fig3_alt, width=90, height=210, units="mm", dp
 
 
 
+
 # Fig 4 -------------------------------------------------------------------
 
-fig4_mod_labs <- c("Null[Date]", "Ensemble", "HB", "Ridge", 
-                   "MARS", "NN", "RF", "XGB")
+library(GGally)
 
-fig4 <- rank.oos  |>
-  filter(!grepl("auto|0|Ens-", model)) |>
-  filter(.metric %in% c("PR-AUC", "R2-VZ", "F1", "Schoener's D")) |>
+ggally_points_lims <- function(data, mapping, 
+                               xlims=c(0, 1), ylims=c(0, 1)) {
+  if(as.character(mapping$x)[2] == "MCC") {
+    xlims <- c(-1, 1)
+  }
+  if(as.character(mapping$y)[2] == "MCC") {
+    ylims <- c(-1, 1)
+  }
+  p <- ggplot(data=data, mapping=mapping) +
+    geom_point(data=data |> filter(model=="Candidate"), 
+               shape=1, size=0.3, alpha=0.4) +
+    geom_point(data=data |> filter(model=="Null[Date]"), aes(fill=fig_short),
+               colour="grey30", shape=21, size=1, alpha=0.8) +
+    geom_point(data=data |> filter(model=="Ensemble"), aes(fill=fig_short),
+               colour="grey30", shape=23, size=1.5, alpha=0.8) +
+    {if(grepl("ROC", as.character(mapping$x)[2]) & 
+        grepl("PR", as.character(mapping$y)[2])) { 
+      geom_text(data=data |> group_by(model) |> summarise(x=0.15) |> ungroup() |>
+                  mutate(y=1-row_number()*0.1, fig_short="DST"), 
+                aes(label=model, x=x, y=y), parse=T,
+                size=2, alpha=1, hjust=0, colour="grey20")
+    }} +
+    {if(grepl("ROC", as.character(mapping$x)[2]) &
+        grepl("PR", as.character(mapping$y)[2])) {
+      geom_point(data=data |> group_by(model) |> summarise(x=0.1) |> ungroup() |>
+                   mutate(y=1-row_number()*0.1, fig_short="DST"),
+                 aes(x=x, y=y, shape=model, size=model), alpha=1, 
+                 colour="grey20", fill="grey50")
+    }} +
+    scale_shape_manual(values=c(21, 23, 1)) +
+    scale_size_manual(values=c(1, 1, 0.5)) +
+    scale_x_continuous(limits=xlims, 
+                       breaks=seq(xlims[1], xlims[2], length.out=3), 
+                       labels=seq(xlims[1], xlims[2], length.out=3)) +
+    scale_y_continuous(limits=ylims, 
+                       breaks=seq(ylims[1], ylims[2], length.out=3),
+                       labels=seq(ylims[1], ylims[2], length.out=3)) +
+    theme(panel.grid.major=element_line(colour="grey90", linewidth=0.2))
+  return(p)
+}
+
+
+densityDiag_lims <- function(data, mapping, alpha=0.1, adjust=2, size=0.25, 
+                             xlims=c(0, 1)) {
+  if(as.character(mapping$x)[2] == "MCC") {
+    xlims <- c(-1, 1)
+  }
+  p <- ggally_densityDiag(data, mapping, alpha=alpha, adjust=adjust, size=size) +
+    scale_x_continuous(limits=xlims, 
+                       breaks=seq(xlims[1], xlims[2], length.out=3), 
+                       labels=seq(xlims[1], xlims[2], length.out=3)) +
+    {if(grepl("ROC", as.character(mapping$x)[2])) { 
+      geom_text(data=data |> group_by(fig_short) |> slice_head(n=1) |> ungroup() |>
+                  mutate(y=13 - row_number()*1.25), 
+                aes(label=fig_short, y=y), 
+                x=0.15, size=2, alpha=1, hjust=0, colour="grey20")
+    }} +
+    {if(grepl("ROC", as.character(mapping$x)[2])) {
+      geom_point(data=data |> group_by(fig_short) |> slice_head(n=1) |> ungroup() |>
+                   mutate(y=13 - row_number()*1.25),
+                 aes(y=y), x=0.1, size=1, alpha=1)
+    }} +
+    theme(panel.grid.major.x=element_line(colour="grey90", linewidth=0.2),
+          axis.ticks.y=element_blank(),
+          axis.text.y=element_blank())
+  return(p)
+}
+
+theme_set(theme_classic() + 
+            theme(strip.text=element_text(size=7),
+                  axis.title=element_text(size=9),
+                  axis.text=element_text(size=7),
+                  axis.line=element_line(colour="grey30", linewidth=0.25),
+                  strip.background=element_rect(fill=NA, colour="grey30", linewidth=0.5)))
+fig4 <- rank.oos |> 
+  filter(.metric %in% c("MCC", "R2-VZ", "PR-AUC", "ROC-AUC", "Schoener's D"),
+         covSet %in% c("ensGLM2", "null4wk", paste0("d", 1:16))) |> 
+  ungroup() |> 
+  left_join(y_i |> select(y, fig_short)) |>
+  select(fig_short, model, covSet, PCA, .metric, .estimate) |> 
   mutate(.metric=factor(.metric, 
-                        levels=c("PR-AUC", "R2-VZ", "F1", "Schoener's D"),
-                        labels=c("PR-AUC", "R['VZ']^2", "F[1]", "D[overlap]"))) |>
-  arrange(y, .metric, rank) |>
-  group_by(y, .metric) |>
-  mutate(rank=min_rank(rank)) |>
-  ungroup() |>
-  ggplot(aes(model, rank, fill=model)) + 
-  geom_boxplot(outlier.shape=1, outlier.size=0.7, outlier.alpha=0.5, size=0.25) +
-  scale_fill_manual("Model", values=mod_cols, guide="none") + 
-  labs(x="", y="Rank") +
-  scale_x_discrete(labels=parse(text=paste0("italic(", fig4_mod_labs, ")"))) +
-  facet_wrap(~.metric, nrow=1, labeller="label_parsed") + 
-  theme_ms +
-  theme(legend.position="bottom",
-        axis.text.x=element_text(angle=270, hjust=0, vjust=0.5),
-        axis.title.x=element_blank(),
-        panel.grid=element_blank())
+                        levels=c("ROC-AUC", "PR-AUC", "MCC", "R2-VZ", "Schoener's D"),
+                        labels=c("ROC-AUC", "PR-AUC", "MCC", "R['VZ']^2", "D[overlap]"))) |> 
+  arrange(.metric, fig_short, model) |>
+  pivot_wider(names_from=".metric", values_from=".estimate") |> 
+  select(-covSet, -PCA) |> 
+  mutate(model=fct_collapse(model, 
+                            Ensemble="Ensemble", 
+                            `Null[Date]`="Null[Date]", 
+                            other_level="Candidate")) |>
+  ggpairs(columns=3:7, aes(colour=fig_short, fill=fig_short, group=fig_short,
+                           size=model, alpha=model), 
+          diag=list(
+            continuous=wrap(densityDiag_lims, alpha=0.1, adjust=2, size=0.25)),
+          upper=list(
+            continuous=wrap(ggally_cor, stars=F, alpha=1, title="Overall r",
+                            digits=2, size=2, justify_labels="left", 
+                            fontface="bold", family="mono", colour="grey20")), 
+          lower=list(
+            continuous=wrap(ggally_points_lims)
+          ),
+          labeller="label_parsed",
+          axisLabels="show") +
+  scale_colour_brewer(type="qual", palette="Paired") + 
+  scale_fill_brewer(type="qual", palette="Paired") + 
+  theme(panel.border=element_rect(colour="grey30", fill=NA)) 
+ggsave("figs/pub/Fig_4.png", fig4, width=140, height=130, units="mm", dpi=300)
+theme_set(theme_classic())
 
-ggsave("figs/pub/Fig_4.png", fig4, width=140, height=90, units="mm", dpi=300)
 
 
+rank.oos |> 
+  filter(.metric %in% c("MCC", "R2-VZ", "PR-AUC", "ROC-AUC", "Schoener's D"),
+         covSet %in% c("ensGLM2", "null4wk", paste0("d", 1:16))) |> 
+  ungroup() |> 
+  left_join(y_i |> select(y, fig_short)) |>
+  select(fig_short, model, covSet, PCA, .metric, .estimate) |> 
+  mutate(.metric=factor(.metric, 
+                        levels=c("ROC-AUC", "PR-AUC", "MCC", "R2-VZ", "Schoener's D"),
+                        labels=c("ROC-AUC", "PR-AUC", "MCC", "R['VZ']^2", "D[overlap]"))) |> 
+  arrange(.metric, fig_short, model) |>
+  pivot_wider(names_from=".metric", values_from=".estimate") |> 
+  select(-covSet, -PCA, -model) |>
+  select(-fig_short) |>
+  as.matrix() |>
+  cor() |>
+  abs() |>
+  summary()
+  corrplot::corrplot() 
 
+rank.oos |> 
+  filter(.metric %in% c("MCC", "R2-VZ", "PR-AUC", "ROC-AUC", "Schoener's D"),
+         covSet %in% c("ensGLM2", "null4wk", paste0("d", 1:16))) |> 
+  ungroup() |> 
+  left_join(y_i |> select(y, fig_short)) |>
+  select(fig_short, model, covSet, PCA, .metric, .estimate) |> 
+  mutate(.metric=factor(.metric, 
+                        levels=c("ROC-AUC", "PR-AUC", "MCC", "R2-VZ", "Schoener's D"),
+                        labels=c("ROC-AUC", "PR-AUC", "MCC", "R['VZ']^2", "D[overlap]"))) |> 
+  arrange(.metric, fig_short, model) |>
+  pivot_wider(names_from=".metric", values_from=".estimate") |> 
+  select(-covSet, -PCA, -model) |>
+  group_by(fig_short) |>
+  group_split(.keep=F) |>
+  map(~.x |> as.matrix() |> cor()) 
+  
 
 
 
 
 # Fig 5 -------------------------------------------------------------------
 
+fig5_mod_labs <- c("Null[Date]", "Ensemble", "Bayes", "Ridge", 
+                   "MARS", "NN", "RF", "XGB")
+
+fig5 <- rank.oos  |>
+  filter(!grepl("auto|0|Ens-", model)) |>
+  filter(.metric %in% c("ROC-AUC", "PR-AUC", "R2-VZ", "MCC", "Schoener's D")) |>
+  mutate(.metric=factor(.metric, 
+                        levels=c("ROC-AUC", "PR-AUC", "MCC", "R2-VZ", "Schoener's D"),
+                        labels=c("ROC-AUC", "PR-AUC", "MCC", "R['VZ']^2", "D[overlap]"))) |> 
+  arrange(y, .metric, rank) |>
+  group_by(y, .metric) |>
+  mutate(rank=(194-min_rank(rank))/194*100) |>
+  ungroup() |>
+  ggplot(aes(model, rank, fill=model)) + 
+  geom_boxplot(outlier.shape=1, outlier.size=0.7, outlier.alpha=0.5, size=0.25) +
+  scale_fill_manual("Model", values=mod_cols, guide="none") + 
+  labs(x="", y="Rank") +
+  scale_x_discrete(labels=parse(text=paste0("italic(", fig5_mod_labs, ")"))) +
+  scale_y_continuous("Percentile", breaks=seq(0,100,by=10)) +
+  facet_wrap(~.metric, nrow=1, labeller="label_parsed") + 
+  theme_ms +
+  theme(legend.position="bottom",
+        axis.text.x=element_text(angle=270, hjust=0, vjust=0.5),
+        axis.title.x=element_blank(),
+        panel.grid.major.x=element_blank(),
+        panel.grid.major.y=element_line(colour="grey90", linewidth=0.25))
+
+ggsave("figs/pub/Fig_5.png", fig5, width=140, height=90, units="mm", dpi=300)
+
+
+fig5_metrics_df <- rank.oos |>
+  filter(!grepl("auto|0|Ens-", model)) |>
+  filter(.metric %in% c("ROC-AUC", "PR-AUC", "R2-VZ", "MCC", "Schoener's D")) |>
+  mutate(.metric=factor(.metric, 
+                        levels=c("ROC-AUC", "PR-AUC", "MCC", "R2-VZ", "Schoener's D"),
+                        labels=c("ROC-AUC", "PR-AUC", "MCC", "R['VZ']^2", "D[overlap]"))) |> 
+  arrange(y, .metric, rank) |>
+  group_by(y, .metric) |>
+  mutate(rank=min_rank(rank)) |>
+  ungroup()
+fig5_df <- fig5_metrics_df |>
+  mutate(.metric=factor(.metric, 
+                        levels=c("ROC-AUC", "PR-AUC", "MCC", "R2-VZ", "Schoener's D"),
+                        labels=c("ROC-AUC", "PR-AUC", "MCC", "R['VZ']^2", "D[overlap]"))) |> 
+  left_join(y_i |> select(y, fig_short, fig_long))
+fig5_means <- fig5_df |>
+  group_by(model, .metric) |>
+  summarise(across(where(is.numeric), mean))
+fig5 <- fig5_df |>
+  ggplot(aes(model, rank, fill=model)) + 
+  geom_boxplot(outlier.shape=1, outlier.size=0.7, outlier.alpha=0.5, size=0.25) +
+  scale_fill_manual("Model", values=mod_cols, guide="none") + 
+  labs(x="", y="Rank") +
+  scale_x_discrete(labels=parse(text=paste0("italic(", fig5_mod_labs, ")"))) +
+  facet_wrap(~.metric, nrow=1, labeller="label_parsed") + 
+  theme_talk +
+  theme(legend.position="bottom",
+        axis.text.x=element_text(angle=270, hjust=0, vjust=0.5),
+        axis.title.x=element_blank(),
+        panel.grid=element_blank())
+
+ggsave("figs/pub/Fig_5_TALK.png", fig5, width=160, height=90, units="mm", dpi=300)
+
+
+
+
+
+
+
+# Fig 6 -------------------------------------------------------------------
+
 vi_rng_df <- vi_pt_df |> group_by(fig_short, fig_short_rev, VariableType, varTypeClean) |>
   reframe(mnImp=c(0, max(mnImp)))
 
-fig5 <- vi_pt_df |>
+fig6 <- vi_pt_df |>
   ggplot(aes(mnImp, fig_short_rev, colour=fig_short)) + 
   geom_line(data=vi_rng_df, linewidth=0.25) +
   geom_point(aes(shape=top, size=top, alpha=top)) + 
@@ -648,7 +910,36 @@ fig5 <- vi_pt_df |>
         legend.title=element_blank(),
         legend.position=c(0.9,0.09),
         legend.key.height=unit(0.35, "cm"))
-ggsave("figs/pub/Fig_5.png", fig5, width=90, height=200, units="mm", dpi=300)
+ggsave("figs/pub/Fig_6.png", fig6, width=90, height=200, units="mm", dpi=300)
+
+fig6 <- vi_pt_df |>
+  ggplot(aes(fig_short, mnImp, colour=fig_short)) + 
+  geom_hline(yintercept=0, colour="grey30", linewidth=0.25) + 
+  geom_line(data=vi_rng_df, linewidth=0.25) +
+  geom_point(aes(shape=top, size=top, alpha=top)) + 
+  scale_colour_brewer(type="qual", palette=3) + 
+  scale_shape_manual(values=c(1, 19), guide="none") +
+  scale_size_manual(values=c(0.75, 1.75), guide="none") +
+  scale_alpha_manual(values=c(0.5, 1), guide="none") +
+  scale_y_continuous("Ensemble weighted relative importance (%)", 
+                     breaks=seq(0,100,by=25)) +
+  facet_grid(.~varTypeClean, scales="free_x", space="free_x", switch="x",
+             labeller=label_wrap_gen()) +
+  guides(colour=guide_legend(ncol=2)) + 
+  theme_talk +
+  theme(axis.text.x=element_blank(),
+        axis.ticks.x=element_blank(),
+        axis.title.x=element_blank(),
+        legend.title=element_blank(),
+        legend.position="none",
+        legend.key.height=unit(0.35, "cm"))
+ggsave("figs/pub/Fig_6_TALK.png", fig6, width=260, height=150, units="mm", dpi=300)
+
+
+
+
+
+
 
 
 
@@ -718,57 +1009,26 @@ bloom_df |>
   facet_wrap(~y, scales="free_y")
 
 # Improvement: ensemble vs. nulls
-## Mean + range across species within metrics
+## IN ORDER OF MANUSCRIPT
+### Mean/min/max among all species, metrics
 rank.oos |>
   filter(covSet %in% c("nullGrand", "null4wk", "ensGLM2")) |>
-  filter(.metric %in% c("PR-AUC", "R2-VZ", "F1", "Schoener's D")) |>
-  group_by(.metric, y) |>
-  arrange(model) |>
-  mutate(diff_v_null=.estimate - first(.estimate),
-         std_gain=100 * diff_v_null / 
-           if_else(.metric=="Schoener's D", -first(.estimate), (1-first(.estimate)))) |>
-  mutate(diff_v_null=diff_v_null * if_else(.metric=="Schoener's D", -1, 1)) |>
-  group_by(.metric, model) |>
-  summarise(across(c("diff_v_null", "std_gain"), 
-                 ~paste0(signif(mean(.x),3), " ", signif(min(.x),3), "-", signif(max(.x),3)))) |>
-  ungroup() |>
-  filter(!grepl("0", model))
-
-rank.oos |>
-  filter(covSet %in% c("nullGrand", "null4wk", "ensGLM2")) |>
-  filter(.metric %in% c("PR-AUC", "R2-VZ", "F1", "Schoener's D")) |>
+  filter(.metric %in% c("ROC-AUC", "PR-AUC", "R2-VZ", "MCC", "Schoener's D")) |>
   group_by(.metric, y) |>
   arrange(model) |>
   mutate(diff_v_null=.estimate - first(.estimate),
          std_gain=diff_v_null / 
            if_else(.metric=="Schoener's D", -first(.estimate), (1-first(.estimate)))) |>
   mutate(diff_v_null=diff_v_null * if_else(.metric=="Schoener's D", -1, 1)) |>
-  group_by(.metric, model) |>
-  summarise(across(c("diff_v_null", "std_gain"), mean)) |>
-  ungroup() |>
-  filter(!grepl("0", model)) |>
-  arrange(desc(std_gain))
+  group_by(model) |> 
+  summarise(gain_q025=quantile(std_gain, 0.025),
+            gain_mean=mean(std_gain),
+            gain_q975=quantile(std_gain, 0.975))
 
+### Means by monitoring target
 rank.oos |>
   filter(covSet %in% c("nullGrand", "null4wk", "ensGLM2")) |>
-  filter(.metric %in% c("PR-AUC", "R2-VZ", "F1", "Schoener's D")) |>
-  group_by(.metric, y) |>
-  arrange(model) |>
-  mutate(diff_v_null=.estimate - first(.estimate),
-         std_gain=100 * diff_v_null / 
-           if_else(.metric=="Schoener's D", -first(.estimate), (1-first(.estimate)))) |>
-  mutate(diff_v_null=diff_v_null * if_else(.metric=="Schoener's D", -1, 1)) |> 
-  filter(!grepl("0", model)) |>
-  select(y, model, .metric, std_gain) |>
-  pivot_wider(names_from=".metric", values_from="std_gain") |>
-  arrange(y, desc(model))
-
-
-
-## Mean + range within species across metrics
-rank.oos |>
-  filter(covSet %in% c("nullGrand", "null4wk", "ensGLM2")) |>
-  filter(.metric %in% c("PR-AUC", "R2-VZ", "F1", "Schoener's D")) |>
+  filter(.metric %in% c("ROC-AUC", "PR-AUC", "R2-VZ", "MCC", "Schoener's D")) |>
   group_by(.metric, y) |>
   arrange(model) |>
   mutate(diff_v_null=.estimate - first(.estimate),
@@ -781,10 +1041,9 @@ rank.oos |>
   ungroup() |>
   filter(!grepl("0", model)) |>
   arrange(y, desc(model))
-
 rank.oos |>
   filter(covSet %in% c("nullGrand", "null4wk", "ensGLM2")) |>
-  filter(.metric %in% c("PR-AUC", "R2-VZ", "F1", "Schoener's D")) |>
+  filter(.metric %in% c("ROC-AUC", "PR-AUC", "R2-VZ", "MCC", "Schoener's D")) |>
   group_by(.metric, y) |>
   arrange(model) |>
   mutate(diff_v_null=.estimate - first(.estimate),
@@ -792,33 +1051,18 @@ rank.oos |>
            if_else(.metric=="Schoener's D", -first(.estimate), (1-first(.estimate)))) |>
   mutate(diff_v_null=diff_v_null * if_else(.metric=="Schoener's D", -1, 1)) |>
   group_by(y, model) |>
-  summarise(across(c("diff_v_null", "std_gain"), mean)) |>
+  summarise(across(c("diff_v_null", "std_gain"), 
+                   ~signif(mean(.x),3))) |>
   ungroup() |>
   filter(!grepl("0", model)) |>
-  arrange(desc(std_gain))
+  arrange(y, desc(model)) |>
+  group_by(y) |>
+  summarise(mean_gain=paste0(first(std_gain), " (", last(std_gain), ")"))
 
+### Increase in gain vs. nullDate
 rank.oos |>
   filter(covSet %in% c("nullGrand", "null4wk", "ensGLM2")) |>
-  filter(.metric %in% c("PR-AUC", "R2-VZ", "F1", "Schoener's D")) |>
-  group_by(.metric, y) |>
-  arrange(model) |>
-  mutate(diff_v_null=.estimate - first(.estimate),
-         std_gain=diff_v_null / 
-           if_else(.metric=="Schoener's D", -first(.estimate), (1-first(.estimate)))) |>
-  mutate(diff_v_null=diff_v_null * if_else(.metric=="Schoener's D", -1, 1)) |>
-  filter(!grepl("0", model)) |>
-  arrange(desc(model), .metric, y) |>
-  group_by(y, .metric) |>
-  summarise(std_gain_diff=first(std_gain)-last(std_gain),
-            std_gain_pctImprove=std_gain_diff/pmax(last(std_gain), 0.001)*100,
-            ens_gain=first(std_gain)) |>
-  group_by(.metric) |>
-  summarise(mean_diff=mean(std_gain_diff))
-
-
-rank.oos |>
-  filter(covSet %in% c("nullGrand", "null4wk", "ensGLM2")) |>
-  filter(.metric %in% c("PR-AUC", "R2-VZ", "F1", "Schoener's D")) |>
+  filter(.metric %in% c("ROC-AUC", "PR-AUC", "R2-VZ", "MCC", "Schoener's D")) |>
   group_by(.metric, y) |>
   arrange(model) |>
   mutate(diff_v_null=.estimate - first(.estimate),
@@ -835,42 +1079,205 @@ rank.oos |>
             ens_gain=first(std_gain)) |>
   ungroup() |>
   arrange(desc(std_gain_diff)) |>
-  summary()
+  summarise(gain_q025=quantile(std_gain_diff, 0.025),
+            gain_mean=mean(std_gain_diff),
+            gain_q975=quantile(std_gain_diff, 0.975))
+
+### Means by metric
+rank.oos |>
+  filter(covSet %in% c("nullGrand", "null4wk", "ensGLM2")) |>
+  filter(.metric %in% c("ROC-AUC", "PR-AUC", "R2-VZ", "MCC", "Schoener's D")) |>
+  group_by(.metric, y) |>
+  arrange(model) |>
+  mutate(diff_v_null=.estimate - first(.estimate),
+         std_gain=100 * diff_v_null / 
+           if_else(.metric=="Schoener's D", -first(.estimate), (1-first(.estimate)))) |>
+  mutate(diff_v_null=diff_v_null * if_else(.metric=="Schoener's D", -1, 1)) |>
+  group_by(.metric, model) |>
+  summarise(across(c("diff_v_null", "std_gain"), 
+                   ~paste0(signif(mean(.x),3), " ", signif(min(.x),3), "-", signif(max(.x),3)))) |>
+  ungroup() |>
+  filter(!grepl("0", model))
+
+
+
+
+
+
+# Extra scratch, currently not reported
+
+rank.oos |>
+  filter(covSet %in% c("nullGrand", "null4wk", "ensGLM2")) |>
+  filter(.metric %in% c("ROC-AUC", "PR-AUC", "R2-VZ", "MCC", "Schoener's D")) |>
+  group_by(.metric, y) |>
+  arrange(model) |>
+  mutate(diff_v_null=.estimate - first(.estimate),
+         std_gain=diff_v_null / 
+           if_else(.metric=="Schoener's D", -first(.estimate), (1-first(.estimate)))) |>
+  mutate(diff_v_null=diff_v_null * if_else(.metric=="Schoener's D", -1, 1)) |>
+  filter(!grepl("0", model)) |>
+  mutate(model=factor(model, levels=c("Null[Date]", "Ensemble"),
+                      labels=c("italic(Null[Date])", "italic(Ens.)"))) |>
+  ggplot(aes(std_gain, colour=model, fill=model)) + 
+  geom_density(alpha=0.5, adjust=0.8) + 
+  scale_colour_manual("Model", values=c("grey30", "steelblue3"), 
+                      labels=parse_format()) +
+  scale_fill_manual("Model", values=c("grey30", "steelblue3"), 
+                      labels=parse_format()) +
+  labs(x=expression(atop("Standardised gain", 
+                         paste("(0: Null" [0]~~"1: Perfect)"))),
+       title="Improvement across all monitoring targets and metrics") + 
+  xlim(-0.02, 1) +
+  theme_talk +
+  theme(legend.text.align=0,
+        legend.position=c(0.9, 0.7))
+ggsave("figs/pub/Fig_2_overview_TALK.png", width=160, height=90, units="mm", dpi=300)
+
+rank.oos |>
+  filter(covSet %in% c("nullGrand", "null4wk", "ensGLM2")) |>
+  filter(.metric %in% c("ROC-AUC", "PR-AUC", "R2-VZ", "MCC", "Schoener's D")) |>
+  group_by(.metric, y) |>
+  arrange(model) |>
+  mutate(diff_v_null=.estimate - first(.estimate),
+         std_gain=diff_v_null / 
+           if_else(.metric=="Schoener's D", -first(.estimate), (1-first(.estimate)))) |>
+  mutate(diff_v_null=diff_v_null * if_else(.metric=="Schoener's D", -1, 1)) |>
+  filter(!grepl("0", model)) |>
+  arrange(y, .metric, model) |>
+  group_by(y, .metric) |>
+  summarise(ens_minus_date=last(std_gain)-first(std_gain),
+            ens_minus_date_std=(last(std_gain)-first(std_gain))/(1-first(std_gain))) |>
+  ggplot(aes(ens_minus_date_std)) + 
+  geom_density(aes(colour=y), adjust=1.5, linewidth=0.7) + 
+  scale_colour_brewer(type="qual", palette="Paired") +
+  geom_density(linewidth=1.25) + 
+  xlim(0, 1)
+
+## Mean + range across species within metrics
+rank.oos |>
+  filter(covSet %in% c("nullGrand", "null4wk", "ensGLM2")) |>
+  filter(.metric %in% c("PR-AUC", "R2-VZ", "MCC", "Schoener's D")) |>
+  group_by(.metric, y) |>
+  arrange(model) |>
+  mutate(diff_v_null=.estimate - first(.estimate),
+         std_gain=100 * diff_v_null / 
+           if_else(.metric=="Schoener's D", -first(.estimate), (1-first(.estimate)))) |>
+  mutate(diff_v_null=diff_v_null * if_else(.metric=="Schoener's D", -1, 1)) |>
+  group_by(.metric, model) |>
+  summarise(across(c("diff_v_null", "std_gain"), 
+                 ~paste0(signif(mean(.x),3), " ", signif(min(.x),3), "-", signif(max(.x),3)))) |>
+  ungroup() |>
+  filter(!grepl("0", model))
+
+rank.oos |>
+  filter(covSet %in% c("nullGrand", "null4wk", "ensGLM2")) |>
+  filter(.metric %in% c("PR-AUC", "R2-VZ", "MCC", "Schoener's D")) |>
+  group_by(.metric, y) |>
+  arrange(model) |>
+  mutate(diff_v_null=.estimate - first(.estimate),
+         std_gain=diff_v_null / 
+           if_else(.metric=="Schoener's D", -first(.estimate), (1-first(.estimate)))) |>
+  mutate(diff_v_null=diff_v_null * if_else(.metric=="Schoener's D", -1, 1)) |>
+  group_by(.metric, model) |>
+  summarise(across(c("diff_v_null", "std_gain"), mean)) |>
+  ungroup() |>
+  filter(!grepl("0", model)) |>
+  arrange(desc(std_gain))
+
+rank.oos |>
+  filter(covSet %in% c("nullGrand", "null4wk", "ensGLM2")) |>
+  filter(.metric %in% c("PR-AUC", "R2-VZ", "MCC", "Schoener's D")) |>
+  group_by(.metric, y) |>
+  arrange(model) |>
+  mutate(diff_v_null=.estimate - first(.estimate),
+         std_gain=100 * diff_v_null / 
+           if_else(.metric=="Schoener's D", -first(.estimate), (1-first(.estimate)))) |>
+  mutate(diff_v_null=diff_v_null * if_else(.metric=="Schoener's D", -1, 1)) |> 
+  filter(!grepl("0", model)) |>
+  select(y, model, .metric, std_gain) |>
+  pivot_wider(names_from=".metric", values_from="std_gain") |>
+  arrange(y, desc(model))
+
+
+
+## Mean + range within species across metrics
+rank.oos |>
+  filter(covSet %in% c("nullGrand", "null4wk", "ensGLM2")) |>
+  filter(.metric %in% c("PR-AUC", "R2-VZ", "MCC", "Schoener's D")) |>
+  group_by(.metric, y) |>
+  arrange(model) |>
+  mutate(diff_v_null=.estimate - first(.estimate),
+         std_gain=diff_v_null / 
+           if_else(.metric=="Schoener's D", -first(.estimate), (1-first(.estimate)))) |>
+  mutate(diff_v_null=diff_v_null * if_else(.metric=="Schoener's D", -1, 1)) |>
+  group_by(y, model) |>
+  summarise(across(c("diff_v_null", "std_gain"), mean)) |>
+  ungroup() |>
+  filter(!grepl("0", model)) |>
+  arrange(desc(std_gain))
+
+rank.oos |>
+  filter(covSet %in% c("nullGrand", "null4wk", "ensGLM2")) |>
+  filter(.metric %in% c("PR-AUC", "R2-VZ", "MCC", "Schoener's D")) |>
+  group_by(.metric, y) |>
+  arrange(model) |>
+  mutate(diff_v_null=.estimate - first(.estimate),
+         std_gain=diff_v_null / 
+           if_else(.metric=="Schoener's D", -first(.estimate), (1-first(.estimate)))) |>
+  mutate(diff_v_null=diff_v_null * if_else(.metric=="Schoener's D", -1, 1)) |>
+  filter(!grepl("0", model)) |>
+  arrange(desc(model), .metric, y) |>
+  group_by(y, .metric) |>
+  summarise(std_gain_diff=first(std_gain)-last(std_gain),
+            std_gain_pctImprove=std_gain_diff/pmax(last(std_gain), 0.001)*100,
+            ens_gain=first(std_gain)) |>
+  group_by(.metric) |>
+  summarise(mean_diff=mean(std_gain_diff))
+
+
+
   
 
 
 # Candidate model rankings
 rank.oos |> 
   filter(!is.na(rank)) |>
-  filter(.metric %in% c("PR-AUC", "R2-VZ", "F1", "Schoener's D")) |>
+  filter(.metric %in% c("ROC-AUC", "PR-AUC", "R2-VZ", "MCC", "Schoener's D")) |>
   filter(!grepl("auto|0|Ens-", model)) |>
   arrange(rank) |>
   group_by(y, .metric) |>
   mutate(rank=min_rank(rank)) |>
   group_by(model) |>
   summarise(mdRank=median(rank, type=3),
-            q05Rank=quantile(rank, probs=0.05, type=3),
-            q10Rank=quantile(rank, probs=0.1, type=3),
+            # q025Rank=quantile(rank, probs=0.025, type=3),
+            # q05Rank=quantile(rank, probs=0.05, type=3),
+            # q10Rank=quantile(rank, probs=0.1, type=3),
             q25Rank=quantile(rank, probs=0.25, type=3),
             q75Rank=quantile(rank, probs=0.75, type=3),
-            q90Rank=quantile(rank, probs=0.9, type=3),
-            q95Rank=quantile(rank, probs=0.95, type=3),
+            # q90Rank=quantile(rank, probs=0.9, type=3),
+            # q95Rank=quantile(rank, probs=0.95, type=3),
+            # q975Rank=quantile(rank, probs=0.975, type=3),
             mnRank=mean(rank),
             sdRank=sd(rank),
             seRank=sd(rank)/sqrt(n()),
             iqrRank=IQR(rank),
+            MIN=min(rank),
             MAX=max(rank)) |>
-  arrange(mnRank)
+  arrange(mnRank) |>
+  mutate(across(ends_with("Rank"), ~round(.x/194*100, 1)))
 
 rank_lm <- aov(rank ~ model * y * .metric, 
               data=rank.oos |> 
-                filter(.metric %in% c("PR-AUC", "R2-VZ", "F1", "Schoener's D")) |>
-                filter(!grepl("auto|0|Ens-", model)))
+                filter(.metric %in% c("ROC-AUC", "PR-AUC", "R2-VZ", "MCC", "Schoener's D")) |>
+                filter(!grepl("auto|0|Ens-", model)) |>
+                arrange(rank) |>
+                group_by(y, .metric) |>
+                mutate(rank=min_rank(rank)) |>
+                ungroup())
 TukeyHSD(rank_lm, which="model")$model |>
   as_tibble(rownames="comparison") |>
   filter(grepl("Ensemble|Null", comparison)) |>
   arrange(desc(abs(diff))) 
-
 
 
 # Variable importance
@@ -973,16 +1380,24 @@ for(i in 1:nlevels(site_month_sum.df$fig_long)) {
 
 figS2 <- vi_pt_df |> 
   filter(top) |> 
+  mutate(Variable=str_remove(Variable, "Dir[NSEW]") |>
+           str_remove_all("Wk") |>
+           str_remove_all("Wt") |>
+           str_replace_all("UV", "Wind") |>
+           str_replace_all("UX", "WindX") |>
+           str_replace_all("VX", "WindX")) |>
+  mutate(varTypeClean=forcats::fct_recode(varTypeClean, "Prev. year"="Previous year")) |>
   ggplot(aes(y, Variable, colour=y)) + 
   geom_point() + 
   scale_colour_brewer(type="qual", palette="Paired") +
   facet_grid(varTypeClean~., scales="free_y", space="free_y",
-             labeller=label_wrap_gen()) +
+             labeller=label_wrap_gen(8)) +
   theme_ms +
   theme(axis.text.x=element_blank(),
         axis.ticks.x=element_blank(),
         axis.title.x=element_blank(),
-        legend.key.height=unit(0.35, "cm"))
+        legend.key.height=unit(0.35, "cm"),
+        panel.grid.major.y=element_line(colour="grey", linewidth=0.1))
 ggsave("figs/pub/Fig_S2.png", figS2, width=90, height=240, units="mm", dpi=300)
 
 
@@ -995,7 +1410,7 @@ ggsave("figs/pub/Fig_S2.png", figS2, width=90, height=240, units="mm", dpi=300)
 
 figS3 <- rank.oos |>
   filter(covSet %in% c("nullGrand", "null4wk", "ensGLM2")) |>
-  filter(.metric %in% c("PR-AUC", "R2-VZ", "F1", "Schoener's D")) |>
+  filter(.metric %in% c("ROC-AUC", "PR-AUC", "R2-VZ", "MCC", "Schoener's D")) |>
   group_by(.metric, y) |>
   arrange(model) |>
   mutate(diff_v_null=.estimate - first(.estimate),
@@ -1006,43 +1421,212 @@ figS3 <- rank.oos |>
   select(y, model, .metric, std_gain) |>
   left_join(y_i |> select(y, fig_short)) |>
   pivot_wider(names_from="model", values_from="std_gain") |>
+  mutate(.metric=factor(.metric, 
+                        levels=c("ROC-AUC", "PR-AUC", "R2-VZ", "MCC", "Schoener's D"),
+                        labels=c("ROC-AUC", "PR-AUC", "R['VZ']^2", "MCC", "D[overlap]"))) |>
   ggplot(aes(`Null[Date]`, Ensemble, colour=fig_short)) + 
   geom_abline(linewidth=0.25) + 
   geom_point(aes(shape=.metric), size=2) + 
-  scale_colour_brewer("Monitoring target", type="qual", palette=3, guide=guide_legend(ncol=2)) + 
-  scale_shape_manual("Performance metric", values=c(1, 19, 3, 2)) +
+  geom_rug(linewidth=0.2, length=unit(0.2, "cm")) +
+  scale_colour_brewer("Monitoring target", type="qual", palette=3, 
+                      guide=guide_legend(ncol=2, order=1)) + 
+  scale_shape_manual("Performance metric", values=c(1, 19, 3, 2, 4), 
+                     labels=parse_format()) +
   scale_x_continuous(expression(italic(Null['Date'])~'standardised gain'), 
                      breaks=c(0, 0.5, 1), limits=c(-0.05,1)) + 
   scale_y_continuous(expression(italic(Ensemble)~"standardised gain"), 
                      breaks=c(0, 0.5, 1), limits=c(-0.05,1)) + 
   theme_ms +
-  theme(legend.position=c(0.85, 0.3),
+  theme(legend.position=c(0.855, 0.325),
         # legend.spacing.y=unit(0.05, "cm"),
         legend.margin=margin(-1,0,0,0),
+        legend.text.align=0,
         legend.key.height=unit(0.35, "cm"),
         legend.key.width=unit(0.35, "cm"))
-ggsave("figs/pub/Fig_S3.png", figS3, width=90, height=90, units="mm", dpi=300)
+ggsave("figs/pub/Fig_S3.png", figS3, width=90, height=85, units="mm", dpi=300)
 
 
 
 
+
+
+
+
+# Fig S4 ------------------------------------------------------------------
+
+# Spatial metrics by site
+out.oos |>
+  filter(covSet == "ensGLM2") |>
+  select(y, siteid, model, alert, predMCC) |>
+  group_by(y, model, siteid) |>
+  na.omit() |>
+  mcc(predMCC, truth=alert) |>
+  filter(!is.na(.estimate)) |>
+  left_join(y_i |> select(y, fig_long, type)) |>
+  left_join(bind_rows(site_tox.df |> select(siteid, lon, lat) |> mutate(type="tox"),
+                      site_hab.df |> select(siteid, lon, lat) |> mutate(type="hab"))) |>
+  ggplot() + 
+  geom_sf(data=coast) +
+  geom_point(aes(lon, lat, colour=.estimate), size=2) + 
+  scale_colour_gradient2("MCC") +
+  facet_wrap(~fig_long, nrow=2) + 
+  theme(legend.position=c(0.9, 0.2))
+
+
+
+
+out.oos |>
+  filter(covSet %in% c("ensGLM2", "null4wk", "nullGrand")) |>
+  mutate(month=month(date, label=TRUE)) |>
+  select(y, model, covSet, PCA, month, alert, prA1) |>
+  na.omit() |>
+  mutate(nA1=sum(alert=="A1")) |>
+  ungroup() |>
+  filter(nA1 > 2) |>
+  group_by(y, month, model) |>
+  find_AUCPR_min(y) |>
+  nest(dat=c(prA1, alert)) |>
+  mutate(AUCPR=map_dbl(dat, ~average_precision(.x, alert, prA1, event_level="second")$.estimate),
+         AUCNPR=(AUCPR-AUCPR_min)/(1-AUCPR_min)) |>
+  select(-dat) |>
+  rename(.estimate=AUCNPR) |>
+  ggplot(aes(month, .estimate, colour=model, group=model)) + 
+  geom_line() + 
+  facet_wrap(~y) + 
+  ylab("PR-AUC")
+
+out.oos |>
+  filter(covSet %in% c("ensGLM2", "null4wk", "nullGrand")) |>
+  mutate(month=month(date, label=TRUE)) |>
+  select(y, month, model, alert, prA1) |>
+  group_by(y, model, month) |>
+  na.omit() |>
+  mutate(nA1=sum(alert=="A1")) |>
+  ungroup() |>
+  filter(nA1 > 2) |>
+  group_by(y, month, model) |>
+  roc_auc(prA1, truth=alert, event_level="second") |>
+  filter(!is.na(.estimate)) |>
+  ggplot(aes(month, .estimate, colour=model, group=model)) + 
+  geom_line() + 
+  facet_wrap(~y) + 
+  ylab("ROC-AUC")
+
+out.oos |>
+  filter(covSet %in% c("ensGLM2", "null4wk", "nullGrand")) |>
+  mutate(month=month(date, label=TRUE)) |>
+  select(y, month, model, alert, predMCC) |>
+  group_by(y, model, month) |>
+  na.omit() |>
+  mutate(nA1=sum(alert=="A1")) |>
+  ungroup() |>
+  filter(nA1 > 2) |>
+  group_by(y, month, model) |>
+  mcc(predMCC, truth=alert) |>
+  filter(!is.na(.estimate)) |>
+  ggplot(aes(month, .estimate, colour=model, group=model)) + 
+  geom_hline(yintercept=0, linetype=3) + 
+  geom_line() + 
+  facet_wrap(~y) + 
+  ylab("MCC")
+
+
+out.oos |>
+  filter(covSet %in% c("ensGLM2", "null4wk", "nullGrand")) |>
+  mutate(month=month(date, label=TRUE)) |>
+  mutate(prA1=if_else(prA1==0, 1e-5, prA1),
+         prA1=if_else(prA1==1, 1-1e-5, prA1),
+         alert=as.numeric(alert=="A1")) |>
+  group_by(y, month, model, PCA, covSet) |>
+  mutate(nA1=sum(alert==1)) |>
+  ungroup() |>
+  filter(nA1 > 2) |>
+  calc_R2(type="vz", y, month) |>
+  rename(.estimate=R2) |>
+  mutate(.estimate=pmin(pmax(.estimate, 0), 1)) |>
+  ggplot(aes(month, .estimate, colour=model, group=model)) + 
+  geom_line() + 
+  facet_wrap(~y) + 
+  ylab("R2-VZ")
+
+library(kerneval)
+out.oos |>
+  filter(covSet %in% c("ensGLM2", "null4wk")) |>
+  mutate(month=month(date, label=TRUE)) |>
+  select(month, y, covSet, PCA, model, obsid, alert, prA1) %>%
+  filter(!is.na(prA1)) |>
+  group_by(y, month, model, PCA, covSet) |>
+  mutate(nA1=sum(alert=="A1")) |>
+  ungroup() |>
+  filter(nA1 > 2) |>
+  pivot_wider(names_from="alert", values_from="prA1") |>
+  group_by(y, month, model, PCA, covSet) |>
+  summarise(.estimate=schoenr(density(A0, na.rm=T), density(A1, na.rm=T))) |>
+  ggplot(aes(month, .estimate, colour=y, group=paste(y, model), shape=model)) + 
+  geom_point() +
+  scale_shape_manual(values=c(1, 19)) +
+  scale_colour_brewer(type="qual", palette="Paired") +
+  ylab("D")
+
+
+
+
+
+
+
+# Null date ---------------------------------------------------------------
+
+out.oos |> 
+  filter(model %in% c("Null[Date]", "Null[0]")) |> 
+  mutate(yday=yday(date)) |> 
+  group_by(yday, y, model) |> 
+  summarise(prA1=mean(prA1)) |> 
+  ungroup() |>
+  mutate(date=ymd("2020-12-31") + yday,
+         panel=case_when(y %in% c("Alsp", "PSP") ~ "Alexandrium, PST",
+                         y %in% c("Disp", "DSP") ~ "Dinophysis, DST",
+                         y %in% c("Pssp", "Psde", "Psse", "ASP") ~ "Pseudo-nitzschia, AST",
+                         y %in% c("Kami") ~ "Karenia mikimotoi")) |>
+  left_join(y_i |> select(y, fig_short)) |>
+  ggplot(aes(date, prA1, colour=fig_short, linetype=model)) + 
+  geom_vline(xintercept=ymd(paste0("2021-", c("01", "04", "07", "10"), "-01")),
+             linewidth=0.25, colour="grey90") +
+  geom_hline(yintercept=0, linewidth=0.25, colour="grey90") +
+  geom_line(linewidth=0.7) + 
+  scale_colour_brewer(type="qual", palette="Paired") + 
+  scale_linetype_manual(values=c(2, 1)) + 
+  scale_x_date("", date_breaks="1 month", date_labels="%b") + 
+  ylab("Null model alert probabilities") + 
+  facet_wrap(~panel) + 
+  theme_talk + 
+  theme(legend.position="none", 
+        axis.title.x=element_blank())
+ggsave("figs/pub/Fig_0_NullDate_TALK.png", width=200, height=120, units="mm", dpi=300)
+
+
+
+
+
+
+
+# Shellfish sites ---------------------------------------------------------
+
+mss_sites <- read_csv("data/ms_site_details.csv") |>
+  janitor::clean_names("small_camel") |>
+  filter(aquacultureType=="Shellfish") |>
+  filter(producingInLast3Years=="Yes")
+write_csv(mss_sites, "data/mss_sites_shellfish.csv")
 
 
 
 # PR curves ---------------------------------------------------------------
 
-
-out.oos |> 
+thresholds <- out.oos |> 
   filter(covSet %in% c("null4wk", "ensGLM2")) |>
-  # na.omit() |>
-  group_by(y, model, PCA, covSet, prevAlert) |> 
-  pr_curve(prA1, truth=alert, event_level="second") |> 
-  filter(recall > 0) |>
-  ggplot(aes(recall, precision, linetype=model, colour=prevAlert,
-             group=paste(PCA, covSet, model, prevAlert))) + 
-  geom_line() + 
-  # scale_colour_manual(values=mod_cols) + 
-  facet_wrap(~y) + ggtitle("oos")
+  select(y, obsid, model, prevAlert, optMCC) |> 
+  group_by(model, y, prevAlert) |>
+  summarise(thresh_MCC=mean(optMCC))
+
 out.oos |> 
   filter(covSet %in% c("null4wk", "ensGLM2")) |>
   # na.omit() |>
@@ -1051,8 +1635,22 @@ out.oos |>
   filter(recall > 0) |>
   ggplot(aes(recall, precision, colour=model, group=paste(PCA, covSet, model))) + 
   geom_line() + 
-  # scale_colour_manual(values=mod_cols) + 
-  facet_wrap(~y) + ggtitle("oos")
+  scale_colour_manual(values=c("grey", "black"), labels=parse_format()) +
+  facet_wrap(~y) + ggtitle("oos") + 
+  theme(legend.text.align=0)
+out.oos |> 
+  filter(covSet %in% c("null4wk", "ensGLM2")) |>
+  # na.omit() |>
+  group_by(y, model, PCA, covSet) |> 
+  roc_curve(prA1, truth=alert, event_level="second") |> 
+  ggplot(aes(1-specificity, sensitivity, colour=model, group=paste(PCA, covSet, model))) + 
+  geom_abline(linetype=3, colour="grey") + 
+  geom_line() + 
+  scale_colour_manual(values=c("grey", "black"), labels=parse_format()) +
+  facet_wrap(~y) + ggtitle("oos") + 
+  theme(legend.text.align=0)
+
+
 
 
 
@@ -1063,22 +1661,101 @@ out.oos |>
 # Anim S1 -----------------------------------------------------------------
 
 
-library(gganimate)
-animS1 <- ggplot(coast.sf) + 
-  geom_sf(fill="grey70", colour="grey70") + 
-  geom_point(data=site_month_sum.df, aes(lon, lat, colour=prA, group=sin), shape=1) + 
-  transition_manual(month) +
-  scale_x_continuous("Longitude", breaks=c(-8, -4)) +
-  scale_y_continuous("Latitude", breaks=c(55, 58, 61)) +
-  scale_colour_viridis_c("(warnings+alerts)/N\n", option="inferno", limits=c(0,1), end=0.9) +
-  ggtitle("{current_frame}") +
-  theme_ms +
-  theme(legend.position=c(0.9, 0.2),
-        legend.key.width=unit(1, "mm")) + 
-  facet_wrap(~fig_long, nrow=2, labeller=label_wrap_gen(17))
-anim_save("figs/pub/Anim_S1.mp4", animS1, nframes=12, fps=2, renderer=av_renderer(),
-          width=190, height=145, res=400, units="mm")
+for(i in 1:12) {
+  p <- site_month_sum.df |> 
+    filter(month==month.name[i]) |>
+    ggplot() + 
+    geom_sf(data=coast.sf, fill="grey50", colour="grey50") + 
+    geom_point(aes(lon, lat, colour=prA, group=sin), shape=1) + 
+    scale_x_continuous("Longitude", breaks=c(-8, -4)) +
+    scale_y_continuous("Latitude", breaks=c(55, 58, 61)) +
+    scale_colour_viridis_c("(warnings+alerts)/N\n", option="plasma", limits=c(0,1), end=0.95) +
+    ggtitle(month.name[i]) +
+    theme_ms +
+    theme(legend.position=c(0.9, 0.2),
+          legend.key.width=unit(1, "mm"),
+          panel.background=element_rect(colour=NA, fill="grey70")) + 
+    facet_wrap(~fig_long, nrow=2, labeller=label_wrap_gen(17))
+  ggsave(glue("figs/temp/Anim_S1_{str_pad(i, 2, 'left', '0')}.png"), p, 
+            width=190, height=145, dpi=300, units="mm")
+}
 
+av::av_encode_video(dirf("figs/temp", "Anim_S1_"), 
+                    glue("figs/pub/Anim_S1.mp4"),
+                    framerate=1)
+
+for(i in 1:12) {
+  p <- site_month_sum.df |> 
+    filter(month==month.name[i]) |>
+    arrange(prA) |>
+    ggplot() + 
+    geom_sf(data=coast.sf, fill="grey50", colour="grey50") + 
+    geom_point(aes(lon, lat, colour=prA*100, group=sin), shape=1) + 
+    scale_x_continuous("Longitude", breaks=c(-6, -2)) +
+    scale_y_continuous("Latitude", breaks=c(55, 58, 61)) +
+    scale_colour_viridis_c("% Warn\nor Alert\n", option="plasma", limits=c(0,100), end=0.95) +
+    ggtitle(month.name[i]) +
+    theme_talk +
+    theme(legend.position=c(0.9, 0.22),
+          legend.key.width=unit(2, "mm"),
+          axis.title=element_blank(),
+          panel.background=element_rect(colour=NA, fill="grey70")) + 
+    facet_wrap(~fig_long, nrow=2, labeller=label_wrap_gen(17))
+  ggsave(glue("figs/temp/Anim_TALK_S1_{str_pad(i, 2, 'left', '0')}.png"), p, 
+         width=190, height=145, dpi=300, units="mm")
+}
+
+av::av_encode_video(dirf("figs/temp", "Anim_TALK_S1_"), 
+                    glue("figs/pub/Anim_S1_TALK.mov"),
+                    framerate=1)
+sevcheck::img_to_gif(dirf("figs/temp", "Anim_TALK_S1_"),
+                     2,
+                     glue("figs/pub/Anim_S1_TALK.gif"))
+
+
+
+grd_df <- readRDS("data/grid_scot_coast.rds") |>
+  filter(date==first(date)) |>
+  st_as_sf(coords=c("lon", "lat"), crs=27700, remove=F)
+site_grd_df <- site_all.df |>
+  st_as_sf(coords=c("lon", "lat"), crs=27700) %>%
+  mutate(grd_i=st_nearest_feature(., grd_df))
+nbr_month_sum.df <- site_month_sum.df |>
+  left_join(site_grd_df %>% st_drop_geometry() |> select(sin, grd_i), by="sin") |>
+  group_by(y, fig_long, month, grd_i) |>
+  summarise(prA=sum(prA*N)/sum(N)) |>
+  ungroup() |>
+  mutate(lon=grd_df$lon[grd_i],
+         lat=grd_df$lat[grd_i])
+
+for(i in 1:12) {
+  p <- nbr_month_sum.df |>
+    filter(month==month.name[i]) |>
+    arrange(prA) |>
+    ggplot() + 
+    geom_sf(data=coast.sf, fill="grey30", colour="grey30") + 
+    geom_point(aes(lon, lat, colour=prA*100), shape=1) + 
+    scale_x_continuous("Longitude", breaks=c(-6, -2)) +
+    scale_y_continuous("Latitude", breaks=c(55, 58, 61)) +
+    scale_colour_viridis_c("% Warn\nor alert\n", option="plasma", limits=c(0,100), end=0.95) +
+    # ggtitle(month.name[i]) +
+    annotate("text", x=20000, y=1200000, label=month.abb[i], colour="grey90", hjust=0) +
+    theme_talk +
+    theme(legend.position=c(0.9, 0.22),
+          legend.key.width=unit(2, "mm"),
+          axis.title=element_blank(),
+          panel.background=element_rect(colour=NA, fill="grey50")) + 
+    facet_wrap(~fig_long, nrow=2, labeller=label_wrap_gen(17))
+  ggsave(glue("figs/temp/Anim_TALK_S1_{str_pad(i, 2, 'left', '0')}.png"), p, 
+         width=210, height=145, dpi=300, units="mm")
+}
+
+av::av_encode_video(dirf("figs/temp", "Anim_TALK_S1_"), 
+                    glue("figs/pub/Anim_S1_TALK.mov"),
+                    framerate=1)
+sevcheck::img_to_gif(dirf("figs/temp", "Anim_TALK_S1_"),
+                     2,
+                     glue("figs/pub/Anim_S1_TALK.gif"))
 
 
 
@@ -1133,35 +1810,44 @@ obs.wk <- obs.df |>
   summarise(pAlertAvg=mean(alert=="A1")) |>
   ungroup()
 
-animS2 <- spatTime_df |>
+S2_df <- spatTime_df |>
   left_join(wk.def) |>
   left_join(obs.wk) |>
   mutate(prA1_wt=prA1 * if_else(prevAlert=="A0", 1-pAlertAvg, pAlertAvg)) |>
   group_by(y, wkNum, date, lon, lat, model, fig_long) |>
   summarise(prA1=sum(prA1_wt)) |>
-  ungroup() |>
-  filter(wkNum < 26) |>  # no observations for end Dec
-  ggplot() + 
-  geom_tile(aes(lon, lat, fill=prA1)) +
-  scale_fill_viridis_c("Spatiotemporal\nconditional\nprobability", limits=c(0, NA), option="inferno") +
-  geom_sf(data=coast.sf, colour=NA) +
-  transition_manual(date) + 
-  ggtitle("Weighted mean state[t-1]: {month(current_frame, label=T)}-{day(current_frame)}") +
-  theme_ms +
-  theme(legend.position=c(0.9, 0.2),
-        legend.key.width=unit(1, "mm"),
-        axis.text=element_blank(),
-        axis.title=element_blank()) + 
-  facet_wrap(~fig_long, nrow=2, labeller=label_wrap_gen(17))
-anim_save("figs/pub/Anim_S2.mp4", animS2, nframes=n_distinct(spatTime_df$date)-1, 
-          fps=4, renderer=av_renderer(), 
-          width=190, height=145, res=400, units="mm")
+  ungroup()
+pr_rng <- range(S2_df$prA1, na.rm=T)
+
+for(i in 1:(n_distinct(spatTime_df$date)-1)) {
+  i_df <- S2_df |>
+    filter(wkNum == i) 
+  p <- i_df |>
+    ggplot() + 
+    geom_tile(aes(lon, lat, fill=prA1)) +
+    scale_fill_viridis_c("Spatiotemporal\nconditional\nprobability", limits=c(0, pr_rng[2]), option="plasma") +
+    geom_sf(data=coast.sf, colour=NA) +
+    ggtitle(glue("Weighted mean state[t-1]: {month(first(i_df$date), label=T)}-{day(first(i_df$date))}")) +
+    theme_ms +
+    theme(legend.position=c(0.9, 0.2),
+          legend.key.width=unit(1, "mm"),
+          axis.text=element_blank(),
+          axis.title=element_blank()) + 
+    facet_wrap(~fig_long, nrow=2, labeller=label_wrap_gen(17))
+  ggsave(glue("figs/temp/anim_S2_{str_pad(i, 2, 'left', '0')}.png"), 
+         p, width=190, height=150, dpi=400, units="mm")
+}
+av::av_encode_video(dirf("figs/temp", "anim_S2"), 
+                    glue("figs/pub/Anim_S2.mp4"),
+                    framerate=1)
+
+
 
 
 
 # Anim S3 -----------------------------------------------------------------
 
-animS3 <- spatTime_df |>
+max_pr <- spatTime_df |>
   left_join(wk.def) |>
   left_join(obs.wk) |>
   mutate(prA1_wt=prA1 * if_else(prevAlert=="A0", 1-pAlertAvg, pAlertAvg)) |>
@@ -1172,22 +1858,46 @@ animS3 <- spatTime_df |>
   group_by(y, model) |>
   mutate(prA1_rel=(prA1-min(prA1))/(max(prA1)-min(prA1))) |>
   ungroup() |>
-  ggplot() + 
-  geom_tile(aes(lon, lat, fill=prA1_rel)) +
-  scale_fill_viridis_c("Spatiotemporal\nrelative\nconditional\nprobability", 
-                       limits=c(0, 1), option="inferno") +
-  geom_sf(data=coast.sf, colour=NA) +
-  transition_manual(date) + 
-  ggtitle("Weighted mean state[t-1]: {month(current_frame, label=T)}-{day(current_frame)}") +
-  theme_ms +
-  theme(legend.position=c(0.9, 0.2),
-        legend.key.width=unit(1, "mm"),
-        axis.text=element_blank(),
-        axis.title=element_blank()) + 
-  facet_wrap(~fig_long, nrow=2, labeller=label_wrap_gen(17))
-anim_save("figs/pub/Anim_S3_.mp4", animS3, nframes=n_distinct(spatTime_df$date)-1, 
-          fps=4, renderer=av_renderer(),
-          width=190, height=145, res=400, units="mm")
+  group_by(fig_long, model) |>
+  summarise(lon=min(lon), 
+            lat=max(lat), 
+            pr=paste0("Max pr(alert):\n", round(max(prA1), 3)))
+S3_df <- spatTime_df |>
+  left_join(wk.def) |>
+  left_join(obs.wk) |>
+  mutate(prA1_wt=prA1 * if_else(prevAlert=="A0", 1-pAlertAvg, pAlertAvg)) |>
+  group_by(y, wkNum, date, lon, lat, model, fig_long) |>
+  summarise(prA1=sum(prA1_wt)) |>
+  ungroup() |>
+  filter(wkNum < 26) |>  # no observations for end Dec
+  group_by(y, model) |>
+  mutate(prA1_rel=(prA1-min(prA1))/(max(prA1)-min(prA1))) |>
+  ungroup()
+
+for(i in 1:n_distinct(S3_df$date)) {
+  i_df <- S3_df |>
+    filter(wkNum == i) 
+  p <- i_df |>
+    ggplot() + 
+    geom_tile(aes(lon, lat, fill=prA1_rel)) +
+    scale_fill_viridis_c("Spatiotemporal\nrelative\nconditional\nprobability",
+                         limits=c(0, 1), option="plasma") +
+    geom_sf(data=coast.sf, colour=NA) +
+    geom_text(data=max_pr, x=7011, y=1235757, aes(label=pr), hjust=0, vjust=1, size=2) +
+    ggtitle(glue("Weighted mean state[t-1]: {month(first(i_df$date), label=T)}-{day(first(i_df$date))}")) +
+    theme_ms +
+    theme(legend.position=c(0.9, 0.2),
+          legend.key.width=unit(1, "mm"),
+          axis.text=element_blank(),
+          axis.title=element_blank()) + 
+    facet_wrap(~fig_long, nrow=2, labeller=label_wrap_gen(17))
+  ggsave(glue("figs/temp/anim_S3_{str_pad(i, 2, 'left', '0')}.png"), 
+         p, width=190, height=150, dpi=400, units="mm")
+}
+av::av_encode_video(dirf("figs/temp", "anim_S3"), 
+                    glue("figs/pub/Anim_S3.mp4"),
+                    framerate=1)
+
 
 
 
@@ -1208,7 +1918,7 @@ obs_week <- expand_grid(date_week=paste0(c(2015:2022), "-01-01") |>
                      date_week=ymd(paste0(year, "-01-01")) + (week-1)*7) |>
               select(y, siteid, date_week, alert)) |>
   group_by(y, siteid, date_week) |>
-  summarise(alert=if_else(any(alert=="A1"), "A1", "A0")) |>
+  summarise(alert=if_else(any(alert=="A1"), "1: Yes", "0: No")) |>
   ungroup() |>
   left_join(y_i |> select(abbr, fig_long, type) |> rename(y=abbr)) |>
   right_join(bind_rows(site_hab.df |> select(siteid, sin, lon, lat) |> mutate(type="hab"),
@@ -1229,8 +1939,53 @@ animS4 <- ggplot(coast.sf) +
         axis.title=element_blank(),
         axis.text=element_blank()) + 
   facet_wrap(~fig_long, nrow=2, labeller=label_wrap_gen(17))
-anim_save("figs/pub/anim_S4_5fps.mp4", animS4, nframes=n_distinct(obs_week$date_week), 
-          fps=5, renderer=av_renderer(), 
+anim_save("figs/pub/anim_S4_2fps.mp4", animS4, nframes=n_distinct(obs_week$date_week), 
+          fps=2, renderer=av_renderer(), 
+          width=190, height=145, res=400, units="mm")
+
+
+
+
+
+
+
+
+# Anim S5 -----------------------------------------------------------------
+
+pred_week <- expand_grid(date_week=paste0(c(2016:2022), "-01-01") |> 
+                           ymd() |> map(~.x + (seq(1,52,by=2))*7) |> list_c(),
+                         siteid=1:max(obs.df$siteid),
+                         y=unique(obs.df$y)) |>
+  left_join(out.oos |>
+              filter(covSet=="ensGLM2") |>
+              mutate(year=year(date),
+                     week=floor(week(date)/2)*2,
+                     date_week=ymd(paste0(year, "-01-01")) + (week-1)*7) |>
+              select(y, siteid, date_week, alert, prA1)) |>
+  group_by(y, siteid, date_week) |>
+  summarise(alert=if_else(any(alert=="A1"), "A1", "A0"),
+            prA1=mean(prA1, na.rm=T)) |>
+  ungroup() |>
+  left_join(y_i |> select(abbr, fig_long, type) |> rename(y=abbr)) |>
+  right_join(bind_rows(site_hab.df |> select(siteid, sin, lon, lat) |> mutate(type="hab"),
+                       site_tox.df |> select(siteid, sin, lon, lat) |> mutate(type="tox"))) |>
+  filter(!is.na(alert))
+animS5 <- ggplot(coast.sf) + 
+  geom_sf(fill="grey80", colour="grey80") + 
+  geom_point(data=pred_week |> filter(year(date_week)==2018), aes(lon, lat, colour=prA1, group=sin),) + 
+  transition_manual(date_week) +
+  scale_x_continuous("Longitude", breaks=c(-8, -4)) +
+  scale_y_continuous("Latitude", breaks=c(55, 58, 61)) +
+  scale_colour_viridis_c("Forecasted P(alert)", option="turbo", na.value=NA) +
+  ggtitle("{current_frame}") +
+  theme_ms +
+  theme(legend.position=c(0.9, 0.2),
+        legend.key.width=unit(1, "mm"),
+        axis.title=element_blank(),
+        axis.text=element_blank()) + 
+  facet_wrap(~fig_long, nrow=2, labeller=label_wrap_gen(17))
+anim_save("figs/pub/anim_S5_2fps.mp4", animS5, nframes=25,#n_distinct(pred_week$date_week), 
+          fps=2, renderer=av_renderer(), 
           width=190, height=145, res=400, units="mm")
 
 
