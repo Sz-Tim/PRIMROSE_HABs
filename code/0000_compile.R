@@ -345,7 +345,7 @@ oos.ls$alert_L <- oos.ls$alert |>
 # Threshold analysis ------------------------------------------------------
 
 gc()
-opt.F1 <- opt.F2 <- opt.kap <- vector("list", n_distinct(fit.ls$alert_L$model))
+opt.F1 <- opt.mcc <- vector("list", n_distinct(fit.ls$alert_L$model))
 for(i in seq_along(opt.F1)) {
   m_i <- unique(fit.ls$alert_L$model)[i]
   fit_i <- fit.ls$alert_L |> filter(model==m_i)
@@ -357,34 +357,24 @@ for(i in seq_along(opt.F1)) {
     opt.F1[[i]] <- thresh.fit |> filter(!is.na(F1)) |>
       group_by(y, model, PCA, covSet) |>
       arrange(desc(F1)) |> slice_head(n=1) |> ungroup() |>
-      select(y, model, PCA, covSet, thresh, F1, precision, recall, kappa) |>
-      rename(optF1=thresh, F1_fit=F1, F1_precision=precision, F1_recall=recall, F1_kappa=kappa)
-    opt.F2[[i]] <- thresh.fit |> filter(!is.na(F2)) |>
+      select(y, model, PCA, covSet, thresh, F1, precision, recall) |>
+      rename(optF1=thresh, F1_fit=F1, F1_precision=precision, F1_recall=recall)
+    opt.mcc[[i]] <- thresh.fit |> filter(!is.na(mcc)) |>
       group_by(y, model, PCA, covSet) |>
-      arrange(desc(F2)) |> slice_head(n=1) |> ungroup() |>
-      select(y, model, PCA, covSet, thresh, F2, precision, recall, kappa) |>
-      rename(optF2=thresh, F2_fit=F2, F2_precision=precision, F2_recall=recall, F2_kappa=kappa)
-    opt.kap[[i]] <- thresh.fit |> filter(!is.na(kappa)) |>
-      group_by(y, model, PCA, covSet) |>
-      arrange(desc(kappa)) |> slice_head(n=1) |> ungroup() |>
-      select(y, model, PCA, covSet, thresh, kappa) |>
-      rename(optKap=thresh)
+      arrange(desc(mcc)) |> slice_head(n=1) |> ungroup() |>
+      select(y, model, PCA, covSet, thresh, mcc) |>
+      rename(optMCC=thresh)
   } else {
     opt.F1[[i]] <- thresh.fit |> filter(!is.na(F1)) |>
       group_by(y, model, PCA, covSet, prevAlert) |>
       arrange(desc(F1)) |> slice_head(n=1) |> ungroup() |>
-      select(y, model, PCA, covSet, thresh, F1, precision, recall, kappa, prevAlert) |>
-      rename(optF1=thresh, F1_fit=F1, F1_precision=precision, F1_recall=recall, F1_kappa=kappa)
-    opt.F2[[i]] <- thresh.fit |> filter(!is.na(F2)) |>
+      select(y, model, PCA, covSet, thresh, F1, precision, recall, prevAlert) |>
+      rename(optF1=thresh, F1_fit=F1, F1_precision=precision, F1_recall=recall)
+    opt.mcc[[i]] <- thresh.fit |> filter(!is.na(mcc)) |>
       group_by(y, model, PCA, covSet, prevAlert) |>
-      arrange(desc(F2)) |> slice_head(n=1) |> ungroup() |>
-      select(y, model, PCA, covSet, thresh, F2, precision, recall, kappa, prevAlert) |>
-      rename(optF2=thresh, F2_fit=F2, F2_precision=precision, F2_recall=recall, F2_kappa=kappa)
-    opt.kap[[i]] <- thresh.fit |> filter(!is.na(kappa)) |>
-      group_by(y, model, PCA, covSet, prevAlert) |>
-      arrange(desc(kappa)) |> slice_head(n=1) |> ungroup() |>
-      select(y, model, PCA, covSet, thresh, kappa, prevAlert) |>
-      rename(optKap=thresh)
+      arrange(desc(mcc)) |> slice_head(n=1) |> ungroup() |>
+      select(y, model, PCA, covSet, thresh, mcc, prevAlert) |>
+      rename(optMCC=thresh)
   }
   gc()
   cat("Finished", i, "of", length(opt.F1), "\n")
@@ -393,32 +383,27 @@ m_null <- grep("Null", unique(fit.ls$alert_L$model))
 m_mods <- grep("Null", unique(fit.ls$alert_L$model), invert=T)
 opt.F1 <- list(
   do.call('rbind', opt.F1[m_mods]),
-  do.call('rbind', opt.F1[m_null])
+  do.call('rbind', opt.F1[m_null]) |>
+    mutate(optF1=if_else(model=="Null[0]", 0.99, optF1))
 )
-opt.F2 <- list(
-  do.call('rbind', opt.F2[m_mods]),
-  do.call('rbind', opt.F2[m_null])
-)
-opt.kap <- list(
-  do.call('rbind', opt.kap[m_mods]),
-  do.call('rbind', opt.kap[m_null])
+opt.mcc <- list(
+  do.call('rbind', opt.mcc[m_mods]),
+  do.call('rbind', opt.mcc[m_null]) |>
+    mutate(optMCC=if_else(model=="Null[0]", 0.99, optMCC))
 )
 
 oos.ls$alert_L <- bind_rows(
   oos.ls$alert_L |>
     filter(!grepl("Null", model)) |>
     left_join(opt.F1[[1]] |> select(-F1_fit)) |>
-    left_join(opt.F2[[1]] |> select(-F2_fit)) |>
-    left_join(opt.kap[[1]]),
+    left_join(opt.mcc[[1]]),
   oos.ls$alert_L |>
     filter(grepl("Null", model)) |>
     left_join(opt.F1[[2]] |> select(-F1_fit)) |>
-    left_join(opt.F2[[2]] |> select(-F2_fit)) |>
-    left_join(opt.kap[[2]])
+    left_join(opt.mcc[[2]])
 ) |>
   mutate(predF1=factor(if_else(prA1 > optF1, "A1", "A0"), levels=c("A0", "A1")),
-         predF2=factor(if_else(prA1 > optF2, "A1", "A0"), levels=c("A0", "A1")),
-         predKap=factor(if_else(prA1 > optKap, "A1", "A0"), levels=c("A0", "A1")))
+         predMCC=factor(if_else(prA1 > optMCC, "A1", "A0"), levels=c("A0", "A1")))
 
 
 saveRDS(fit.ls$alert_L, "out/clean/out_fit.rds")
@@ -448,6 +433,15 @@ rank.df <-  oos.ls$alert_L |>
               mutate(rank=min_rank(desc(.estimate)),
                      .metric="ROC-AUC") |>
               select(-.estimator)) |>
+  bind_rows(oos.ls$alert_L |> 
+              filter(!grepl("perfect|auto", model)) |>
+              group_by(y, model, PCA, covSet) |>
+              mcc(truth=alert, estimate=predMCC) |>
+              mutate(.estimate=if_else(is.na(.estimate), 0, .estimate)) |>
+              group_by(y) |>
+              mutate(rank=min_rank(desc(.estimate)),
+                     .metric="MCC") |>
+              select(-.estimator)) |>
   bind_rows(oos.ls$alert_L |>
               filter(!grepl("perfect|auto", model)) |>
               select(y, covSet, PCA, model, obsid, alert, prA1) %>%
@@ -469,18 +463,10 @@ rank.df <-  oos.ls$alert_L |>
   bind_rows(oos.ls$alert_L |>
               filter(!grepl("perfect|auto", model)) |>
               group_by(y, model, PCA, covSet) |>
-              kap(predF1, truth=alert, event_level="second") |>
+              kap(predMCC, truth=alert, event_level="second") |>
               group_by(y) |>
               mutate(rank=min_rank(desc(.estimate)),
-                     .metric="Kappa (F1)") |>
-              select(-.estimator)) |>
-  bind_rows(oos.ls$alert_L |>
-              filter(!grepl("perfect|auto", model)) |>
-              group_by(y, model, PCA, covSet) |>
-              kap(predKap, truth=alert, event_level="second") |>
-              group_by(y) |>
-              mutate(rank=min_rank(desc(.estimate)),
-                     .metric="Kappa (KapOpt)") |>
+                     .metric="Kappa (MCC opt)") |>
               select(-.estimator)) |>
   bind_rows(oos.ls$alert_L |>
               filter(!grepl("perfect|auto", model)) |>
@@ -524,6 +510,48 @@ rank.df <-  oos.ls$alert_L |>
               group_by(y) |>
               mutate(rank=min_rank(desc(.estimate)),
                      .metric="TNR (F1)")) |>
+  bind_rows(oos.ls$alert_L |>
+              filter(!grepl("perfect|auto", model)) |>
+              group_by(y, model, PCA, covSet) |>
+              summarise(.estimate=sum(predMCC=="A1" & alert=="A1")/sum(predMCC=="A1"))|>
+              group_by(y) |>
+              mutate(rank=min_rank(.estimate),
+                     .metric="Precision: TP/(TP+FP) (MCC)")) |>
+  bind_rows(oos.ls$alert_L |>
+              filter(!grepl("perfect|auto", model)) |>
+              group_by(y, model, PCA, covSet) |>
+              summarise(.estimate=sum(predMCC=="A1" & alert=="A1")/sum(alert=="A1"))|>
+              group_by(y) |>
+              mutate(rank=min_rank(.estimate),
+                     .metric="Recall: TP/(TP+FN) (MCC)")) |>
+  bind_rows(oos.ls$alert_L |>
+              filter(!grepl("perfect|auto", model)) |>
+              group_by(y, model, PCA, covSet) |>
+              summarise(.estimate=sum(predMCC=="A1" & alert=="A0")/n())|>
+              group_by(y) |>
+              mutate(rank=min_rank(.estimate),
+                     .metric="FPR (MCC)")) |>
+  bind_rows(oos.ls$alert_L |>
+              filter(!grepl("perfect|auto", model)) |>
+              group_by(y, model, PCA, covSet) |>
+              summarise(.estimate=sum(predMCC=="A1" & alert=="A1")/n())|>
+              group_by(y) |>
+              mutate(rank=min_rank(desc(.estimate)),
+                     .metric="TPR (MCC)")) |>
+  bind_rows(oos.ls$alert_L |>
+              filter(!grepl("perfect|auto", model)) |>
+              group_by(y, model, PCA, covSet) |>
+              summarise(.estimate=sum(predMCC=="A0" & alert=="A1")/n())|>
+              group_by(y) |>
+              mutate(rank=min_rank(.estimate),
+                     .metric="FNR (MCC)")) |>
+  bind_rows(oos.ls$alert_L |>
+              filter(!grepl("perfect|auto", model)) |>
+              group_by(y, model, PCA, covSet) |>
+              summarise(.estimate=sum(predMCC=="A0" & alert=="A0")/n())|>
+              group_by(y) |>
+              mutate(rank=min_rank(desc(.estimate)),
+                     .metric="TNR (MCC)")) |>
   bind_rows(oos.ls$alert_L |>
               filter(!grepl("perfect|auto", model)) |>
               mutate(prA1=if_else(prA1==0, 1e-5, prA1),
@@ -591,21 +619,14 @@ rankPrev.df <-  oos.ls$alert_L |>
               mutate(rank=min_rank(desc(.estimate)),
                      .metric="F1") |>
               select(-.estimator)) |>
-  bind_rows(oos.ls$alert_L |>
+  bind_rows(oos.ls$alert_L |> 
               filter(!grepl("perfect|auto", model)) |>
               group_by(y, model, PCA, covSet, prevAlert) |>
-              kap(predF1, truth=alert, event_level="second") |>
+              mcc(truth=alert, estimate=predMCC) |>
+              mutate(.estimate=if_else(is.na(.estimate), 0, .estimate)) |>
               group_by(y, prevAlert) |>
               mutate(rank=min_rank(desc(.estimate)),
-                     .metric="Kappa (F1)") |>
-              select(-.estimator)) |>
-  bind_rows(oos.ls$alert_L |>
-              filter(!grepl("perfect|auto", model)) |>
-              group_by(y, model, PCA, covSet, prevAlert) |>
-              kap(predKap, truth=alert, event_level="second") |>
-              group_by(y) |>
-              mutate(rank=min_rank(desc(.estimate)),
-                     .metric="Kappa (KapOpt)") |>
+                     .metric="MCC") |>
               select(-.estimator)) |>
   bind_rows(oos.ls$alert_L |>
               filter(!grepl("perfect|auto", model)) |>
@@ -649,6 +670,48 @@ rankPrev.df <-  oos.ls$alert_L |>
               group_by(y, prevAlert) |>
               mutate(rank=min_rank(desc(.estimate)),
                      .metric="TNR (F1)")) |>
+  bind_rows(oos.ls$alert_L |>
+              filter(!grepl("perfect|auto", model)) |>
+              group_by(y, model, PCA, covSet, prevAlert) |>
+              summarise(.estimate=sum(predMCC=="A1" & alert=="A1")/sum(predMCC=="A1"))|>
+              group_by(y, prevAlert) |>
+              mutate(rank=min_rank(.estimate),
+                     .metric="Precision: TP/(TP+FP) (MCC)")) |>
+  bind_rows(oos.ls$alert_L |>
+              filter(!grepl("perfect|auto", model)) |>
+              group_by(y, model, PCA, covSet, prevAlert) |>
+              summarise(.estimate=sum(predMCC=="A1" & alert=="A1")/sum(alert=="A1"))|>
+              group_by(y, prevAlert) |>
+              mutate(rank=min_rank(.estimate),
+                     .metric="Recall: TP/(TP+FN) (MCC)")) |>
+  bind_rows(oos.ls$alert_L |>
+              filter(!grepl("perfect|auto", model)) |>
+              group_by(y, model, PCA, covSet, prevAlert) |>
+              summarise(.estimate=sum(predMCC=="A1" & alert=="A0")/n())|>
+              group_by(y, prevAlert) |>
+              mutate(rank=min_rank(.estimate),
+                     .metric="FPR (MCC)")) |>
+  bind_rows(oos.ls$alert_L |>
+              filter(!grepl("perfect|auto", model)) |>
+              group_by(y, model, PCA, covSet, prevAlert) |>
+              summarise(.estimate=sum(predMCC=="A1" & alert=="A1")/n())|>
+              group_by(y, prevAlert) |>
+              mutate(rank=min_rank(desc(.estimate)),
+                     .metric="TPR (MCC)")) |>
+  bind_rows(oos.ls$alert_L |>
+              filter(!grepl("perfect|auto", model)) |>
+              group_by(y, model, PCA, covSet, prevAlert) |>
+              summarise(.estimate=sum(predMCC=="A0" & alert=="A1")/n())|>
+              group_by(y, prevAlert) |>
+              mutate(rank=min_rank(.estimate),
+                     .metric="FNR (MCC)")) |>
+  bind_rows(oos.ls$alert_L |>
+              filter(!grepl("perfect|auto", model)) |>
+              group_by(y, model, PCA, covSet, prevAlert) |>
+              summarise(.estimate=sum(predMCC=="A0" & alert=="A0")/n())|>
+              group_by(y, prevAlert) |>
+              mutate(rank=min_rank(desc(.estimate)),
+                     .metric="TNR (MCC)")) |>
   bind_rows(oos.ls$alert_L |>
               filter(!grepl("perfect|auto", model)) |>
               mutate(prA1=if_else(prA1==0, 1e-5, prA1),
