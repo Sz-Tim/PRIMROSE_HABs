@@ -373,7 +373,7 @@ foreach(i=1:nrow(covSet.df)) %dopar% {
   covSet <- covSet.df$f[i]
   
   fit.dir <- glue("out/0_init/model_fits/{covSet}/")
-  ens.dir <- "out/ensembles/"
+  ens.dir <- "out/0_init/ensembles/"
   outSet.dir <- glue("out/0_init/compiled/{covSet}/")
   
   y_i <- bind_rows(read_csv("data/i_hab.csv", show_col_types=F) |> 
