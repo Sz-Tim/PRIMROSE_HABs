@@ -28,7 +28,8 @@ covSet.df <- expand_grid(y=y_resp,
   mutate(id=row_number(),
          f=glue("{id}-Avg{Avg}_Xf{Xf}_XN{XN}_Del{Del}")) %>%
   ungroup %>%
-  arrange(y, id) 
+  arrange(y, id) |>
+  filter(Xf==1) 
 cores_per_model <- 3
 n_spp_parallel <- 18
 
@@ -77,8 +78,12 @@ foreach(i=1:nrow(covSet.df)) %dopar% {
     interact=c(
       paste("UWkXfetch", grep("Dir[EW]", col_cmems, value=T), sep="X"),
       paste("VWkXfetch", grep("Dir[NS]", col_cmems, value=T), sep="X"),
+      paste("UWkXfetch", grep("Dir[NS]", col_cmems, value=T), sep="X"),
+      paste("VWkXfetch", grep("Dir[EW]", col_cmems, value=T), sep="X"),
       paste("UWkXfetch", grep("^[Precip|Shortwave|sst].*Dir[EW]", col_wrf, value=T), sep="X"),
-      paste("VWkXfetch", grep("^[Precip|Shortwave|sst].*Dir[NS]", col_wrf, value=T), sep="X")
+      paste("VWkXfetch", grep("^[Precip|Shortwave|sst].*Dir[NS]", col_wrf, value=T), sep="X"),
+      paste("UWkXfetch", grep("^[Precip|Shortwave|sst].*Dir[NS]", col_wrf, value=T), sep="X"),
+      paste("VWkXfetch", grep("^[Precip|Shortwave|sst].*Dir[EW]", col_wrf, value=T), sep="X")
     ),
     hab=c(outer(filter(y_i, type=="hab")$abbr, c("lnNAvg", "prA"), "paste0"))
   )

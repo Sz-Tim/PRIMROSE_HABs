@@ -27,9 +27,10 @@ covSet.df <- expand_grid(y=y_resp,
   group_by(y) |>
   mutate(id=row_number(),
          f=glue("{id}-Avg{Avg}_Xf{Xf}_XN{XN}_Del{Del}")) |>
-  ungroup() 
-n_spp_parallel <- 9*4
-base.dir <- "out/0_init" 
+  ungroup() |>
+  filter(Xf==1)
+n_spp_parallel <- 1#9*4
+base.dir <- "out/0_init_redo" 
 
 
 
@@ -38,10 +39,11 @@ base.dir <- "out/0_init"
 
 # for(i in 1:nrow(covSet.df)) {
 registerDoParallel(n_spp_parallel)
-foreach(i=1:nrow(covSet.df)) %dopar% {
+foreach(i=(1:nrow(covSet.df))) %dopar% {
   
   lapply(pkgs, library, character.only=T)
   source("code/00_fn.R")
+  base.dir <- "out/0_init_redo" 
   
   covSet <- covSet.df$f[i]
   d <- covSet.df$id[i]
@@ -81,7 +83,11 @@ foreach(i=1:nrow(covSet.df)) %dopar% {
     interact=c(
       paste("UWkXfetch", grep("Dir[EW]", col_cmems, value=T), sep="X"),
       paste("VWkXfetch", grep("Dir[NS]", col_cmems, value=T), sep="X"),
+      paste("UWkXfetch", grep("Dir[NS]", col_cmems, value=T), sep="X"),
+      paste("VWkXfetch", grep("Dir[EW]", col_cmems, value=T), sep="X"),
       paste("UWkXfetch", grep("^[Precip|Shortwave|sst].*Dir[EW]", col_wrf, value=T), sep="X"),
+      paste("VWkXfetch", grep("^[Precip|Shortwave|sst].*Dir[NS]", col_wrf, value=T), sep="X"),
+      paste("UWkXfetch", grep("^[Precip|Shortwave|sst].*Dir[NS]", col_wrf, value=T), sep="X"),
       paste("VWkXfetch", grep("^[Precip|Shortwave|sst].*Dir[EW]", col_wrf, value=T), sep="X")
     ),
     hab=c(outer(filter(y_i, type=="hab")$abbr, c("lnNAvg", "prA"), "paste0"))
@@ -170,10 +176,10 @@ closeAllConnections(); gc()
 
 # Compile -----------------------------------------------------------------
 
-n_cores_per_model <- 70
+n_cores_per_model <- 10
 ens.dir <- glue("{base.dir}/ensembles/")
 registerDoParallel(n_cores_per_model)
-for(i in seq_along(y_resp)) {
+for(i in seq_along(y_resp)[-c(2, 3, 4, 8, 9)]) {
   
   lapply(pkgs, library, character.only=T)
   source("code/00_fn.R")
@@ -188,8 +194,13 @@ for(i in seq_along(y_resp)) {
   fit.ls <- merge_pred_dfs(dirf(glue("{base.dir}/compiled"), glue("{y}_fit_ls.rds"), recursive=T))
   oos.ls <- merge_pred_dfs(dirf(glue("{base.dir}/compiled"), glue("{y}_oos_ls.rds"), recursive=T))
   # spatTime.ls <- merge_pred_dfs(dirf(glue("{base.dir}/compiled"), glue("{y}_spattime_ls.rds"), recursive=T))
+  # cv.ls <- list(alert=full_join(
+  #   merge_pred_dfs(dirf(glue("{base.dir}/model_fits"), glue("{y}_.*_HB[L|N]_CV"), recursive=T), CV="HB"),
+  #   merge_pred_dfs(dirf(glue("{base.dir}/model_fits"), glue("{y}_.*_CV.rds"), recursive=T), CV="ML"),
+  #   by=c("y", "obsid"))
+  # )
   cv.ls <- list(alert=full_join(
-    merge_pred_dfs(dirf(glue("{base.dir}/model_fits"), glue("{y}_.*_HB[L|N]_CV"), recursive=T), CV="HB"),
+    fit.ls$alert |> select(y, obsid, alert, date, siteid),
     merge_pred_dfs(dirf(glue("{base.dir}/model_fits"), glue("{y}_.*_CV.rds"), recursive=T), CV="ML"),
     by=c("y", "obsid"))
   )
@@ -199,12 +210,12 @@ for(i in seq_along(y_resp)) {
   saveRDS(wt.ls, glue("{base.dir}/compiled/{y}_wt.rds"))
   
   fit.ls <- map(responses, ~calc_ensemble(fit.ls, wt.ls, .x, y_i.i, "wtmean"))
-  fit.ls <- map(responses, ~calc_ensemble(fit.ls, cv.ls, .x, y_i.i, "GLM_fit", ens.dir, 1e4))
-  fit.ls <- map(responses, ~calc_ensemble(fit.ls, cv.ls, .x, y_i.i, "HB_fit", ens.dir, 1e4))
+  # fit.ls <- map(responses, ~calc_ensemble(fit.ls, cv.ls, .x, y_i.i, "GLM_fit", ens.dir, 1e4))
+  # fit.ls <- map(responses, ~calc_ensemble(fit.ls, cv.ls, .x, y_i.i, "HB_fit", ens.dir, 1e4))
 
   oos.ls <- map(responses, ~calc_ensemble(oos.ls, wt.ls, .x, y_i.i, "wtmean"))
-  oos.ls <- map(responses, ~calc_ensemble(oos.ls, cv.ls, .x, y_i.i, "GLM_oos", ens.dir))
-  oos.ls <- map(responses, ~calc_ensemble(oos.ls, cv.ls, .x, y_i.i, "HB_oos", ens.dir))
+  # oos.ls <- map(responses, ~calc_ensemble(oos.ls, cv.ls, .x, y_i.i, "GLM_oos", ens.dir))
+  # oos.ls <- map(responses, ~calc_ensemble(oos.ls, cv.ls, .x, y_i.i, "HB_oos", ens.dir))
   
   # spatTime.ls <- map(responses, ~calc_ensemble(spatTime.ls, wt.ls, .x, y_i.i, "wtmean"))
   # spatTime.ls <- map(responses, ~calc_ensemble(spatTime.ls, cv.ls, .x, y_i.i, "GLM_oos", ens.dir))
@@ -412,7 +423,7 @@ saveRDS(oos.ls$alert_L, "out/clean/out_oos.rds")
 
 
 library(kerneval)
-rank.df <-  oos.ls$alert_L |> 
+rank.df <- oos.ls$alert_L |> 
   select(y, model, covSet, PCA, alert, prA1) |>
   filter(!grepl("perfect|auto", model)) |>
   na.omit() |>
@@ -766,7 +777,11 @@ varTypes <- list(
   UV_interact=c(
     paste("UWkXfetch", grep("Dir[EW]", col_cmems, value=T), sep="X"),
     paste("VWkXfetch", grep("Dir[NS]", col_cmems, value=T), sep="X"),
+    paste("UWkXfetch", grep("Dir[NS]", col_cmems, value=T), sep="X"),
+    paste("VWkXfetch", grep("Dir[EW]", col_cmems, value=T), sep="X"),
     paste("UWkXfetch", grep("^[Precip|Shortwave|sst].*Dir[EW]", col_wrf, value=T), sep="X"),
+    paste("VWkXfetch", grep("^[Precip|Shortwave|sst].*Dir[NS]", col_wrf, value=T), sep="X"),
+    paste("UWkXfetch", grep("^[Precip|Shortwave|sst].*Dir[NS]", col_wrf, value=T), sep="X"),
     paste("VWkXfetch", grep("^[Precip|Shortwave|sst].*Dir[EW]", col_wrf, value=T), sep="X")
   ),
   hab=c(outer(filter(y_i, type=="hab")$abbr, c("lnNAvg", "prA"), "paste0"))
