@@ -395,7 +395,7 @@ fit_model <- function(mod, resp, form.ls, d.ls, opts, tunes, out.dir, y, suffix=
       collect_predictions() |>
       filter(.config==best$.config) |>
       arrange(.row) |>
-      mutate(obsid=d.ls[[resp]]$obsid,
+      mutate(obsid=d.ls[[resp]]$obsid[.row],
              y=y) |>
       select(y, obsid, .pred_A1) |>
       rename_with(~glue("{mod.prefix}{mod}_{resp}_A1"), .cols=".pred_A1") |>
