@@ -27,19 +27,19 @@ covSet.df <- expand_grid(y=y_resp,
   mutate(id=row_number(),
          f=glue("{id}-Avg{Avg}_Xf{Xf}_XN{XN}_Del{Del}")) %>%
   ungroup %>%
-  arrange(desc(y), desc(id)) %>%
-  filter(Xf==1 & Avg==1)
+  arrange(y, id) |>
+  filter(Xf==1)
 n_spp_parallel <- 1
 cores_per_model <- 12
 
 
-registerDoParallel(cores_per_model)
+# registerDoParallel(cores_per_model)
 for(i in 1:nrow(covSet.df)) {
 # registerDoParallel(n_spp_parallel)
 # foreach(i=1:nrow(covSet.df)) %dopar% {
   lapply(pkgs, library, character.only=T)
   source("code/00_fn.R")
-  base.dir <- "out/0_init" 
+  base.dir <- "out/0_init_redo" 
   
   covSet <- covSet.df$f[i]
   d <- covSet.df$id[i]
@@ -79,7 +79,11 @@ for(i in 1:nrow(covSet.df)) {
     interact=c(
       paste("UWkXfetch", grep("Dir[EW]", col_cmems, value=T), sep="X"),
       paste("VWkXfetch", grep("Dir[NS]", col_cmems, value=T), sep="X"),
+      paste("UWkXfetch", grep("Dir[NS]", col_cmems, value=T), sep="X"),
+      paste("VWkXfetch", grep("Dir[EW]", col_cmems, value=T), sep="X"),
       paste("UWkXfetch", grep("^[Precip|Shortwave|sst].*Dir[EW]", col_wrf, value=T), sep="X"),
+      paste("VWkXfetch", grep("^[Precip|Shortwave|sst].*Dir[NS]", col_wrf, value=T), sep="X"),
+      paste("UWkXfetch", grep("^[Precip|Shortwave|sst].*Dir[NS]", col_wrf, value=T), sep="X"),
       paste("VWkXfetch", grep("^[Precip|Shortwave|sst].*Dir[EW]", col_wrf, value=T), sep="X")
     ),
     hab=c(outer(filter(y_i, type=="hab")$abbr, c("lnNAvg", "prA"), "paste0"))
@@ -106,7 +110,7 @@ for(i in 1:nrow(covSet.df)) {
   
   set.seed(1003)
   obs.split <- group_initial_split(obs.ls, group=year)
-  saveRDS(obs.split, glue("data/0_init/{y}_{covSet}_dataSplit.rds"))
+  saveRDS(obs.split, glue("data/0_init_redo/{y}_{covSet}_dataSplit.rds"))
   obs.train <- training(obs.split)
   obs.test <- testing(obs.split)
   
@@ -145,7 +149,6 @@ for(i in 1:nrow(covSet.df)) {
   
   # tuning controls
   n_tuneVal <- list(Ridge=1e3,
-                    ENet=1e3, 
                     MARS=1e3,
                     RF=1e2, 
                     NN=1e2,
@@ -155,25 +158,26 @@ for(i in 1:nrow(covSet.df)) {
   
   # . train: fit models -----------------------------------------------------
   
-  # cl <- makeCluster(cores_per_model)
-  # registerDoParallel(cl)
+  cl <- makeCluster(cores_per_model)
+  registerDoParallel(cl)
   for(r in responses) {
     set.seed(1003)
     folds <- vfold_cv(d.y$train[[r]], strata=r)
     set.seed(1003)
     foldsPCA <- vfold_cv(dPCA.y$train[[r]], strata=r)
-    fit_model("Ridge", r, form.ls, dPCA.y$train, foldsPCA, n_tuneVal, fit.dir, y, "_PCA")
-    fit_model("Ridge", r, form.ls, d.y$train, folds, n_tuneVal, fit.dir, y)
-    fit_model("MARS", r, form.ls, dPCA.y$train, foldsPCA, n_tuneVal, fit.dir, y, "_PCA")
-    fit_model("MARS", r, form.ls, d.y$train, folds, n_tuneVal, fit.dir, y)
+    # fit_model("Ridge", r, form.ls, dPCA.y$train, foldsPCA, n_tuneVal, fit.dir, y, "_PCA")
+    # fit_model("Ridge", r, form.ls, d.y$train, folds, n_tuneVal, fit.dir, y)
+    # fit_model("MARS", r, form.ls, dPCA.y$train, foldsPCA, n_tuneVal, fit.dir, y, "_PCA")
+    # fit_model("MARS", r, form.ls, d.y$train, folds, n_tuneVal, fit.dir, y)
     fit_model("RF", r, form.ls, dPCA.y$train, foldsPCA, n_tuneVal, fit.dir, y, "_PCA")
     fit_model("RF", r, form.ls, d.y$train, folds, n_tuneVal, fit.dir, y)
-    fit_model("NN", r, form.ls, dPCA.y$train, foldsPCA, n_tuneVal, fit.dir, y, "_PCA")
-    fit_model("NN", r, form.ls, d.y$train, folds, n_tuneVal, fit.dir, y)
+    # fit_model("NN", r, form.ls, dPCA.y$train, foldsPCA, n_tuneVal, fit.dir, y, "_PCA")
+    # fit_model("NN", r, form.ls, d.y$train, folds, n_tuneVal, fit.dir, y)
     # fit_model("Boost", r, form.ls, dPCA.y$train, foldsPCA, n_tuneVal, fit.dir, y, "_PCA")
     # fit_model("Boost", r, form.ls, d.y$train, folds, n_tuneVal, fit.dir, y)
   }
-  # stopCluster(cl)
+  stopCluster(cl)
+  closeAllConnections()
   
   cat("Finished", covSet, "for", y, ":", as.character(Sys.time()), "\n")
 }

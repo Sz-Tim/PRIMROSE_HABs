@@ -6,7 +6,7 @@
 
 
 # setup -------------------------------------------------------------------
-pkgs <- c("tidyverse", "lubridate", "glue", "tidymodels", 
+pkgs <- c("tidyverse", "glue", "tidymodels", 
           "nnet", "randomForest", "glmnet", "xgboost", "earth",
           "brms", "bayesian", "doParallel", "foreach", "butcher")
 lapply(pkgs, library, character.only=T)
@@ -28,12 +28,12 @@ covSet.df <- expand_grid(y=y_resp,
   mutate(id=row_number(),
          f=glue("{id}-Avg{Avg}_Xf{Xf}_XN{XN}_Del{Del}")) %>%
   ungroup %>%
-  arrange(y, id) %>%
-  filter(Xf==1 & Avg==1)
+  arrange(y, id) |>
+  filter(Xf==1) 
 cores_per_model <- 3
-n_spp_parallel <- 9
+n_spp_parallel <- 18
 
-
+# i <- 14
 registerDoParallel(n_spp_parallel)
 foreach(i=1:nrow(covSet.df)) %dopar% {
   lapply(pkgs, library, character.only=T)
@@ -78,12 +78,15 @@ foreach(i=1:nrow(covSet.df)) %dopar% {
     interact=c(
       paste("UWkXfetch", grep("Dir[EW]", col_cmems, value=T), sep="X"),
       paste("VWkXfetch", grep("Dir[NS]", col_cmems, value=T), sep="X"),
+      paste("UWkXfetch", grep("Dir[NS]", col_cmems, value=T), sep="X"),
+      paste("VWkXfetch", grep("Dir[EW]", col_cmems, value=T), sep="X"),
       paste("UWkXfetch", grep("^[Precip|Shortwave|sst].*Dir[EW]", col_wrf, value=T), sep="X"),
+      paste("VWkXfetch", grep("^[Precip|Shortwave|sst].*Dir[NS]", col_wrf, value=T), sep="X"),
+      paste("UWkXfetch", grep("^[Precip|Shortwave|sst].*Dir[NS]", col_wrf, value=T), sep="X"),
       paste("VWkXfetch", grep("^[Precip|Shortwave|sst].*Dir[EW]", col_wrf, value=T), sep="X")
     ),
     hab=c(outer(filter(y_i, type=="hab")$abbr, c("lnNAvg", "prA"), "paste0"))
   )
-  # all_covs$interact <- paste("lnNWt1", c(all_covs$main[-2]), sep="X")
   all_covs$interact <- c(all_covs$interact,
                          paste("lnNWt1", c(all_covs$main[-2]), sep="X"))
   
@@ -174,7 +177,7 @@ foreach(i=1:nrow(covSet.df)) %dopar% {
     folds <- vfold_cv(d.y$train[[r]], strata=r)
     set.seed(1003)
     foldsPCA <- vfold_cv(dPCA.y$train[[r]], strata=r)
-    # fit_model("HBL", r, form.ls, dPCA.y$train, HB.i, priors, fit.dir, y, "_PCA")
+    fit_model("HBL", r, form.ls, dPCA.y$train, HB.i, priors, fit.dir, y, "_PCA")
     fit_model("HBL", r, form.ls, d.y$train, HB.i, priors, fit.dir, y)
   }
   
@@ -188,7 +191,7 @@ foreach(i=1:nrow(covSet.df)) %dopar% {
     folds <- vfold_cv(d.y$train[[r]], strata=r)
     set.seed(1003)
     foldsPCA <- vfold_cv(dPCA.y$train[[r]], strata=r)
-    # run_Bayes_CV("HBL", foldsPCA, cv.dir, y, y_i.i, r, form.ls, HB.i, priors, PCA=T)
+    run_Bayes_CV("HBL", foldsPCA, cv.dir, y, y_i.i, r, form.ls, HB.i, priors, PCA=T)
     run_Bayes_CV("HBL", folds, cv.dir, y, y_i.i, r, form.ls, HB.i, priors)
   }
   cat("Finished", covSet, "for", y, ":", as.character(Sys.time()), "\n")

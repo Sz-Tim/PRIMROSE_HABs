@@ -48,7 +48,11 @@ all_covs <- list(
   interact=c(
     paste("UWkXfetch", grep("Dir[EW]", col_cmems, value=T), sep="X"),
     paste("VWkXfetch", grep("Dir[NS]", col_cmems, value=T), sep="X"),
+    paste("UWkXfetch", grep("Dir[NS]", col_cmems, value=T), sep="X"),
+    paste("VWkXfetch", grep("Dir[EW]", col_cmems, value=T), sep="X"),
     paste("UWkXfetch", grep("^[Precip|Shortwave|sst].*Dir[EW]", col_wrf, value=T), sep="X"),
+    paste("VWkXfetch", grep("^[Precip|Shortwave|sst].*Dir[NS]", col_wrf, value=T), sep="X"),
+    paste("UWkXfetch", grep("^[Precip|Shortwave|sst].*Dir[NS]", col_wrf, value=T), sep="X"),
     paste("VWkXfetch", grep("^[Precip|Shortwave|sst].*Dir[EW]", col_wrf, value=T), sep="X")
   ),
   hab=c(outer(filter(y_i, type=="hab")$abbr, c("lnNAvg", "prA"), "paste0"))
@@ -141,9 +145,7 @@ foreach(i=seq_along(obs.ls),
                    "3"=list(r1=0.1, r2=1, hs1=5, hs2=0.5, b=0.5, de=0.05, i=3)
   ) 
   priors <- map(responses, ~list(HBL=make_HB_priors(priStr, "HBL", .x, covs),
-                                 HBL_PCA=make_HB_priors(priStr, "HBL", .x, covsPCA, PCA=T),
-                                 HBN=make_HB_priors(priStr, "HBN", .x, covs),
-                                 HBN_PCA=make_HB_priors(priStr, "HBN", .x, covsPCA, PCA=T)))
+                                 HBL_PCA=make_HB_priors(priStr, "HBL", .x, covsPCA, PCA=T)))
   
   # tuning controls
   n_tuneVal <- list(Ridge=1e3,
@@ -182,8 +184,6 @@ foreach(i=seq_along(obs.ls),
     fit_model("Boost", r, form.ls, dPCA.y$train, foldsPCA, n_tuneVal, fit.dir, y, "_PCA")
     fit_model("HBL", r, form.ls, d.y$train, HB.i, priors, fit.dir, y)
     fit_model("HBL", r, form.ls, dPCA.y$train, HB.i, priors, fit.dir, y, "_PCA")
-    fit_model("HBN", r, form.ls, d.y$train, HB.i, priors, fit.dir, y)
-    fit_model("HBN", r, form.ls, dPCA.y$train, HB.i, priors, fit.dir, y, "_PCA")
   }
   
   fit.ls <- map(responses, ~summarise_predictions(d.y$train, dPCA.y$train, .x, fit.dir, y_i.i))
@@ -204,8 +204,6 @@ foreach(i=seq_along(obs.ls),
     foldsPCA <- vfold_cv(dPCA.y$train[[r]], strata=r)
     run_Bayes_CV("HBL", foldsPCA, cv.dir, y, y_i.i, r, form.ls, HB.i, priors, PCA=T)
     run_Bayes_CV("HBL", folds, cv.dir, y, y_i.i, r, form.ls, HB.i, priors)
-    run_Bayes_CV("HBN", foldsPCA, cv.dir, y, y_i.i, r, form.ls, HB.i, priors, PCA=T)
-    run_Bayes_CV("HBN", folds, cv.dir, y, y_i.i, r, form.ls, HB.i, priors)
   }
   
   

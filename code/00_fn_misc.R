@@ -68,8 +68,20 @@ get_intervals <- function(df, y, type="hdci") {
               L025=ci_fun({{y}}, 0.95)[,1],
               L05=ci_fun({{y}}, 0.9)[,1],
               L10=ci_fun({{y}}, 0.8)[,1],
+              L15=ci_fun({{y}}, 0.7)[,1],
+              L20=ci_fun({{y}}, 0.6)[,1],
               L25=ci_fun({{y}}, 0.5)[,1],
+              L30=ci_fun({{y}}, 0.4)[,1],
+              L35=ci_fun({{y}}, 0.3)[,1],
+              L40=ci_fun({{y}}, 0.2)[,1],
+              L45=ci_fun({{y}}, 0.1)[,1],
+              L55=ci_fun({{y}}, 0.1)[,2],
+              L60=ci_fun({{y}}, 0.2)[,2],
+              L65=ci_fun({{y}}, 0.3)[,2],
+              L70=ci_fun({{y}}, 0.4)[,2],
               L75=ci_fun({{y}}, 0.5)[,2],
+              L80=ci_fun({{y}}, 0.6)[,2],
+              L85=ci_fun({{y}}, 0.7)[,2],
               L90=ci_fun({{y}}, 0.8)[,2],
               L95=ci_fun({{y}}, 0.9)[,2],
               L975=ci_fun({{y}}, 0.95)[,2])
@@ -91,6 +103,8 @@ get_intervals <- function(df, y, type="hdci") {
 #'
 #' @examples
 calc_R2 <- function(dat.df, type="mf", ...) {
+  # See Smith & McKenna. 2013. A comparison of logistic regression pseudo-R2 
+  #   indices. Multiple Linear Regression Viewpoints, 39(2)
   if(type=="mf") {
     return(
       dat.df |>

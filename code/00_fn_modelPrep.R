@@ -108,7 +108,9 @@ prep_recipe <- function(train.df, response, covsExclude="NA", dimReduce=FALSE) {
     rec <- rec |>
       step_interact(terms=~lnNWt1:all_predictors(), sep="X") |>
       step_interact(terms=~UWk:fetch:matches("Dir[EW]"), sep="X") |>
-      step_interact(terms=~VWk:fetch:matches("Dir[NS]"), sep="X")
+      step_interact(terms=~VWk:fetch:matches("Dir[NS]"), sep="X") |>
+      step_interact(terms=~UWk:fetch:matches("Dir[NS]"), sep="X") |>
+      step_interact(terms=~VWk:fetch:matches("Dir[EW]"), sep="X")
   }
   rec <- rec |>
     step_interact(terms=~lon_z:lat_z, sep="X") |>
@@ -393,7 +395,7 @@ fit_model <- function(mod, resp, form.ls, d.ls, opts, tunes, out.dir, y, suffix=
       collect_predictions() |>
       filter(.config==best$.config) |>
       arrange(.row) |>
-      mutate(obsid=d.ls[[resp]]$obsid,
+      mutate(obsid=d.ls[[resp]]$obsid[.row],
              y=y) |>
       select(y, obsid, .pred_A1) |>
       rename_with(~glue("{mod.prefix}{mod}_{resp}_A1"), .cols=".pred_A1") |>
@@ -476,8 +478,11 @@ fit_model <- function(mod, resp, form.ls, d.ls, opts, tunes, out.dir, y, suffix=
 #' @export
 #'
 #' @examples
-run_Bayes_CV <- function(mod, folds, cv.dir, y, y_i.i, r, form.ls, HB.i, priors, PCA=F) {
+run_Bayes_CV <- function(mod, folds, cv.dir, y, y_i.i, r, form.ls, HB.i, priors, PCA=F, reverse=F) {
   for(f in 1:nrow(folds)) {
+    if(reverse) {
+      f <- (nrow(folds):1)[f] 
+    }
     f_ <- paste0("_f", str_pad(f, 2, side="left", pad="0"))
     f_ <- ifelse(PCA, paste0("_PCA", f_), f_)
     d.cv <- list(train=list(alert=training(folds$splits[[f]])),
