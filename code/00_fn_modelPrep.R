@@ -88,7 +88,8 @@ add_dummy_columns <- function(df) {
 prep_recipe <- function(train.df, response, covsExclude="NA", dimReduce=FALSE) {
   respExclude <- grep(response, c("lnN", "tl", "alert"), value=T, invert=T)
   pred_vars <- names(train.df)
-  include_interactions <- !grepl("X", covsExclude)
+  include_UVX <- !grepl("Xfetch", covsExclude)
+  include_lnNX <- !grepl("lnNWt1X", covsExclude)
   rec <- recipe(train.df) |>
     step_mutate(prevAlert=alert1, role="ID") |>
     update_role(all_of(pred_vars), new_role="predictor") |>
@@ -104,13 +105,16 @@ prep_recipe <- function(train.df, response, covsExclude="NA", dimReduce=FALSE) {
     step_rename(ydayCos=yday_cos_1, ydaySin=yday_sin_1) |>
     step_mutate_at(lon, lat, fn=list(z=~.)) |>
     step_interact(term=~ydaySin:ydayCos, sep="X")
-  if(include_interactions) {
+  if(include_UVX) {
     rec <- rec |>
-      step_interact(terms=~lnNWt1:all_predictors(), sep="X") |>
       step_interact(terms=~UWk:fetch:matches("Dir[EW]"), sep="X") |>
       step_interact(terms=~VWk:fetch:matches("Dir[NS]"), sep="X") |>
       step_interact(terms=~UWk:fetch:matches("Dir[NS]"), sep="X") |>
       step_interact(terms=~VWk:fetch:matches("Dir[EW]"), sep="X")
+  }
+  if(include_lnNX) {
+    rec <- rec |>
+      step_interact(terms=~lnNWt1:all_predictors(), sep="X") 
   }
   rec <- rec |>
     step_interact(terms=~lon_z:lat_z, sep="X") |>
@@ -390,7 +394,7 @@ fit_model <- function(mod, resp, form.ls, d.ls, opts, tunes, out.dir, y, suffix=
                 metrics=metric_set(roc_auc2, pr_auc2, avg_prec2), 
                 control=control_grid(save_pred=T))
     # saveRDS(out_tune |> butcher, glue("{out.dir}/meta/{fit_ID}_tune.rds"))
-    best <- select_best(out_tune, "avg_prec2")
+    best <- select_best(out_tune, metric="avg_prec2")
     out_tune |> 
       collect_predictions() |>
       filter(.config==best$.config) |>

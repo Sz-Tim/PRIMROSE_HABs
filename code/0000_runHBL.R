@@ -29,7 +29,7 @@ covSet.df <- expand_grid(y=y_resp,
          f=glue("{id}-Avg{Avg}_Xf{Xf}_XN{XN}_Del{Del}")) %>%
   ungroup %>%
   arrange(y, id) |>
-  filter(Xf==1) 
+  filter(Xf==1 & Avg==1) 
 cores_per_model <- 3
 n_spp_parallel <- 18
 
@@ -38,7 +38,7 @@ registerDoParallel(n_spp_parallel)
 foreach(i=1:nrow(covSet.df)) %dopar% {
   lapply(pkgs, library, character.only=T)
   source("code/00_fn.R")
-  base.dir <- "out/0_init" 
+  base.dir <- "out/0_init_redo" 
   
   covSet <- covSet.df$f[i]
   d <- covSet.df$id[i]
