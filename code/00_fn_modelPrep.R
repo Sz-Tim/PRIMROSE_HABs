@@ -348,7 +348,7 @@ fit_model <- function(mod, resp, form.ls, d.ls, opts, tunes, out.dir, y, suffix=
   dir.create(glue("{out.dir}/vi/"), showWarnings=F, recursive=T)
   PCA_run <- all(!is.null(suffix), grepl("PCA", suffix))
   # Fit ML models
-  if(mod %in% c("Ridge", "ENet", "RF", "NN", "MARS", "Boost")) {
+  if(mod %in% c("Ridge", "ENet", "RF", "NN", "MARS", "Boost", "lgbm")) {
     fit_ID <- glue("{y}_{resp}_{mod}{ifelse(is.null(suffix),'',suffix)}")
     if(file.exists(glue("{out.dir}/{fit_ID}.rds"))) {
       cat("File already exists:", glue("{out.dir}/{fit_ID}.rds"), "\n")
@@ -378,7 +378,14 @@ fit_model <- function(mod, resp, form.ls, d.ls, opts, tunes, out.dir, y, suffix=
                                        min_n=tune(),
                                        learn_rate=tune(),
                                        loss_reduction=tune()) |>
-                        set_engine("xgboost") |> set_mode("classification")
+                        set_engine("xgboost") |> set_mode("classification"),
+                      lgbm=boost_tree(tree_depth=tune(),
+                                      trees=tune(),
+                                      learn_rate=tune(),
+                                      mtry=tune(),
+                                      min_n=tune(),
+                                      loss_reduction=tune()) |>
+                        set_engine("lightgbm") |> set_mode("classification")
     )
     avg_prec2 <- metric_tweak("avg_prec2", average_precision, event_level="second")
     pr_auc2 <- metric_tweak("pr_auc2", pr_auc, event_level="second")
@@ -387,13 +394,24 @@ fit_model <- function(mod, resp, form.ls, d.ls, opts, tunes, out.dir, y, suffix=
       add_model(ML_spec) |>
       add_formula(form.ls[[resp]][[ML_form]])
     set.seed(1003)
-    out_tune <- wf |>
-      tune_grid(resamples=opts, 
-                grid=grid_latin_hypercube(extract_parameter_set_dials(ML_spec), 
-                                          size=tunes[[mod]]),
-                metrics=metric_set(roc_auc2, pr_auc2, avg_prec2), 
-                control=control_grid(save_pred=T))
-    # saveRDS(out_tune |> butcher, glue("{out.dir}/meta/{fit_ID}_tune.rds"))
+    if(mod=="lgbm") {
+      out_tune <- wf |>
+        tune_grid(resamples=opts, 
+                  grid=grid_latin_hypercube(
+                    extract_parameter_set_dials(ML_spec) |> 
+                      update(mtry=finalize(mtry(), opts)), 
+                    size=tunes[[mod]]),
+                  metrics=metric_set(roc_auc2, pr_auc2, avg_prec2), 
+                  control=control_grid(save_pred=T))  
+    } else {
+      out_tune <- wf |>
+        tune_grid(resamples=opts, 
+                  grid=grid_latin_hypercube(extract_parameter_set_dials(ML_spec), 
+                                            size=tunes[[mod]]),
+                  metrics=metric_set(roc_auc2, pr_auc2, avg_prec2), 
+                  control=control_grid(save_pred=T))
+      # saveRDS(out_tune |> butcher, glue("{out.dir}/meta/{fit_ID}_tune.rds")) 
+    }
     best <- select_best(out_tune, metric="avg_prec2")
     out_tune |> 
       collect_predictions() |>
