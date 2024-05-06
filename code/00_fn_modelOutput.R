@@ -310,7 +310,7 @@ calc_ensemble <- function(out.ls, wt.ls, resp, y_i.i, method="wtmean", out.path=
                                               size=size),
                     metrics=metric_set(avg_prec2))
         GLM_out <- GLM_wf |>
-          finalize_workflow(select_best(GLM_tune, "avg_prec2")) |>
+          finalize_workflow(select_best(GLM_tune, metric="avg_prec2")) |>
           fit(wt.ls[[resp]]) |>
           butcher()
         saveRDS(GLM_out, glue("{out.path}/{y_i.i$abbr}_EnsGLM.rds"))
@@ -324,7 +324,7 @@ calc_ensemble <- function(out.ls, wt.ls, resp, y_i.i, method="wtmean", out.path=
                                               size=size),
                     metrics=metric_set(avg_prec2))
         GLM_out2 <- GLM_wf2 |>
-          finalize_workflow(select_best(GLM_tune2, "avg_prec2")) |>
+          finalize_workflow(select_best(GLM_tune2, metric="avg_prec2")) |>
           fit(wt.ls[[resp]]) |>
           butcher()
         saveRDS(GLM_out2, glue("{out.path}/{y_i.i$abbr}_EnsGLM2.rds"))
@@ -345,7 +345,7 @@ calc_ensemble <- function(out.ls, wt.ls, resp, y_i.i, method="wtmean", out.path=
                                               size=size),
                     metrics=metric_set(avg_prec2))
         RF_out <- RF_wf |>
-          finalize_workflow(select_best(RF_tune, "avg_prec2")) |>
+          finalize_workflow(select_best(RF_tune, metric="avg_prec2")) |>
           fit(wt.ls[[resp]]) |>
           butcher()
         saveRDS(RF_out, glue("{out.path}/{y_i.i$abbr}_EnsRF.rds"))
@@ -359,7 +359,7 @@ calc_ensemble <- function(out.ls, wt.ls, resp, y_i.i, method="wtmean", out.path=
                                               size=size),
                     metrics=metric_set(avg_prec2))
         RF_out2 <- RF_wf2 |>
-          finalize_workflow(select_best(RF_tune2, "avg_prec2")) |>
+          finalize_workflow(select_best(RF_tune2, metric="avg_prec2")) |>
           fit(wt.ls[[resp]]) |>
           butcher()
         saveRDS(RF_out2, glue("{out.path}/{y_i.i$abbr}_EnsRF2.rds"))
