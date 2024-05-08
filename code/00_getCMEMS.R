@@ -13,7 +13,7 @@ load("temp/get_CMEMS.RData")
 i.df <- i.df |>
   mutate(fname=glue("cmems_{var}_{source}.nc"))
 for(i in 1:nrow(i.df)) {
-  if(grepl("Forecast", i.df$source)) {
+  if(grepl("Forecast", i.df$source[i])) {
     dates <- c(pmax(ymd("2021-09-01"), dateRng[1]-nDays_buffer),
                pmin(today()+3, dateRng[2]+nDays_buffer))
   } else {
