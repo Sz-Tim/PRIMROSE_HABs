@@ -24,6 +24,7 @@ for(i in 1:nrow(i.df)) {
   command <- paste("copernicusmarine subset -i", " subset -i", i.df$ID_toolbox[i],
                    "-x", bbox$xmin, "-X", bbox$xmax,
                    "-y", bbox$ymin, "-Y", bbox$ymax,
+                   "-z", 0, "-Z", 0,
                    "-t", dates[1], "-T", dates[2],
                    " --variable", i.df$var[i],
                    "-o temp", "-f", i.df$fname[i],
