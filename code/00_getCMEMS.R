@@ -21,21 +21,22 @@ for(i in 1:nrow(i.df)) {
                pmin(ymd("2024-01-01"), dateRng[2]+nDays_buffer))
   }
   # download nc files
-  command <- paste("copernicusmarine subset -i", " subset -i", i.df$ID_toolbox[i],
+  command <- paste("copernicusmarine subset -i", i.df$ID_toolbox[i],
                    "-x", bbox$xmin, "-X", bbox$xmax,
                    "-y", bbox$ymin, "-Y", bbox$ymax,
                    "-z", 0, "-Z", 0,
                    "-t", dates[1], "-T", dates[2],
-                   " --variable", i.df$var[i],
+                   " -v", i.df$var[i],
                    "-o temp", "-f", i.df$fname[i],
                    "--force-download --overwrite-metadata-cache")
   system(command, intern=TRUE)
 }
 
+nc_f <- dir("temp", "cmems_.*nc")
 # Process .nc files
-for(i in 1:nrow(i.df)) {
+for(i in 1:length(nc_f)) {
   # load .nc file
-  nc <- nc_open(paste0(out.dir, i.df$fname[i]))
+  nc <- nc_open(paste0("temp/", nc_f[i]))
   
   # get metadata and identify lon/lat/time indexes to extract
   nc.lon <- ncvar_get(nc, "longitude")
@@ -63,11 +64,11 @@ for(i in 1:nrow(i.df)) {
   expand_grid(date=nc.date[time_i],
               lat=c(nc.lat[lat_i]),
               lon=c(nc.lon[lon_i])) |>
-    mutate(source=i.df$source[i],
+    mutate(source=str_sub(str_split_fixed(nc_f[i], "_", 3)[,3], 1, -4),
            vals=c(nc.var)) |>
-    rename_with(~gsub("vals", i.df$var[i], .x)) |>
-    saveRDS(glue("{out.dir}/cmems_{i.df$var[i]}_{i.df$source[i]}.rds"))
+    rename_with(~gsub("vals", str_split_fixed(nc_f[i], "_", 3)[,2], .x)) |>
+    saveRDS(glue("{out.dir}/{str_replace(nc_f[i], 'nc', 'rds')}"))
 }
 
 # Remove temporary .nc files
-file.remove(i.df$fname)
+file.remove(nc_f)
