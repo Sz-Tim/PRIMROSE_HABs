@@ -13,11 +13,18 @@ load("temp/get_CMEMS.RData")
 i.df <- i.df |>
   mutate(fname=glue("cmems_{var}_{source}.nc"))
 for(i in 1:nrow(i.df)) {
+  if(grepl("Forecast", i.df$source)) {
+    dates <- c(pmax(ymd("2021-09-01"), dateRng[1]-nDays_buffer),
+               pmin(today()+3, dateRng[2]+nDays_buffer))
+  } else {
+    dates <- c(pmax(ymd("1993-01-01"), dateRng[1]-nDays_buffer),
+               pmin(ymd("2024-01-01"), dateRng[2]+nDays_buffer))
+  }
   # download nc files
   command <- paste("copernicusmarine subset -i", " subset -i", i.df$ID_toolbox[i],
                    "-x", bbox$xmin, "-X", bbox$xmax,
                    "-y", bbox$ymin, "-Y", bbox$ymax,
-                   "-t", dateRng[1]-nDays_buffer, "-T", dateRng[2]+nDays_buffer,
+                   "-t", dates[1], "-T", dates[2],
                    " --variable", i.df$var[i],
                    "-o temp", "-f", i.df$fname[i],
                    "--force-download --overwrite-metadata-cache")
