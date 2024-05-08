@@ -28,7 +28,7 @@ urls <- c(fsa="fsa_counts",
           mowi_sites="mowi_sites",
           ssf="ssf_counts",
           ssf_sites="ssf_sites") |>
-  map(~glue("http://varro:3001/{.x}"))
+  map(~glue("http://www.habreports.org/dbdatastuff/{.x}"))
 
 hab_i <- read_csv("data/i_hab.csv")
 tox_i <- read_csv("data/i_tox.csv")
@@ -88,7 +88,7 @@ fsa.df |> select(-lon, -lat) |>
   saveRDS("data/0_init/fsa_df.rds")
 site_hab.df <- fsa.df |>  
   select(siteid, sin, lon, lat) |>
-  group_by(siteid) |> slice_head(n=1) |> ungroup
+  group_by(siteid) |> slice_head(n=1) |> ungroup()
 saveRDS(site_hab.df, "data/site_hab_df.rds")
 
 cefas.df <- read_and_clean_cefas(urls$cefas, tox_i, cefas_sites, dateStart) |>
@@ -97,7 +97,7 @@ cefas.df |> select(-lon, -lat) |>
   saveRDS("data/0_init/cefas_df.rds")
 site_tox.df <- cefas.df |>  
   select(siteid, sin, lon, lat) |>
-  group_by(siteid) |> slice_head(n=1) |> ungroup
+  group_by(siteid) |> slice_head(n=1) |> ungroup()
 saveRDS(site_tox.df, "data/site_tox_df.rds")
 
 # fish.df <- read_and_clean_fish(urls$mowi, urls$ssf, fish_i, fish_sites, dateStart) |>
