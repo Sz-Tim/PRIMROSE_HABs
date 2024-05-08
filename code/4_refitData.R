@@ -129,7 +129,7 @@ cmems_i <- expand_grid(
         "po4", # Mole concentration of phosphate
         "pp" # Net primary production of biomass expressed as carbon per unit volume
   ),
-  source=c("Reanalysis", "Analysis&Forecast")) |>
+  source=c("Reanalysis", "AnalysisForecast")) |>
   mutate(server=if_else(source=="Reanalysis", "my.cmems-du.eu", "nrt.cmems-du.eu"), 
          doi=glue("https://doi.org/10.48670/moi-0005{if_else(source=='Reanalysis', 8, 6)}"),
          ID=glue("cmems_mod_nws_bgc-{var}_", 

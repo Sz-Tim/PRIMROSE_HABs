@@ -125,9 +125,9 @@ read_and_clean_fish <- function(url_mowi, url_ssf, fish_i, sites, dateStart="201
 get_CMEMS <- function(userid, pw, i.df, bbox, nDays_buffer, dateRng, out.dir,
                       toolbox=TRUE) {
   if(toolbox) {
-    save(list=ls(all.names=TRUE), file="tempCMEMS.RData")
+    save(list=ls(all.names=TRUE), file="temp/get_CMEMS.RData")
     system2("bash", paste0(getwd(), "/code/00_getCMEMS.sh"))
-    file.remove("tempCMEMS.RData")
+    file.remove("temp/get_CMEMS.RData")
     return("Finished running /code/getCMEMS.sh")
   } 
   

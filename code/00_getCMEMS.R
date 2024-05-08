@@ -9,7 +9,7 @@
 
 library(tidyverse); library(ncdf4); library(lubridate); library(glue)
 
-load("tempCMEMS.RData")
+load("temp/get_CMEMS.RData")
 i.df <- i.df |>
   mutate(fname=glue("cmems_{var}_{source}.nc"))
 for(i in 1:nrow(i.df)) {
@@ -19,7 +19,7 @@ for(i in 1:nrow(i.df)) {
                    "-y", bbox$ymin, "-Y", bbox$ymax,
                    "-t", dateRng[1]-nDays_buffer, "-T", dateRng[2]+nDays_buffer,
                    " --variable", i.df$var[i],
-                   "-o", out.dir, "-f", i.df$fname[i],
+                   "-o temp", "-f", i.df$fname[i],
                    "--force-download --overwrite-metadata-cache")
   system(command, intern=TRUE)
 }
