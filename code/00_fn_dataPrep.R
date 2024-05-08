@@ -125,10 +125,10 @@ read_and_clean_fish <- function(url_mowi, url_ssf, fish_i, sites, dateStart="201
 get_CMEMS <- function(userid, pw, i.df, bbox, nDays_buffer, dateRng, out.dir,
                       toolbox=TRUE) {
   if(toolbox) {
-    save.image("tempCMEMS.RData")
-    system2("bash", paste0(getwd(), "/code/00_get_CMEMS.sh"))
+    save(list=ls(all.names=TRUE), file="tempCMEMS.RData")
+    system2("bash", paste0(getwd(), "/code/00_getCMEMS.sh"))
     file.remove("tempCMEMS.RData")
-    return("Finished running /code/get_CMEMS.sh")
+    return("Finished running /code/getCMEMS.sh")
   } 
   
   library(tidyverse); library(ncdf4); library(lubridate); library(glue)
