@@ -33,7 +33,7 @@ for(i in 1:nrow(i.df)) {
 }
 
 for(i in unique(i.df$var)) {
-  nc_i <- dir("temp", paste0(i, ".*nc"), full.names=T)
+  nc_i <- dir("temp", paste0(i, "_.*nc"), full.names=T)
   if(length(nc_i) == 1) {
     nc <- rast(nc_i)
     
