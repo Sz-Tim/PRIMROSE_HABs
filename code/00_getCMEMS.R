@@ -47,9 +47,9 @@ for(i in unique(i.df$var)) {
     rename(lon=x, lat=y) |>
     mutate(cmems_id=row_number())
   saveRDS(nc_df, glue("{out.dir}/coords_{i}.rds"))
-  nc_df <- nc_LU |>
+  nc_df <- nc_LU |> select(cmems_id) |>
     bind_cols(values(nc, dataframe=T, na.rm=T) |>
                 setNames(time(nc))) |>
-    pivot_longer(-(1:3), names_to="date", values_to=i)
+    pivot_longer(-1, names_to="date", values_to=i)
   saveRDS(nc_df, glue("{out.dir}/cmems_{i}.rds"))
 }
