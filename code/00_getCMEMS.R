@@ -46,7 +46,7 @@ for(i in unique(i.df$var)) {
   nc_LU <- crds(nc) |> as_tibble() |>
     rename(lon=x, lat=y) |>
     mutate(cmems_id=row_number())
-  saveRDS(nc_df, glue("{out.dir}/coords_{i}.rds"))
+  saveRDS(nc_LU, glue("{out.dir}/coords_{i}.rds"))
   nc_df <- nc_LU |> select(cmems_id) |>
     bind_cols(values(nc, dataframe=T, na.rm=T) |>
                 setNames(time(nc))) |>
