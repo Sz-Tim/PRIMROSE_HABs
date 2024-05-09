@@ -7,7 +7,7 @@
 # and runs this script. This is all much more complicated since it was really
 # built under the assumption that everyone would use Python....
 
-library(tidyverse); library(ncdf4); library(lubridate); library(glue)
+library(tidyverse); library(terra); library(lubridate); library(glue)
 
 load("temp/get_CMEMS.RData")
 i.df <- i.df |>
@@ -32,43 +32,22 @@ for(i in 1:nrow(i.df)) {
   system(command, intern=TRUE)
 }
 
-nc_f <- dir("temp", "cmems_.*nc")
-# Process .nc files
-for(i in 1:length(nc_f)) {
-  # load .nc file
-  nc <- nc_open(paste0("temp/", nc_f[i]))
-  
-  # get metadata and identify lon/lat/time indexes to extract
-  nc.lon <- ncvar_get(nc, "longitude")
-  nc.lat <- ncvar_get(nc, "latitude")
-  nc.time <- ncvar_get(nc, "time")
-  time_units <- ncatt_get(nc, "time", "units")
-  nc.origin <- as_datetime(str_split_fixed(time_units$value, " ", 3)[3])
-  nc.dt <- switch(str_split_fixed(time_units$value, " ", 3)[1], 
-                  seconds=dseconds,
-                  minutes=dminutes,
-                  hours=dhours)
-  nc.date <- date(nc.origin + nc.dt(nc.time))
-  lon_i <- which(between(nc.lon, bbox$xmin, bbox$xmax))
-  lat_i <- which(between(nc.lat, bbox$ymin, bbox$ymax))
-  time_i <- which(between(nc.date, dateRng[1]-nDays_buffer, dateRng[2]+nDays_buffer))
-  var.start <- c(lon_i[1], lat_i[1], 1, time_i[1])
-  var.count <- c(length(lon_i), length(lat_i), 1, length(time_i)) 
-  
-  # extract variable
-  if(length(names(nc$var)) > 1) { cat("Too many vars in nc:", names(nc$var))}
-  nc.var <- ncvar_get(nc, names(nc$var), start=var.start, count=var.count)
-  nc_close(nc)
-  
-  # reshape and save
-  expand_grid(date=nc.date[time_i],
-              lat=c(nc.lat[lat_i]),
-              lon=c(nc.lon[lon_i])) |>
-    mutate(source=str_sub(str_split_fixed(nc_f[i], "_", 3)[,3], 1, -4),
-           vals=c(nc.var)) |>
-    rename_with(~gsub("vals", str_split_fixed(nc_f[i], "_", 3)[,2], .x)) |>
-    saveRDS(glue("{out.dir}/{str_replace(nc_f[i], 'nc', 'rds')}"))
+for(i in unique(i.df$var)) {
+  nc_i <- dir("temp", paste0(i, ".*nc"), full.names=T)
+  if(length(nc_i) == 1) {
+    nc <- rast(nc_i)
+    
+  } else {
+    nc_F <- rast(nc_i |> grep("Forecast", x=_, value=T)) 
+    nc_R <- rast(nc_i |> grep("Reanalysis", x=_, value=T)) |>
+      project(nc_F)
+    nc <- mergeTime(sds(nc_R, nc_F), mean) 
+  }
+  nc_df <- crds(nc) |> as_tibble() |>
+    rename(lon=x, lat=y) |>
+    mutate(cmems_id=row_number()) |>
+    bind_cols(values(nc, dataframe=T, na.rm=T) |>
+                setNames(time(nc))) |>
+    pivot_longer(-(1:3), names_to="date", values_to=i)
+  saveRDS(nc_df, glue("{out.dir}/cmems_{i}.rds"))
 }
-
-# Remove temporary .nc files
-file.remove(nc_f)
