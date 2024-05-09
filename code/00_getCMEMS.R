@@ -43,9 +43,11 @@ for(i in unique(i.df$var)) {
       project(nc_F)
     nc <- mergeTime(sds(nc_R, nc_F), mean) 
   }
-  nc_df <- crds(nc) |> as_tibble() |>
+  nc_LU <- crds(nc) |> as_tibble() |>
     rename(lon=x, lat=y) |>
-    mutate(cmems_id=row_number()) |>
+    mutate(cmems_id=row_number())
+  saveRDS(nc_df, glue("{out.dir}/coords_{i}.rds"))
+  nc_df <- nc_LU |>
     bind_cols(values(nc, dataframe=T, na.rm=T) |>
                 setNames(time(nc))) |>
     pivot_longer(-(1:3), names_to="date", values_to=i)
