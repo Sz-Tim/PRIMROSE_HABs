@@ -7,11 +7,10 @@
 # setup -------------------------------------------------------------------
 
 library(raster)
-library(gdistance)
+library(terra)
+library(spaths)
 library(tidyverse)
 library(glue)
-library(lubridate)
-library(ncdf4)
 library(sf)
 library(jsonlite)
 library(WeStCOMS)
@@ -32,7 +31,7 @@ urls <- c(fsa="fsa_counts",
 
 hab_i <- read_csv("data/i_hab.csv")
 tox_i <- read_csv("data/i_tox.csv")
-# fish_i <- read_csv("data/i_fish.csv")
+fish_i <- read_csv("data/i_fish.csv")
 # # TODO: Chaetoceros con = both species combined? Or each on its own?
 
 tl_hab <- read_csv("data/tl_thresholds_hab.csv") |>
@@ -79,8 +78,8 @@ tl_tox <- read_csv("data/tl_thresholds_tox.csv") |>
 
 fsa_sites <- read_and_clean_sites(urls$fsa_sites, dateStart)
 cefas_sites <- read_and_clean_sites(urls$cefas_sites, dateStart)
-# fish_sites <- bind_rows(read_and_clean_sites(urls$mowi_sites, dateStart),
-#                         read_and_clean_sites(urls$ssf_sites, dateStart))
+fish_sites <- bind_rows(read_and_clean_sites(urls$mowi_sites, dateStart),
+                        read_and_clean_sites(urls$ssf_sites, dateStart))
 
 fsa.df <- read_and_clean_fsa(urls$fsa, hab_i, fsa_sites, dateStart) |>
   mutate(siteid=as.numeric(factor(sin)))
@@ -100,15 +99,15 @@ site_tox.df <- cefas.df |>
   group_by(siteid) |> slice_head(n=1) |> ungroup()
 saveRDS(site_tox.df, "data/3_refit/site_tox_df.rds")
 
-# fish.df <- read_and_clean_fish(urls$mowi, urls$ssf, fish_i, fish_sites, dateStart) |>
-#   mutate(siteid=as.numeric(factor(sin)))
-# fish.df |> summarise(across(any_of(fish_i$abbr), ~sum(!is.na(.x))))
-# fish.df |> select(-lon, -lat) |>
-#   saveRDS("data/3_refit/fish_df.rds")
-# site_fish.df <- fish.df |>  
-#   select(siteid, sin, lon, lat) |>
-#   group_by(siteid) |> slice_head(n=1) |> ungroup
-# saveRDS(site_fish.df, "data/site_fish_df.rds")
+fish.df <- read_and_clean_fish(urls$mowi, urls$ssf, fish_i, fish_sites, dateStart) |>
+  mutate(siteid=as.numeric(factor(sin)))
+fish.df |> summarise(across(any_of(fish_i$abbr), ~sum(!is.na(.x))))
+fish.df |> select(-lon, -lat) |>
+  saveRDS("data/3_refit/fish_df.rds")
+site_fish.df <- fish.df |>
+  select(siteid, sin, lon, lat) |>
+  group_by(siteid) |> slice_head(n=1) |> ungroup()
+saveRDS(site_fish.df, "data/3_refit/site_fish_df.rds")
 
 
 
@@ -126,8 +125,7 @@ cmems_i <- expand_grid(
         "o2", # Mole concentration of dissolved molecular oxygen
         "ph", # Sea water ph reported on total scale
         "phyc", # Mole concentration of phytoplankton expressed as carbon
-        "po4", # Mole concentration of phosphate
-        "pp" # Net primary production of biomass expressed as carbon per unit volume
+        "po4" # Mole concentration of phosphate
   ),
   source=c("Reanalysis", "AnalysisForecast")) |>
   mutate(server=if_else(source=="Reanalysis", "my.cmems-du.eu", "nrt.cmems-du.eu"), 
@@ -142,23 +140,18 @@ fsa.df <- readRDS("data/3_refit/fsa_df.rds")
 cefas.df <- readRDS("data/3_refit/cefas_df.rds")
 get_CMEMS(userid=NULL, pw=NULL, 
           i.df=cmems_i, bbox=UK_bbox, 
-          nDays_buffer=nDays_avg, dateRng=range(c(fsa.df$date, cefas.df$date)), 
+          nDays_buffer=nDays_avg, 
+          # dateRng=c(ymd("2023-12-01"), ymd("2024-02-01")),
+          dateRng=range(c(fsa.df$date, cefas.df$date)),
           out.dir="data/00_env/cmems/", 
           toolbox=TRUE)
 
-rean.f <- dirf("data/00_env/cmems", "cmems.*Reanalysis.rds")
-anfo.f <- dirf("data/00_env/cmems", "cmems.*Forecast.rds")
-cmems.df <- bind_rows(map(rean.f, readRDS) |> reduce(full_join),
-                      map(anfo.f, readRDS) |> reduce(full_join)) |>
-  arrange(date, lon, lat) |>
-  group_by(date, lon, lat) |>
-  summarise(across(any_of(cmems_i$var), ~mean(.x, na.rm=T))) |>
-  na.omit() |>
-  group_by(date) |>
-  mutate(cmems_id=row_number()) |>
-  ungroup() |>
+cmems_LU <- readRDS(dirf("data/00_env/cmems/", "coords.*rds")[1]) 
+cmems.f <- dirf("data/00_env/cmems", "cmems.*.rds")
+cmems.df <- map(cmems.f, ~readRDS(.x)) |> 
+  reduce(full_join) |>
+  left_join(cmems_LU) |>
   mutate(chl=log1p(chl),
-         kd=log(kd),
          no3=log1p(no3),
          o2=log(o2),
          phyc=log1p(phyc),
@@ -177,7 +170,7 @@ saveRDS(cmems.df, glue("data/3_refit/cmems_end_{max(cmems.df$date)}.rds"))
 #  - Wind direction
 #  - Shortwave radiation
 #  - Precipitation
-#  - Sea surface temperature (not used due to extensive NAs)
+#  - Sea surface temperature
 
 fsa.df <- readRDS("data/3_refit/fsa_df.rds")
 cefas.df <- readRDS("data/3_refit/cefas_df.rds")
@@ -197,22 +190,21 @@ saveRDS(wrf.df, glue("data/3_refit/wrf_end_{max(wrf.df$date)}.rds"))
 
 # HABs
 site_hab.df <- readRDS("data/3_refit/site_hab_df.rds")
-path.ls <- get_shortestPaths(ocean.path="data/ScotlandOcean_footprint.tif", 
+path.ls <- get_shortestPaths(ocean.path="data/northAtlantic_footprint.tif", 
                              site.df=site_hab.df, 
-                             transMx.path="data/mesh_tmx.rds", recalc_transMx=F,
                              site_savePath="data/3_refit/site_hab_df.rds")
 write_csv(path.ls$dist.df, "data/3_refit/site_hab_pairwise_distances.csv")
 path.ls <- list(dist.df=read_csv("data/3_refit/site_hab_pairwise_distances.csv"))
-path.ls$dist.df |> 
-  bind_rows(tibble(origin=unique(.$origin), 
-                   destination=unique(.$origin), 
-                   distance=0)) |>
-  filter(distance < 100e3) |> 
-  select(-distance) |> 
-  group_by(origin) |> 
-  nest(data=destination) |>
+path.ls$dist.df %>% 
+  bind_rows(tibble(origins=unique(.$origins), 
+                   destinations=unique(.$origins), 
+                   distances=0)) |>
+  filter(distances < 100e3) |> 
+  dplyr::select(-distances) |> 
+  group_by(origins) |> 
+  nest(data=destinations) |>
   mutate(dest_c=c(data[[1]])) |> 
-  select(-data) |>
+  dplyr::select(-data) |>
   ungroup() |>
   saveRDS("data/3_refit/site_hab_neighbors_100km.rds")
 
@@ -220,20 +212,19 @@ path.ls$dist.df |>
 site_tox.df <- readRDS("data/site_tox_df.rds")
 path.ls <- get_shortestPaths(ocean.path="data/ScotlandOcean_footprint.tif", 
                              site.df=site_tox.df, 
-                             transMx.path="data/mesh_tmx.rds", recalc_transMx=F,
                              site_savePath="data/site_tox_df.rds")
 write_csv(path.ls$dist.df, "data/3_refit/site_tox_pairwise_distances.csv")
 path.ls <- list(dist.df=read_csv("data/3_refit/site_tox_pairwise_distances.csv"))
-path.ls$dist.df |> 
-  bind_rows(tibble(origin=unique(.$origin), 
-                   destination=unique(.$origin), 
-                   distance=0)) |>
-  filter(distance < 100e3) |> 
-  select(-distance) |> 
-  group_by(origin) |> 
-  nest(data=destination) |>
+path.ls$dist.df %>%
+  bind_rows(tibble(origins=unique(.$origins), 
+                   destinations=unique(.$origins), 
+                   distances=0)) |>
+  filter(distances < 100e3) |> 
+  dplyr::select(-distances) |> 
+  group_by(origins) |> 
+  nest(data=destinations) |>
   mutate(dest_c=c(data[[1]])) |> 
-  select(-data) |>
+  dplyr::select(-data) |>
   ungroup() |>
   saveRDS("data/3_refit/site_tox_neighbors_100km.rds")
 
@@ -246,14 +237,14 @@ path.ls$dist.df |>
 
 site_hab.df <- readRDS("data/3_refit/site_hab_df.rds")
 site_hab.df <- site_hab.df |>
-  get_fetch(., "data/log10_eu200m1a.tif") |>
-  get_openBearing(., "data/northAtlantic_footprint.gpkg", buffer=200e3)
+  get_fetch("data/log10_eu200m1a.tif") |>
+  get_openBearing("data/northAtlantic_footprint.gpkg", buffer=200e3)
 saveRDS(site_hab.df, "data/3_refit/site_hab_df.rds")
 
 site_tox.df <- readRDS("data/3_refit/site_tox_df.rds")
 site_tox.df <- site_tox.df |>
-  get_fetch(., "data/log10_eu200m1a.tif") |>
-  get_openBearing(., "data/northAtlantic_footprint.gpkg", buffer=200e3)
+  get_fetch("data/log10_eu200m1a.tif") |>
+  get_openBearing("data/northAtlantic_footprint.gpkg", buffer=200e3)
 saveRDS(site_tox.df, "data/3_refit/site_tox_df.rds")
 
 

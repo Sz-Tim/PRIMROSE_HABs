@@ -31,7 +31,7 @@ urls <- c(fsa="fsa_counts",
           fsa_sites="fsa_sites", 
           cefas="cefas_counts",
           cefas_sites="cefas_sites") |>
-  map(~glue("http://varro:3001/{.x}"))
+  map(~glue("http://www.habreports.org/dbdatastuff/{.x}"))
 
 # NB: toxin thresholds are adjusted for ASP, AZAs, YTXs because of the extremely 
 # limited occurrence of TL2 and TL3. Models thus predict only presence/absence
@@ -110,29 +110,31 @@ if(Sys.info()["sysname"]=="Windows") {
 cat("-------- Reading CMEMS:", as.character(Sys.time()), "\n")
 
 # . CMEMS  download -------------------------------------------------------
-cmems_cred <- readRDS("data/cmems_cred.rds")
-cmems_i <- read_csv("data/cmems_i.csv") |> filter(source=="Analysis&Forecast")
-get_CMEMS(cmems_cred$userid, cmems_cred$pw, cmems_i, UK_bbox, daysBuffer, 
-          c(old_end$cmems, Sys.Date()+7), "data/00_env/cmems/")
-anfo.f <- dirf("data/00_env/cmems", "cmems.*Forecast.rds")
-cmems.df <- map_dfr(anfo.f, ~readRDS(.x) |>
-                      group_by(date, lat, lon) |> 
-                      summarise(across(where(is.numeric), mean)) |>
-                      ungroup() |>
-                      mutate(var=str_split_fixed(.x, "_", 4)[,3]) |>
-                      rename_with(~"val", str_split_fixed(.x, "_", 4)[,3])) |> 
-  pivot_wider(names_from="var", values_from="val") |>
-  na.omit() |>
-  group_by(date) |>
-  mutate(cmems_id=row_number()) |>
-  ungroup() |>
-  mutate(chl=log1p(chl),
-         kd=log(kd),
+
+cmems_i <- read_csv("data/cmems_i_cmemsUpdates2024.csv") |> filter(source=="AnalysisForecast")
+get_CMEMS(userid=NULL, pw=NULL, 
+          i.df=cmems_i, bbox=UK_bbox, 
+          nDays_buffer=daysBuffer, 
+          dateRng=c(old_end$cmems, Sys.Date()+7),
+          out.dir="data/00_env/cmems/", 
+          toolbox=TRUE)
+
+cmems_LU <- readRDS(dirf("data/00_env/cmems/", "coords.*rds")[1]) 
+cmems.f <- dirf("data/00_env/cmems", "cmems.*rds")
+cmems.df <- map(cmems.f, ~readRDS(.x)) |> 
+  reduce(full_join) |>
+  left_join(cmems_LU) |>
+  mutate(date=ymd(date),
+         chl=log1p(chl),
          no3=log1p(no3),
          o2=log(o2),
          phyc=log1p(phyc),
-         po4=log1p(po4)) 
+         po4=log1p(po4),
+         kd=0, # TODO: removed in CMEMS 2024 updates; refit models without
+         pp=0) # TODO: removed in CMEMS 2024 updates; refit models without
 saveRDS(cmems.df, glue("data/2_new/cmems_end_{max(cmems.df$date)}.rds"))
+
+
 
 # . CMEMS  site:date ------------------------------------------------------
 # replace previous forecasts with recent observations

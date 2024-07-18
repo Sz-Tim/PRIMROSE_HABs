@@ -134,7 +134,9 @@ cmems_i <- expand_grid(
   mutate(server=if_else(source=="Reanalysis", "my.cmems-du.eu", "nrt.cmems-du.eu"), 
          doi=glue("https://doi.org/10.48670/moi-0005{if_else(source=='Reanalysis', 8, 6)}"),
          ID=glue("cmems_mod_nws_bgc-{var}_", 
-                 "{if_else(source=='Reanalysis', 'my', 'anfc')}_7km-3D_P1D-m"))
+                 "{if_else(source=='Reanalysis', 'my', 'anfc')}_7km-3D_P1D-m"),
+         ID_toolbox=glue("cmems_mod_nws_bgc", 
+                         "{if_else(source=='Reanalysis', paste0('-', var, '_my_7km'), '_anfc_0.027deg')}-3D_P1D-m"))
 write_csv(cmems_i, "data/cmems_i.csv")
 
 cmems_cred <- readRDS("data/cmems_cred.rds")
