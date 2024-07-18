@@ -292,7 +292,16 @@ ggsave("figs/pub/Fig_3.png", fig3, width=140, height=90, units="mm", dpi=300)
 
 
 
-
+figS1_lims <- tibble(
+  .metric=c("ROC-AUC", "PR-AUC", "MCC", "R2-VZ", "Schoener's D"),
+  low=c(0.5, 0, 0, 0, 0),
+  high=c(1, 1, 1, 1, 1)
+) |>
+  pivot_longer(2:3, names_to="limit", values_to=".estimate") |>
+  mutate(model="Null[Date]") |>
+  mutate(.metric=factor(.metric, 
+                        levels=c("ROC-AUC", "PR-AUC", "MCC", "R2-VZ", "Schoener's D"),
+                        labels=c("ROC-AUC", "PR-AUC", "MCC", "R['VZ']^2", "D[overlap]")))
 fig3 <- rank.oos |>
   filter(covSet %in% c("nullGrand", "null4wk", "ensGLM2")) |>
   filter(.metric %in% c("ROC-AUC", "PR-AUC", "R2-VZ", "MCC", "Schoener's D")) |>
@@ -310,6 +319,7 @@ fig3 <- rank.oos |>
   left_join(y_i |> select(y, fig_short)) |>
   ggplot(aes(model, .estimate, colour=fig_short, group=fig_short)) + 
   # geom_hline(yintercept=0, linewidth=0.25, colour="grey30") +
+  geom_point(data=figS1_lims, colour="white", group=NA) +
   geom_point(shape=1) + geom_line() + 
   scale_colour_brewer(type="qual", palette=3) +
   scale_x_discrete(labels=parse(text=fig3_mod_labs)) +
@@ -324,7 +334,7 @@ fig3 <- rank.oos |>
         axis.text.x=element_text(angle=270, hjust=0, vjust=0.5), 
         axis.title.x=element_blank(),
         panel.grid=element_blank())
-ggsave("figs/pub/Fig_3_scores.png", fig3, width=140, height=90, units="mm", dpi=300)
+ggsave("figs/pub/Fig_S1.png", fig3, width=140, height=90, units="mm", dpi=300)
 
 fig3 <- fig3_df |>
   ggplot(aes(model, std_gain, colour=fig_short)) + 
@@ -1437,28 +1447,28 @@ vi_pt_df |>
 
 
 # Fig S1 ------------------------------------------------------------------
-
-figS1 <- vi_pt_df |> 
-  filter(top) |> 
-  mutate(Variable=str_remove(Variable, "Dir[NSEW]") |>
-           str_remove_all("Wk") |>
-           str_remove_all("Wt") |>
-           str_replace_all("UV", "Wind") |>
-           str_replace_all("UX", "WindX") |>
-           str_replace_all("VX", "WindX")) |>
-  mutate(varTypeClean=forcats::fct_recode(varTypeClean, "Prev. year"="Previous year")) |>
-  ggplot(aes(y, Variable, colour=y)) + 
-  geom_point() + 
-  scale_colour_brewer(type="qual", palette="Paired") +
-  facet_grid(varTypeClean~., scales="free_y", space="free_y",
-             labeller=label_wrap_gen(8)) +
-  theme_ms +
-  theme(axis.text.x=element_blank(),
-        axis.ticks.x=element_blank(),
-        axis.title.x=element_blank(),
-        legend.key.height=unit(0.35, "cm"),
-        panel.grid.major.y=element_line(colour="grey", linewidth=0.1))
-ggsave("figs/pub/Fig_S1.png", figS1, width=90, height=240, units="mm", dpi=300)
+# 
+# figS1 <- vi_pt_df |> 
+#   filter(top) |> 
+#   mutate(Variable=str_remove(Variable, "Dir[NSEW]") |>
+#            str_remove_all("Wk") |>
+#            str_remove_all("Wt") |>
+#            str_replace_all("UV", "Wind") |>
+#            str_replace_all("UX", "WindX") |>
+#            str_replace_all("VX", "WindX")) |>
+#   mutate(varTypeClean=forcats::fct_recode(varTypeClean, "Prev. year"="Previous year")) |>
+#   ggplot(aes(y, Variable, colour=y)) + 
+#   geom_point() + 
+#   scale_colour_brewer(type="qual", palette="Paired") +
+#   facet_grid(varTypeClean~., scales="free_y", space="free_y",
+#              labeller=label_wrap_gen(8)) +
+#   theme_ms +
+#   theme(axis.text.x=element_blank(),
+#         axis.ticks.x=element_blank(),
+#         axis.title.x=element_blank(),
+#         legend.key.height=unit(0.35, "cm"),
+#         panel.grid.major.y=element_line(colour="grey", linewidth=0.1))
+# ggsave("figs/pub/Fig_S1.png", figS1, width=90, height=240, units="mm", dpi=300)
 
 
 
@@ -1492,9 +1502,9 @@ figS2 <- rank.oos |>
                       guide=guide_legend(ncol=2, order=1)) + 
   scale_shape_manual("Performance metric", values=c(1, 19, 3, 2, 4), 
                      labels=parse_format()) +
-  scale_x_continuous(expression(italic(Null['Date'])~'standardised gain'), 
+  scale_x_continuous(expression(italic(Null['Date'])~'skill score'), 
                      breaks=c(0, 0.5, 1), limits=c(-0.05,1)) + 
-  scale_y_continuous(expression(italic(Ensemble)~"standardised gain"), 
+  scale_y_continuous(expression(italic(Ensemble)~"skill score"), 
                      breaks=c(0, 0.5, 1), limits=c(-0.05,1)) + 
   theme_ms +
   theme(legend.position=c(0.855, 0.325),
