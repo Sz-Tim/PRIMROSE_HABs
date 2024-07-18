@@ -79,7 +79,7 @@ mod_i <- tibble(levels=c("nullGrand", "null4wk", "nullAuto", "perfect",
                 labels=c("Null[0]", "Null[Date]", "Null[auto]", "perfect", 
                          "Ens-WtMn", "Ens-LogitWtMn", "Ens-Ridge", "Ensemble", 
                          "Ens-HB", "Ens-RF", "Ens-RF2", 
-                         "HB", "Ridge", "MARS", "NN",
+                         "HBayes", "Ridge", "MARS", "NN",
                          "RF", "XGB"))
 mod_cols <- c(rep("grey", 3), "grey20",
               rep("grey40", 7),
@@ -848,32 +848,6 @@ fig6_mod_labs <- c("Null[Date]", "Ens.", "HBayes", "Ridge",
                    "MARS", "NN", "RF", "XGB")
 fig6_metric_labs <- c("ROC-AUC", "PR-AUC", "MCC", "R['VZ']^2", "D[overlap]")
 
-fig6 <- rank.oos  |>
-  filter(!grepl("auto|0|Ens-", model)) |>
-  filter(.metric %in% c("ROC-AUC", "PR-AUC", "R2-VZ", "MCC", "Schoener's D")) |>
-  mutate(.metric=factor(.metric, 
-                        levels=c("ROC-AUC", "PR-AUC", "MCC", "R2-VZ", "Schoener's D"),
-                        labels=fig6_metric_labs)) |> 
-  arrange(y, .metric, rank) |>
-  group_by(y, .metric) |>
-  mutate(rank=(194-min_rank(rank))/194*100) |>
-  ungroup() |>
-  ggplot(aes(model, rank, fill=model)) + 
-  geom_boxplot(outlier.shape=1, outlier.size=0.7, outlier.alpha=0.5, size=0.25) +
-  scale_fill_manual("Model", values=mod_cols, guide="none") + 
-  labs(x="", y="Rank") +
-  scale_x_discrete(labels=parse(text=paste0("italic(", fig6_mod_labs, ")"))) +
-  scale_y_continuous("Percentile", breaks=seq(0,100,by=10)) +
-  facet_wrap(~.metric, nrow=1, labeller="label_parsed") + 
-  theme_ms +
-  theme(legend.position="bottom",
-        axis.text.x=element_text(angle=270, hjust=0, vjust=0.5),
-        axis.title.x=element_blank(),
-        panel.grid.major.x=element_blank(),
-        panel.grid.major.y=element_line(colour="grey90", linewidth=0.25))
-
-ggsave("figs/pub/Fig_6.png", fig6, width=140, height=90, units="mm", dpi=300)
-
 library(ggdist)
 fig6 <- rank.oos  |>
   filter(!grepl("auto|0|Ens-", model)) |>
@@ -904,7 +878,7 @@ fig6 <- rank.oos  |>
         panel.grid.major.y=element_blank(),
         panel.grid.major.x=element_line(colour="grey90", linewidth=0.3),
         panel.grid.minor.x=element_line(colour="grey90", linewidth=0.15))
-ggsave("figs/pub/Fig_6_alt1.png", fig6, width=90, height=120, units="mm", dpi=300)
+ggsave("figs/pub/Fig_6_alt.png", fig6, width=90, height=120, units="mm", dpi=300)
 
 fig6 <- rank.oos  |>
   filter(!grepl("auto|0|Ens-", model)) |>
@@ -935,8 +909,9 @@ fig6 <- rank.oos  |>
         axis.title.y=element_blank(),
         panel.grid.major.y=element_blank(),
         panel.grid.major.x=element_line(colour="grey90", linewidth=0.3),
-        panel.grid.minor.x=element_line(colour="grey90", linewidth=0.15))
-ggsave("figs/pub/Fig_6_alt2.png", fig6, width=90, height=200, units="mm", dpi=300)
+        panel.grid.minor.x=element_line(colour="grey90", linewidth=0.15),
+        strip.text=element_text(face="italic"))
+ggsave("figs/pub/Fig_6.png", fig6, width=90, height=200, units="mm", dpi=300)
 
 fig6 <- rank.oos  |>
   filter(!grepl("auto|0|Ens-", model)) |>
