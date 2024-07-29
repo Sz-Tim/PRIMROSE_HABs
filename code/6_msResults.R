@@ -1340,7 +1340,7 @@ rank.oos |>
   
 
 
-# Candidate model rankings
+# Candidate model rankings ------------------------------------------------
 rank.oos |> 
   filter(!is.na(rank)) |>
   filter(.metric %in% c("ROC-AUC", "PR-AUC", "R2-VZ", "MCC", "Schoener's D")) |>
@@ -1516,6 +1516,78 @@ out.oos |>
   scale_colour_gradient2("MCC") +
   facet_wrap(~fig_long, nrow=2) + 
   theme(legend.position=c(0.9, 0.2))
+
+
+
+
+
+# best of each model type -------------------------------------------------
+
+out.fit <- readRDS("out/clean/out_fit.rds")
+rank_fit.df <- out.fit |> 
+  select(y, model, covSet, PCA, alert, prA1) |>
+  filter(!grepl("perfect|auto", model)) |>
+  na.omit() |>
+  find_AUCPR_min(y) |>
+  nest(dat=c(prA1, alert)) |>
+  mutate(AUCPR=map_dbl(dat, ~average_precision(.x, alert, prA1, event_level="second")$.estimate),
+         AUCNPR=(AUCPR-AUCPR_min)/(1-AUCPR_min)) |>
+  select(-dat) |>
+  group_by(y) |>
+  mutate(rank=min_rank(desc(AUCNPR)),
+         .metric="PR-AUC") |>
+  rename(.estimate=AUCNPR) |> select(-AUCPR) |>
+  filter(!grepl("perfect|auto|0|Ens-", model)) |>
+  group_by(model, covSet, PCA) |>
+  summarise(mnRank=mean(rank)) |>
+  group_by(model) |>
+  slice_min(mnRank, n=1, with_ties=F) |>
+  ungroup() |>
+  mutate(model=factor(model, levels=levels(model), labels=mod_i$labels),
+         y=factor(y, levels=levels(y_i$y)))
+
+
+
+fig6_mod_labs <- c("Null[Date]", "Ens.", "HBayes", "Ridge", 
+                   "MARS", "NN", "RF", "XGB")
+fig6_metric_labs <- c("ROC-AUC", "PR-AUC", "MCC", "R['VZ']^2", "D[overlap]")
+
+library(ggdist)
+rank.oos |>
+  ungroup() |>
+  inner_join(rank_fit.df) |>
+  filter(!grepl("auto|0|Ens-", model)) |>
+  # filter(!covSet %in% paste0("d", 13:16)) |>
+  filter(.metric %in% c("ROC-AUC", "PR-AUC", "R2-VZ", "MCC", "Schoener's D")) |>
+  mutate(.metric=factor(.metric, 
+                        levels=c("ROC-AUC", "PR-AUC", "MCC", "R2-VZ", "Schoener's D"),
+                        labels=c("ROC-AUC", "PR-AUC", "MCC", "R['VZ']^2", "D[overlap]"))) |> 
+  arrange(y, .metric, rank) |>
+  group_by(y, .metric) |>
+  mutate(rank=min_rank(rank)) |>
+  ungroup() |>
+  ggplot(aes(rank, model, fill=model)) + 
+  geom_dots(aes(colour=model), side="bottom") +#, scale=0.5, shape=1,
+            # binwidth=1, overflow="compress", alpha=0.7) +
+  stat_halfeye(scale=0.5, normalize="xy",# fill_type="gradient", 
+               .width=c(0.66, 0.95), interval_size_range=c(0.2, 0.5),
+               fatten_point=0.5,
+               aes(slab_alpha=after_stat(-pmax(abs(1-2*cdf), 0.5)))) +
+  scale_colour_manual("Model", values=mod_cols, guide="none") +
+  scale_fill_manual("Model", values=mod_cols, guide="none") +
+  # scale_y_discrete(labels=parse(text=paste0("italic(", fig6_mod_labs, ")"))) +
+  # scale_x_continuous("Performance percentile", breaks=seq(0,100,by=20)) +
+  scale_slab_alpha_continuous(range=c(0.3, 0.9), guide="none") +
+  theme_ms + 
+  theme(legend.position="none",
+        axis.title.y=element_blank(),
+        panel.grid.major.y=element_blank(),
+        panel.grid.major.x=element_line(colour="grey90", linewidth=0.3),
+        panel.grid.minor.x=element_line(colour="grey90", linewidth=0.15))
+
+
+# By month --------------------------------------------------------------
+
 
 
 
