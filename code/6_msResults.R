@@ -7,7 +7,7 @@
 
 # setup -------------------------------------------------------------------
 
-pkgs <- c("tidyverse", "glue", "tidymodels", "sf")
+pkgs <- c("tidyverse", "glue", "tidymodels", "sf", "scico")
 lapply(pkgs, library, character.only=T)
 theme_set(theme_classic())
 source("code/00_fn.R")
@@ -79,12 +79,13 @@ mod_i <- tibble(levels=c("nullGrand", "null4wk", "nullAuto", "perfect",
                 labels=c("Null[0]", "Null[Date]", "Null[auto]", "perfect", 
                          "Ens-WtMn", "Ens-LogitWtMn", "Ens-Ridge", "Ensemble", 
                          "Ens-HB", "Ens-RF", "Ens-RF2", 
-                         "HB", "Ridge", "MARS", "NN",
+                         "HBayes", "Ridge", "MARS", "NN",
                          "RF", "XGB"))
-mod_cols <- c(rep("grey", 3), "grey30",
+mod_cols <- c(rep("grey", 3), "grey20",
               rep("grey40", 7),
-              "#1f78b4", "#b2df8a", "#33a02c", "#ff7f00", 
-              "#cab2d6", "#6a3d9a") |>
+              scico(6, palette="glasgow", begin=0.2, end=0.8, alpha=0.9)) |>
+              # "#1f78b4", "#b2df8a", "#33a02c", "#ff7f00", 
+              # "#cab2d6", "#6a3d9a") |>
   setNames(mod_i$labels)
 
 out.oos <- readRDS("out/clean/out_oos.rds") |>
@@ -122,21 +123,34 @@ obs.df <- bind_rows(readRDS("data/0_init/hab_obs.rds") |>
 
 # Fig 1 -------------------------------------------------------------------
 
-site_all.df <- bind_rows(site_hab.df |> select(sin, lon, lat) |> mutate(type="HABs"),
-                         site_tox.df |> select(sin, lon, lat) |> mutate(type="Biotoxins") |>
-                           filter(sin != "SI 820 2156 08"))
+site_all.df <- bind_rows(read_csv("temp/fsa_sites_Scotland.csv") |> mutate(type="Phytoplankton"),
+                         read_csv("temp/cefas_sites_Scotland.csv") |> mutate(type="Biotoxins")) |>
+  filter(sin != "")
 fig1a <- ggplot(coast) + 
-  geom_sf(fill="#a6cee3", colour="#a6cee3") + 
+  # geom_sf(fill="#a6cee3", colour="#a6cee3") + 
+  geom_sf(fill=scico(15, palette="oslo")[12], colour=scico(15, palette="oslo")[11]) + 
   geom_point(data=site_all.df, aes(lon, lat, colour=type), shape=1, size=0.7) + 
-  scale_x_continuous("Longitude", breaks=c(-6, -4, -2)) +
-  scale_y_continuous("Latitude", breaks=c(55, 58, 61)) +
+  scale_x_continuous("Longitude", breaks=c(-6, -4, -2), expand=c(0, 0)) +
+  scale_y_continuous("Latitude", breaks=c(55, 58, 61), expand=c(0, 0)) +
   scale_colour_manual("Monitoring", values=c("#33a02c", "#ff7f00")) +
   guides(colour=guide_legend(override.aes=list(size=1))) +
   theme_ms +
-  theme(legend.position=c(0.21, 0.88),
+  theme(legend.position=c(0.23, 0.9),
+        legend.key=element_rect(fill=NA, colour=NA),
         legend.key.width=grid::unit(0.2, "cm"),
         legend.key.height=grid::unit(0.3, "cm"))
-
+Null_wkly <- out.oos |> 
+  filter(model %in% c("Null[Date]", "Null[0]")) |> 
+  mutate(model=factor(model, labels=c("italic(Null[0])", "italic(Null[Date])"))) |>
+  mutate(yday=yday(date)) |> 
+  group_by(yday, y, model) |> 
+  summarise(prA=mean(prA1)) |> 
+  ungroup() |>
+  mutate(dateStd=ymd("2020-12-31") + yday,
+         Null=model) |>
+  rename(year=model) |>
+  left_join(y_i) |> 
+  select(dateStd, prA, year, fig_long, Null)
 obs.wkly <- obs.df |>
   mutate(wk=week(date)-1,
          year=year(date),
@@ -148,22 +162,36 @@ obs.wkly <- obs.df |>
   mutate(lo=pmax(pmin(prA - 1.96*sqrt((prA*(1-prA))/N), 1), 0),
          hi=pmax(pmin(prA + 1.96*sqrt((prA*(1-prA))/N), 1), 0)) |>
   left_join(y_i, by=c("y"="abbr"))
+yr_cols <- c(`italic(Null[0])`="black",
+             `italic(Null[Date])`="black",
+             viridis::viridis(8) |> setNames(2015:2022))
 
 fig1b <- obs.wkly |> 
   filter(N > 3) |>
+  mutate(year=factor(year),
+         Null="Obs") |>
+  bind_rows(Null_wkly) |>
   ggplot() + 
-  geom_line(aes(dateStd, prA, group=year, colour=year), linewidth=0.25) +
-  scale_y_continuous("Weekly proportion of sites with alerts", breaks=c(0, 0.25, 0.5, 0.75)) + 
-  scale_x_date("Date", date_breaks="3 months", date_labels="%b") +
-  scale_colour_viridis_c("Year", option="G", end=0.9, breaks=c(2016, 2019, 2022)) +
-  facet_wrap(~fig_long, labeller=label_wrap_gen(17), nrow=2) + 
-  guides(colour=guide_colorbar(barwidth=grid::unit(0.25, "cm"), 
-                               barheight=grid::unit(1.25, "cm"))) +
+  geom_line(aes(dateStd, prA, colour=year, linetype=Null, alpha=Null, linewidth=Null)) +
+  scale_y_continuous("Weekly proportion of sites ≥ amber", breaks=c(0, 0.25, 0.5, 0.75)) + 
+  scale_x_date(date_breaks="3 months", date_labels="%b") +
+  # scale_x_date(breaks=seq(ymd("2021-01-01"), ymd("2021-12-01"), by="month"), 
+  #              labels=str_sub(month.abb, 1, 1)) +
+  scale_linetype_manual(values=c(3, 1, 1), guide="none") +
+  scale_linewidth_manual(values=c(0.25, 0.4, 0.25), guide="none") +
+  scale_alpha_manual(values=c(1, 1, 0.8), guide="none") +
+  scale_colour_manual("Year", values=yr_cols, labels=parse_format()) +
+  facet_wrap(~fig_long, labeller=label_wrap_gen(17), nrow=2, scales="free_x") + 
+  guides(colour=guide_legend(override.aes=list(linetype=c(rep(1, 8), 3, 1)))) +
   theme_ms + 
   theme(panel.border=element_rect(colour="grey30", linewidth=0.2, fill=NA),
-        legend.position=c(0.93, 0.25),
-        legend.title=element_text(vjust=1),
-        panel.spacing=unit(1, "mm"))
+        legend.position=c(0.915, 0.25),
+        legend.key.height=unit(0.25, "cm"),
+        legend.key.width=unit(0.45, "cm"),
+        legend.title=element_blank(),
+        panel.spacing=unit(1, "mm"),
+        axis.title.x=element_blank(),
+        axis.text.x=element_text(size=6))
 
 fig1 <- ggpubr::ggarrange(fig1a, fig1b, nrow=1, widths=c(1, 2), labels="AUTO")
 ggsave("figs/pub/Fig_1.png", fig1, width=190, height=95, units="mm", dpi=400)
@@ -203,17 +231,12 @@ ggplot(obs.mo.Site, aes(dateStd, prA, group=dateStd)) + geom_boxplot() +
   facet_wrap(~fig_long)
 
 
+# Fig 3 -------------------------------------------------------------------
 
+fig3_mod_labs <- c("italic(Null[Date])", "italic(Ensemble)")
+fig3_talk_labs <- c("italic(Null[0])", "italic(Null[Date])", "italic(Ens.)")
 
-
-
-
-# Fig 2 -------------------------------------------------------------------
-
-fig2_mod_labs <- c("italic(Null[Date])", "italic(Ensemble)")
-fig2_talk_labs <- c("italic(Null[0])", "italic(Null[Date])", "italic(Ens.)")
-
-fig2 <- rank.oos |>
+fig3_metrics_df <- rank.oos |>
   filter(covSet %in% c("nullGrand", "null4wk", "ensGLM2")) |>
   filter(.metric %in% c("ROC-AUC", "PR-AUC", "R2-VZ", "MCC", "Schoener's D")) |>
   mutate(.metric=factor(.metric, 
@@ -225,30 +248,61 @@ fig2 <- rank.oos |>
   mutate(diff_v_null=.estimate - first(.estimate),
          std_gain=diff_v_null / 
            if_else(.metric=="D[overlap]", -first(.estimate), (1-first(.estimate)))) |>
-  ungroup() |>
-  filter(!grepl("Grand", covSet)) |>
-  left_join(y_i |> select(y, fig_short)) |>
-  ggplot(aes(model, std_gain, colour=fig_short, group=fig_short)) + 
+  ungroup()
+fig3_df <- bind_rows(fig3_metrics_df, 
+                     fig3_metrics_df |>
+                       group_by(y, model) |>
+                       summarise(across(where(is.numeric), mean)) |>
+                       mutate(.metric="Mean") |>
+                       ungroup()
+) |>
+  mutate(.metric=factor(.metric, 
+                        levels=c("ROC-AUC", "PR-AUC", "MCC", "R['VZ']^2", "D[overlap]", "Mean"))) |>
+  filter(!grepl("0", model)) |> 
+  left_join(y_i |> select(y, fig_short, fig_long))
+fig3_means <- fig3_df |>
+  group_by(model, .metric) |>
+  summarise(across(where(is.numeric), mean))
+fig3 <- fig3_df |>
+  ggplot(aes(model, std_gain, colour=fig_short)) + 
   geom_hline(yintercept=0, linewidth=0.25, colour="grey30") +
-  geom_point(shape=1) + geom_line() + 
+  geom_point() + geom_line(aes(group=fig_short)) + 
+  geom_point(data=fig3_means, shape=1, size=3, colour="black") +
   scale_colour_brewer(type="qual", palette=3) +
-  scale_x_discrete(labels=parse(text=fig2_mod_labs)) +
-  scale_y_continuous(expression(atop("Standardised gain", 
-                                     paste("(0: Null" [0]~~"1: Perfect)"))),
+  scale_x_discrete(labels=parse(text=fig3_talk_labs[-1])) +
+  scale_y_continuous(expression(paste("Skill score (0: Null" [0]~~"1: Perfect)")),
                      breaks=c(0, 0.5, 1), limits=c(-0.05,1)) +
   facet_wrap(~.metric, nrow=1, labeller="label_parsed") + 
   guides(colour=guide_legend(nrow=2)) + 
   theme_ms +
-  theme(legend.position=c(0.5, 0.925),
+  theme(legend.position=c(0.45, 0.925),
         legend.title=element_blank(),
+        legend.background=element_rect(fill="white", colour=NA),
         legend.key.height=unit(3, "mm"),
         legend.key.width=unit(4, "mm"),
         axis.text.x=element_text(angle=270, hjust=0, vjust=0.5), 
         axis.title.x=element_blank(),
-        panel.grid=element_blank())
-ggsave("figs/pub/Fig_2.png", fig2, width=140, height=90, units="mm", dpi=300)
+        panel.grid.major.y=element_line(colour="grey90", linewidth=0.2),
+        panel.grid.minor.y=element_line(colour="grey90", linewidth=0.2))
+ggsave("figs/pub/Fig_3.png", fig3, width=140, height=90, units="mm", dpi=300)
 
-fig2 <- rank.oos |>
+
+
+
+
+
+
+figS1_lims <- tibble(
+  .metric=c("ROC-AUC", "PR-AUC", "MCC", "R2-VZ", "Schoener's D"),
+  low=c(0.5, 0, 0, 0, 0),
+  high=c(1, 1, 1, 1, 1)
+) |>
+  pivot_longer(2:3, names_to="limit", values_to=".estimate") |>
+  mutate(model="Null[Date]") |>
+  mutate(.metric=factor(.metric, 
+                        levels=c("ROC-AUC", "PR-AUC", "MCC", "R2-VZ", "Schoener's D"),
+                        labels=c("ROC-AUC", "PR-AUC", "MCC", "R['VZ']^2", "D[overlap]")))
+fig3 <- rank.oos |>
   filter(covSet %in% c("nullGrand", "null4wk", "ensGLM2")) |>
   filter(.metric %in% c("ROC-AUC", "PR-AUC", "R2-VZ", "MCC", "Schoener's D")) |>
   mutate(.metric=factor(.metric, 
@@ -265,9 +319,10 @@ fig2 <- rank.oos |>
   left_join(y_i |> select(y, fig_short)) |>
   ggplot(aes(model, .estimate, colour=fig_short, group=fig_short)) + 
   # geom_hline(yintercept=0, linewidth=0.25, colour="grey30") +
+  geom_point(data=figS1_lims, colour="white", group=NA) +
   geom_point(shape=1) + geom_line() + 
   scale_colour_brewer(type="qual", palette=3) +
-  scale_x_discrete(labels=parse(text=fig2_mod_labs)) +
+  scale_x_discrete(labels=parse(text=fig3_mod_labs)) +
   ylab("Score") +
   facet_wrap(~.metric, nrow=1, labeller="label_parsed", scales="free_y") + 
   guides(colour=guide_legend(nrow=2)) + 
@@ -279,44 +334,16 @@ fig2 <- rank.oos |>
         axis.text.x=element_text(angle=270, hjust=0, vjust=0.5), 
         axis.title.x=element_blank(),
         panel.grid=element_blank())
-ggsave("figs/pub/Fig_2_scores.png", fig2, width=140, height=90, units="mm", dpi=300)
+ggsave("figs/pub/Fig_S1.png", fig3, width=140, height=90, units="mm", dpi=300)
 
-fig2_metrics_df <- rank.oos |>
-  filter(covSet %in% c("nullGrand", "null4wk", "ensGLM2")) |>
-  filter(.metric %in% c("ROC-AUC", "PR-AUC", "R2-VZ", "MCC", "Schoener's D")) |>
-  mutate(.metric=factor(.metric, 
-                        levels=c("ROC-AUC", "PR-AUC", "MCC", "R2-VZ", "Schoener's D"),
-                        labels=c("ROC-AUC", "PR-AUC", "MCC", "R['VZ']^2", "D[overlap]"))) |> 
-  mutate(model=factor(model, levels=c("Null[0]", "Null[Date]", "Ensemble"))) |>
-  group_by(.metric, y) |>
-  arrange(model) |>
-  mutate(diff_v_null=.estimate - first(.estimate),
-         std_gain=diff_v_null / 
-           if_else(.metric=="D[overlap]", -first(.estimate), (1-first(.estimate)))) |>
-  ungroup()
-fig2_df <- bind_rows(fig2_metrics_df, 
-                     fig2_metrics_df |>
-                       group_by(y, model) |>
-                       summarise(across(where(is.numeric), mean)) |>
-                       mutate(.metric="Mean") |>
-                       ungroup()
-) |>
-  mutate(.metric=factor(.metric, 
-                        levels=c("ROC-AUC", "PR-AUC", "R['VZ']^2", "MCC", "D[overlap]", "Mean"))) |>
-  filter(!grepl("0", model)) |> 
-  left_join(y_i |> select(y, fig_short, fig_long))
-fig2_means <- fig2_df |>
-  group_by(model, .metric) |>
-  summarise(across(where(is.numeric), mean))
-fig2 <- fig2_df |>
+fig3 <- fig3_df |>
   ggplot(aes(model, std_gain, colour=fig_short)) + 
   geom_hline(yintercept=0, linewidth=0.25, colour="grey30") +
   geom_point() + geom_line(aes(group=fig_short)) + 
-  geom_point(data=fig2_means, shape=1, size=4, colour="black") +
+  geom_point(data=fig3_means, shape=1, size=4, colour="black") +
   scale_colour_brewer(type="qual", palette=3) +
-  scale_x_discrete(labels=parse(text=fig2_talk_labs[-1])) +
-  scale_y_continuous(expression(atop("Standardised gain", 
-                                     paste("(0: Null" [0]~~"1: Perfect)"))),
+  scale_x_discrete(labels=parse(text=fig3_talk_labs[-1])) +
+  scale_y_continuous(expression(paste("Skill score (0: Null" [0]~~"1: Perfect)")),
                      breaks=c(0, 0.5, 1), limits=c(-0.05,1)) +
   facet_wrap(~.metric, nrow=1, labeller="label_parsed") + 
   theme_talk +
@@ -328,16 +355,16 @@ fig2 <- fig2_df |>
         axis.title.x=element_blank(),
         panel.grid.major.y=element_line(colour="grey80", linewidth=0.25),
         panel.grid.minor.y=element_line(colour="grey80", linewidth=0.25))
-ggsave("figs/pub/Fig_2_talk.png", fig2, width=160, height=120, units="mm", dpi=300)
-fig2 <- fig2_df |>
+ggsave("figs/pub/Fig_3_talk.png", fig3, width=160, height=120, units="mm", dpi=300)
+
+fig3 <- fig3_df |>
   ggplot(aes(model, std_gain, colour=fig_short)) + 
   geom_hline(yintercept=0, linewidth=0.25, colour="grey30") +
   geom_point() + geom_line(aes(group=fig_short)) + 
-  geom_point(data=fig2_means, shape=1, size=3, colour="black") +
+  geom_point(data=fig3_means, shape=1, size=3, colour="black") +
   scale_colour_brewer(type="qual", palette=3) +
-  scale_x_discrete(labels=parse(text=fig2_talk_labs[-1])) +
-  scale_y_continuous(expression(atop("Standardised gain", 
-                                     paste("(0: Null" [0]~~"1: Perfect)"))),
+  scale_x_discrete(labels=parse(text=fig3_talk_labs[-1])) +
+  scale_y_continuous(expression(paste("Skill score (0: Null" [0]~~"1: Perfect)")),
                      breaks=c(0, 0.5, 1), limits=c(-0.05,1)) +
   facet_wrap(~.metric, nrow=1, labeller="label_parsed") + 
   theme_talk +
@@ -346,9 +373,9 @@ fig2 <- fig2_df |>
         axis.title.x=element_blank(),
         panel.grid.major.y=element_line(colour="grey80"),
         panel.grid.minor.y=element_line(colour="grey80"))
-ggsave("figs/pub/Fig_2_talk_legend.png", fig2, width=140, height=120, units="mm", dpi=300)
+ggsave("figs/pub/Fig_3_talk_legend.png", fig3, width=140, height=120, units="mm", dpi=300)
 
-fig2_alt <- rank.oos |>
+fig3_alt <- rank.oos |>
   filter(covSet %in% c("nullGrand", "null4wk", "ensGLM2")) |>
   filter(.metric %in% c("ROC-AUC", "PR-AUC", "R2-VZ", "MCC", "Schoener's D")) |>
   mutate(.metric=factor(.metric, 
@@ -360,7 +387,7 @@ fig2_alt <- rank.oos |>
   geom_point(shape=1) + geom_line() +
   scale_colour_brewer(type="qual", palette=3) +
   scale_y_continuous("Value", breaks=c(0, 0.5, 1), limits=c(0,1)) +
-  scale_x_discrete(labels=parse(text=fig2_mod_labs)) +
+  scale_x_discrete(labels=parse(text=fig3_mod_labs)) +
   facet_wrap(~.metric, nrow=1, labeller="label_parsed") + 
   guides(colour=guide_legend(nrow=2)) + 
   theme_ms +
@@ -372,7 +399,7 @@ fig2_alt <- rank.oos |>
         axis.title.x=element_blank(),
         panel.grid=element_blank())
 
-ggsave("figs/pub/Fig_2_alt.png", fig2_alt, width=140, height=90, units="mm", dpi=300)
+ggsave("figs/pub/Fig_3_alt.png", fig3_alt, width=140, height=90, units="mm", dpi=300)
 
 
 sp_rankOrder <- rank.oos |>
@@ -390,7 +417,7 @@ sp_rankOrder <- rank.oos |>
   filter(grepl("Ens", model)) |>
   arrange(desc(std_gain))
 
-fig2_alt <- rank.oos |>
+fig3_alt <- rank.oos |>
   filter(covSet %in% c("nullGrand", "null4wk", "ensGLM")) |>
   filter(.metric %in% c("ROC-AUC", "PR-AUC", "R2-VZ", "MCC", "Schoener's D")) |>
   mutate(.metric=factor(.metric, 
@@ -408,7 +435,7 @@ fig2_alt <- rank.oos |>
   geom_hline(yintercept=0, linewidth=0.25, colour="grey30") +
   geom_point(shape=1) + geom_line() + 
   scale_colour_manual(values=mod_cols) +
-  scale_y_continuous("Scaled gain\n(0: Null; 1: Perfect)", 
+  scale_y_continuous("Skill score\n(0: Null; 1: Perfect)", 
                      breaks=c(0, 0.5, 1), limits=c(-0.05,1)) +
   facet_wrap(~.metric, nrow=1, labeller="label_parsed") + 
   guides(colour=guide_legend(nrow=2)) + 
@@ -420,9 +447,9 @@ fig2_alt <- rank.oos |>
         axis.title.x=element_blank(),
         panel.grid=element_blank())
 
-ggsave("figs/pub/Fig_2_alt2.png", fig2_alt, width=140, height=90, units="mm", dpi=300)
+ggsave("figs/pub/Fig_3_alt2.png", fig3_alt, width=140, height=90, units="mm", dpi=300)
 
-fig2_alt <- rankPrev.oos |>
+fig3_alt <- rankPrev.oos |>
   filter(covSet %in% c("nullGrand", "null4wk", "ensGLM2")) |>
   filter(.metric %in% c("ROC-AUC", "PR-AUC", "R2-VZ", "MCC", "Schoener's D")) |>
   mutate(.metric=factor(.metric, 
@@ -438,7 +465,7 @@ fig2_alt <- rankPrev.oos |>
   geom_point(shape=1) + geom_line() +
   scale_colour_brewer(type="qual", palette=3) +
   scale_y_continuous("Value", breaks=c(0, 0.5, 1), limits=c(-0.1,1)) +
-  scale_x_discrete(labels=parse(text=fig2_mod_labs)) +
+  scale_x_discrete(labels=parse(text=fig3_mod_labs)) +
   facet_grid(prevAlert~.metric, labeller="label_parsed") + 
   guides(colour=guide_legend(nrow=2)) + 
   theme_ms +
@@ -449,7 +476,7 @@ fig2_alt <- rankPrev.oos |>
         axis.title.x=element_blank(),
         panel.grid=element_blank())
 
-ggsave("figs/pub/Fig_2_alt3.png", fig2_alt, width=140, height=90, units="mm", dpi=300)
+ggsave("figs/pub/Fig_3_alt3.png", fig3_alt, width=140, height=90, units="mm", dpi=300)
 
 
 
@@ -460,32 +487,32 @@ ggsave("figs/pub/Fig_2_alt3.png", fig2_alt, width=140, height=90, units="mm", dp
 
 
 
-# Fig 3 -------------------------------------------------------------------
+# Fig 4 -------------------------------------------------------------------
 
-fig3_mod_labs <- c("italic(Null[Date])", "italic(Ensemble)")
-fig3_talk_labs <- c("italic(Null[Date])", "italic(Ens.)")
+fig4_mod_labs <- c("italic(Null[Date])", "italic(Ensemble)")
+fig4_talk_labs <- c("italic(Null[Date])", "italic(Ens.)")
 
-fig3 <- out.oos |>
+fig4 <- out.oos |>
   left_join(y_i |> select(y, fig_long)) |>
   filter(covSet %in% c("null4wk", "ensGLM2")) |>
   # filter(grepl("Date|Ens", model)) |>
   mutate(model=factor(model, levels=c("Null[Date]", "Ensemble"),
                       labels=c("Null[Date]", "Ensemble")),
-         alert=factor(alert, levels=c("A0", "A1"), labels=c("No alert", "Alert"))) |>
+         alert=factor(alert, levels=c("A0", "A1"), labels=c("< amber", "≥ amber"))) |>
   ggplot(aes(model, prA1, fill=alert)) + 
   geom_boxplot(outlier.size=0.25, outlier.shape=1, outlier.alpha=0.25, size=0.25) +
   scale_fill_manual("Truth\n(out-of-sample)", values=c("grey", "red3")) +
-  scale_y_continuous("Forecasted Pr(Alert)", breaks=c(0, 0.5, 1)) +
-  scale_x_discrete(labels=parse(text=fig3_mod_labs)) +
+  scale_y_continuous("Forecasted Pr(≥ amber)", breaks=c(0, 0.5, 1)) +
+  scale_x_discrete(labels=parse(text=fig4_mod_labs)) +
   facet_wrap(~fig_long, labeller=label_wrap_gen(17), nrow=2) + 
   theme_ms +
   theme(legend.position=c(0.925, 0.225),
         axis.text.x=element_text(angle=270, hjust=0, vjust=0.5),
         axis.title.x=element_blank(),
         panel.grid=element_blank())
-ggsave("figs/pub/Fig_3.png", fig3, width=140, height=120, units="mm", dpi=300)
+ggsave("figs/pub/Fig_4.png", fig4, width=140, height=120, units="mm", dpi=300)
 
-fig3 <- out.oos |>
+fig4 <- out.oos |>
   left_join(y_i |> select(y, fig_long)) |>
   filter(covSet %in% c("null4wk", "ensGLM2")) |>
   # filter(grepl("Date|Ens", model)) |>
@@ -496,7 +523,7 @@ fig3 <- out.oos |>
   geom_boxplot(outlier.size=0.2, outlier.shape=1, outlier.alpha=0.1, size=0.25) +
   scale_fill_manual("Truth\n(out-of-sample)", values=c("grey", "red3")) +
   scale_y_continuous("Forecasted Pr(Alert)", breaks=c(0, 0.5, 1)) +
-  scale_x_discrete(labels=parse(text=fig3_talk_labs)) +
+  scale_x_discrete(labels=parse(text=fig4_talk_labs)) +
   facet_wrap(~fig_long, labeller=label_wrap_gen(17), nrow=2) + 
   theme_talk +
   theme(legend.position=c(0.9, 0.125),
@@ -507,10 +534,10 @@ fig3 <- out.oos |>
         axis.title.x=element_blank(),
         panel.grid=element_blank(), 
         panel.border=element_rect(colour="grey30", fill=NA))
-ggsave("figs/pub/Fig_3_talk.png", fig3, width=170, height=120, units="mm", dpi=300)
+ggsave("figs/pub/Fig_4_talk.png", fig4, width=170, height=120, units="mm", dpi=300)
 
 
-fig3_alt <- out.oos |>
+fig4_alt <- out.oos |>
   left_join(y_i |> select(y, fig_long)) |>
   filter(covSet %in% c("null4wk", "ensGLM2")) |>
   mutate(model=factor(model, levels=c("Null[Date]", "Ensemble"),
@@ -532,7 +559,7 @@ fig3_alt <- out.oos |>
   theme(legend.position=c(0.15, 0.15),
         axis.title.y=element_blank(),
         panel.grid=element_blank())
-ggsave("figs/pub/Fig_3_alt.png", fig3_alt, width=90, height=100, units="mm", dpi=300)
+ggsave("figs/pub/Fig_4_alt.png", fig4_alt, width=90, height=100, units="mm", dpi=300)
 
 
 out.oos |>
@@ -573,7 +600,7 @@ out.oos |>
         axis.title.y=element_blank(),
         panel.grid=element_blank())
 
-fig3_alt <- out.oos |>
+fig4_alt <- out.oos |>
   left_join(y_i |> select(y, fig_long)) |>
   filter(covSet %in% c("null4wk", "ensGLM2")) |>
   group_by(fig_long, alert, model) |>
@@ -595,16 +622,16 @@ fig3_alt <- out.oos |>
   geom_linerange(position=position_dodge(width=0.5), linewidth=0.5) + 
   scale_colour_manual("Truth\n(out-of-sample)", values=c("grey", "red3")) +
   scale_y_continuous("Forecasted Pr(Alert)", breaks=c(0, 0.5, 1)) +
-  scale_x_discrete(labels=parse(text=fig3_mod_labs)) +
+  scale_x_discrete(labels=parse(text=fig4_mod_labs)) +
   facet_wrap(~fig_long, labeller=label_wrap_gen(17), ncol=2) +
   theme_ms + 
   theme(legend.position=c(0.8, 0.05),
         axis.text.x=element_text(angle=270, hjust=0, vjust=0.5),
         axis.title.x=element_blank(),
         panel.grid=element_blank())
-ggsave("figs/pub/Fig_3_alt2.png", fig3_alt, width=90, height=210, units="mm", dpi=300)
+ggsave("figs/pub/Fig_4_alt2.png", fig4_alt, width=90, height=210, units="mm", dpi=300)
 
-fig3_alt <- out.oos |>
+fig4_alt <- out.oos |>
   left_join(y_i |> select(y, fig_long)) |>
   filter(covSet %in% c("null4wk", "ensGLM2")) |>
   group_by(fig_long, alert, model) |>
@@ -626,16 +653,16 @@ fig3_alt <- out.oos |>
   geom_linerange(position=position_dodge(width=0.5), linewidth=0.5) + 
   scale_colour_manual("Truth\n(out-of-sample)", values=c("grey", "red3")) +
   scale_y_continuous("Forecasted Pr(Alert)", breaks=c(0, 0.5, 1)) +
-  scale_x_discrete(labels=parse(text=fig3_mod_labs)) +
+  scale_x_discrete(labels=parse(text=fig4_mod_labs)) +
   facet_wrap(~fig_long, labeller=label_wrap_gen(17), ncol=2) +
   theme_ms + 
   theme(legend.position=c(0.8, 0.05),
         axis.text.x=element_text(angle=270, hjust=0, vjust=0.5),
         axis.title.x=element_blank(),
         panel.grid=element_blank())
-ggsave("figs/pub/Fig_3_alt3.png", fig3_alt, width=90, height=210, units="mm", dpi=300)
+ggsave("figs/pub/Fig_4_alt3.png", fig4_alt, width=90, height=210, units="mm", dpi=300)
 
-fig3_alt <- out.oos |>
+fig4_alt <- out.oos |>
   left_join(y_i |> select(y, fig_long)) |>
   filter(covSet %in% c("null4wk", "ensGLM2")) |>
   # filter(grepl("Date|Ens", model)) |>
@@ -646,14 +673,14 @@ fig3_alt <- out.oos |>
   geom_violin(linewidth=0.25, scale="width", draw_quantiles=c(0.1, 0.5, 0.9)) +
   scale_fill_manual("Truth\n(out-of-sample)", values=c("grey", "red3")) +
   scale_y_continuous("Forecasted Pr(Alert)", breaks=c(0, 0.5, 1)) +
-  scale_x_discrete(labels=parse(text=fig3_mod_labs)) +
+  scale_x_discrete(labels=parse(text=fig4_mod_labs)) +
   facet_wrap(~fig_long, labeller=label_wrap_gen(17), ncol=2) + 
   theme_ms +
   theme(legend.position=c(0.8, 0.05),
         axis.text.x=element_text(angle=270, hjust=0, vjust=0.5),
         axis.title.x=element_blank(),
         panel.grid=element_blank())
-ggsave("figs/pub/Fig_3_alt4.png", fig3_alt, width=90, height=210, units="mm", dpi=300)
+ggsave("figs/pub/Fig_4_alt4.png", fig4_alt, width=90, height=210, units="mm", dpi=300)
 
 
 
@@ -661,7 +688,7 @@ ggsave("figs/pub/Fig_3_alt4.png", fig3_alt, width=90, height=210, units="mm", dp
 
 
 
-# Fig 4 -------------------------------------------------------------------
+# Fig 5 -------------------------------------------------------------------
 
 library(GGally)
 
@@ -739,7 +766,7 @@ theme_set(theme_classic() +
                   axis.text=element_text(size=7),
                   axis.line=element_line(colour="grey30", linewidth=0.25),
                   strip.background=element_rect(fill=NA, colour="grey30", linewidth=0.5)))
-fig4 <- rank.oos |> 
+fig5 <- rank.oos |> 
   filter(.metric %in% c("MCC", "R2-VZ", "PR-AUC", "ROC-AUC", "Schoener's D"),
          covSet %in% c("ensGLM2", "null4wk", paste0("d", 1:16))) |> 
   ungroup() |> 
@@ -771,7 +798,7 @@ fig4 <- rank.oos |>
   scale_colour_brewer(type="qual", palette="Paired") + 
   scale_fill_brewer(type="qual", palette="Paired") + 
   theme(panel.border=element_rect(colour="grey30", fill=NA)) 
-ggsave("figs/pub/Fig_4.png", fig4, width=140, height=130, units="mm", dpi=300)
+ggsave("figs/pub/Fig_5.png", fig5, width=140, height=130, units="mm", dpi=300)
 theme_set(theme_classic())
 
 
@@ -815,39 +842,113 @@ rank.oos |>
 
 
 
-# Fig 5 -------------------------------------------------------------------
+# Fig 6 -------------------------------------------------------------------
 
-fig5_mod_labs <- c("Null[Date]", "Ensemble", "Bayes", "Ridge", 
+fig6_mod_labs <- c("Null[Date]", "Ens.", "HBayes", "Ridge", 
                    "MARS", "NN", "RF", "XGB")
+fig6_metric_labs <- c("ROC-AUC", "PR-AUC", "MCC", "R['VZ']^2", "D[overlap]")
 
-fig5 <- rank.oos  |>
+library(ggdist)
+fig6 <- rank.oos  |>
   filter(!grepl("auto|0|Ens-", model)) |>
+  # filter(!covSet %in% paste0("d", 13:16)) |>
   filter(.metric %in% c("ROC-AUC", "PR-AUC", "R2-VZ", "MCC", "Schoener's D")) |>
   mutate(.metric=factor(.metric, 
                         levels=c("ROC-AUC", "PR-AUC", "MCC", "R2-VZ", "Schoener's D"),
-                        labels=c("ROC-AUC", "PR-AUC", "MCC", "R['VZ']^2", "D[overlap]"))) |> 
+                        labels=fig6_metric_labs)) |> 
   arrange(y, .metric, rank) |>
   group_by(y, .metric) |>
   mutate(rank=(194-min_rank(rank))/194*100) |>
   ungroup() |>
-  ggplot(aes(model, rank, fill=model)) + 
-  geom_boxplot(outlier.shape=1, outlier.size=0.7, outlier.alpha=0.5, size=0.25) +
-  scale_fill_manual("Model", values=mod_cols, guide="none") + 
-  labs(x="", y="Rank") +
-  scale_x_discrete(labels=parse(text=paste0("italic(", fig5_mod_labs, ")"))) +
-  scale_y_continuous("Percentile", breaks=seq(0,100,by=10)) +
-  facet_wrap(~.metric, nrow=1, labeller="label_parsed") + 
-  theme_ms +
-  theme(legend.position="bottom",
-        axis.text.x=element_text(angle=270, hjust=0, vjust=0.5),
-        axis.title.x=element_blank(),
-        panel.grid.major.x=element_blank(),
-        panel.grid.major.y=element_line(colour="grey90", linewidth=0.25))
+  ggplot(aes(rank, model, fill=model)) + 
+  geom_dots(aes(colour=model), side="bottom", scale=0.5, shape=1,
+            binwidth=1, overflow="compress", alpha=0.7) +
+  stat_halfeye(scale=0.5, normalize="xy", fill_type="gradient", 
+               .width=c(0.66, 0.95), interval_size_range=c(0.2, 0.5),
+               fatten_point=0.5,
+               aes(slab_alpha=after_stat(-pmax(abs(1-2*cdf), 0.5)))) +
+  scale_colour_manual("Model", values=mod_cols, guide="none") +
+  scale_fill_manual("Model", values=mod_cols, guide="none") +
+  scale_y_discrete(labels=parse(text=paste0("italic(", fig6_mod_labs, ")"))) +
+  scale_x_continuous("Performance percentile", breaks=seq(0,100,by=20)) +
+  scale_slab_alpha_continuous(range=c(0.3, 0.9), guide="none") +
+  theme_ms + 
+  theme(legend.position="none",
+        axis.title.y=element_blank(),
+        panel.grid.major.y=element_blank(),
+        panel.grid.major.x=element_line(colour="grey90", linewidth=0.3),
+        panel.grid.minor.x=element_line(colour="grey90", linewidth=0.15))
+ggsave("figs/pub/Fig_6_alt.png", fig6, width=90, height=120, units="mm", dpi=300)
 
-ggsave("figs/pub/Fig_5.png", fig5, width=140, height=90, units="mm", dpi=300)
+fig6 <- rank.oos  |>
+  filter(!grepl("auto|0|Ens-", model)) |>
+  # filter(!covSet %in% paste0("d", 13:16)) |>
+  filter(.metric %in% c("ROC-AUC", "PR-AUC", "R2-VZ", "MCC", "Schoener's D")) |>
+  mutate(.metric=factor(.metric, 
+                        levels=c("ROC-AUC", "PR-AUC", "MCC", "R2-VZ", "Schoener's D"),
+                        labels=fig6_metric_labs)) |> 
+  arrange(y, .metric, rank) |>
+  group_by(y, .metric) |>
+  mutate(rank=(194-min_rank(rank))/194*100) |>
+  ungroup() |>
+  ggplot(aes(rank, .metric, fill=model)) + 
+  geom_dots(aes(colour=model), side="bottom", scale=0.5, 
+            binwidth=1, overflow="compress", alpha=0.7) +
+  stat_halfeye(scale=0.5, normalize="xy", fill_type="gradient", 
+               .width=c(0.66, 0.95), interval_size_range=c(0.2, 0.5),
+               fatten_point=0.5,
+               aes(slab_alpha=after_stat(-pmax(abs(1-2*cdf), 0.5)))) +
+  scale_colour_manual("Model", values=mod_cols, guide="none") +
+  scale_fill_manual("Model", values=mod_cols, guide="none") +
+  scale_y_discrete(labels=~parse(text=.x), limits=rev(fig6_metric_labs)) +
+  scale_x_continuous("Performance percentile", breaks=seq(0,100,by=20)) +
+  scale_slab_alpha_continuous(range=c(0.3, 0.9), guide="none") +
+  theme_ms + 
+  facet_wrap(~model, ncol=1, strip.position="right", labeller=label_parsed) +
+  theme(legend.position="none",
+        axis.title.y=element_blank(),
+        panel.grid.major.y=element_blank(),
+        panel.grid.major.x=element_line(colour="grey90", linewidth=0.3),
+        panel.grid.minor.x=element_line(colour="grey90", linewidth=0.15),
+        strip.text=element_text(face="italic"))
+ggsave("figs/pub/Fig_6.png", fig6, width=90, height=200, units="mm", dpi=300)
+
+fig6 <- rank.oos  |>
+  filter(!grepl("auto|0|Ens-", model)) |>
+  # filter(!covSet %in% paste0("d", 13:16)) |>
+  filter(.metric %in% c("ROC-AUC", "PR-AUC", "R2-VZ", "MCC", "Schoener's D")) |>
+  mutate(.metric=factor(.metric, 
+                        levels=c("ROC-AUC", "PR-AUC", "MCC", "R2-VZ", "Schoener's D"),
+                        labels=fig6_metric_labs)) |> 
+  arrange(y, .metric, rank) |>
+  group_by(y, .metric) |>
+  mutate(rank=(194-min_rank(rank))/194*100) |>
+  ungroup() |>
+  left_join(y_i |> select(y, fig_short, fig_long)) |>
+  ggplot(aes(rank, fig_short, fill=fig_short)) + 
+  geom_dots(aes(colour=fig_short), side="bottom", scale=0.5, 
+            binwidth=1, overflow="compress", alpha=0.7) +
+  stat_halfeye(scale=0.5, normalize="xy", fill_type="gradient", 
+               .width=c(0.66, 0.95), interval_size_range=c(0.2, 0.5),
+               fatten_point=0.5,
+               aes(slab_alpha=after_stat(-pmax(abs(1-2*cdf), 0.5)))) +
+  scale_colour_brewer(type="qual", palette=3, guide="none") +
+  scale_fill_brewer(type="qual", palette=3, guide="none") +
+  scale_y_discrete() +
+  scale_x_continuous("Performance percentile", breaks=seq(0,100,by=20)) +
+  scale_slab_alpha_continuous(range=c(0.3, 0.9), guide="none") +
+  theme_ms + 
+  facet_wrap(~model, ncol=1, strip.position="right", labeller=label_parsed) +
+  theme(legend.position="none",
+        axis.title.y=element_blank(),
+        panel.grid.major.y=element_blank(),
+        panel.grid.major.x=element_line(colour="grey90", linewidth=0.3),
+        panel.grid.minor.x=element_line(colour="grey90", linewidth=0.15))
+ggsave("figs/pub/Fig_6_alt3.png", fig6, width=90, height=200, units="mm", dpi=300)
 
 
-fig5_metrics_df <- rank.oos |>
+
+fig6_metrics_df <- rank.oos |>
   filter(!grepl("auto|0|Ens-", model)) |>
   filter(.metric %in% c("ROC-AUC", "PR-AUC", "R2-VZ", "MCC", "Schoener's D")) |>
   mutate(.metric=factor(.metric, 
@@ -857,20 +958,20 @@ fig5_metrics_df <- rank.oos |>
   group_by(y, .metric) |>
   mutate(rank=min_rank(rank)) |>
   ungroup()
-fig5_df <- fig5_metrics_df |>
+fig6_df <- fig6_metrics_df |>
   mutate(.metric=factor(.metric, 
                         levels=c("ROC-AUC", "PR-AUC", "MCC", "R2-VZ", "Schoener's D"),
                         labels=c("ROC-AUC", "PR-AUC", "MCC", "R['VZ']^2", "D[overlap]"))) |> 
   left_join(y_i |> select(y, fig_short, fig_long))
-fig5_means <- fig5_df |>
+fig6_means <- fig6_df |>
   group_by(model, .metric) |>
   summarise(across(where(is.numeric), mean))
-fig5 <- fig5_df |>
+fig6 <- fig6_df |>
   ggplot(aes(model, rank, fill=model)) + 
   geom_boxplot(outlier.shape=1, outlier.size=0.7, outlier.alpha=0.5, size=0.25) +
   scale_fill_manual("Model", values=mod_cols, guide="none") + 
   labs(x="", y="Rank") +
-  scale_x_discrete(labels=parse(text=paste0("italic(", fig5_mod_labs, ")"))) +
+  scale_x_discrete(labels=parse(text=paste0("italic(", fig6_mod_labs, ")"))) +
   facet_wrap(~.metric, nrow=1, labeller="label_parsed") + 
   theme_talk +
   theme(legend.position="bottom",
@@ -878,7 +979,7 @@ fig5 <- fig5_df |>
         axis.title.x=element_blank(),
         panel.grid=element_blank())
 
-ggsave("figs/pub/Fig_5_TALK.png", fig5, width=160, height=90, units="mm", dpi=300)
+ggsave("figs/pub/Fig_6_TALK.png", fig6, width=160, height=90, units="mm", dpi=300)
 
 
 
@@ -886,12 +987,12 @@ ggsave("figs/pub/Fig_5_TALK.png", fig5, width=160, height=90, units="mm", dpi=30
 
 
 
-# Fig 6 -------------------------------------------------------------------
+# Fig 7 -------------------------------------------------------------------
 
 vi_rng_df <- vi_pt_df |> group_by(fig_short, fig_short_rev, VariableType, varTypeClean) |>
   reframe(mnImp=c(0, max(mnImp)))
 
-fig6 <- vi_pt_df |>
+fig7 <- vi_pt_df |>
   ggplot(aes(mnImp, fig_short_rev, colour=fig_short)) + 
   geom_line(data=vi_rng_df, linewidth=0.25) +
   geom_point(aes(shape=top, size=top, alpha=top)) + 
@@ -910,9 +1011,9 @@ fig6 <- vi_pt_df |>
         legend.title=element_blank(),
         legend.position=c(0.9,0.09),
         legend.key.height=unit(0.35, "cm"))
-ggsave("figs/pub/Fig_6.png", fig6, width=90, height=200, units="mm", dpi=300)
+ggsave("figs/pub/Fig_7.png", fig7, width=90, height=200, units="mm", dpi=300)
 
-fig6 <- vi_pt_df |>
+fig7 <- vi_pt_df |>
   ggplot(aes(fig_short, mnImp, colour=fig_short)) + 
   geom_hline(yintercept=0, colour="grey30", linewidth=0.25) + 
   geom_line(data=vi_rng_df, linewidth=0.25) +
@@ -933,7 +1034,7 @@ fig6 <- vi_pt_df |>
         legend.title=element_blank(),
         legend.position="none",
         legend.key.height=unit(0.35, "cm"))
-ggsave("figs/pub/Fig_6_TALK.png", fig6, width=260, height=150, units="mm", dpi=300)
+ggsave("figs/pub/Fig_7_TALK.png", fig7, width=260, height=150, units="mm", dpi=300)
 
 
 
@@ -1239,7 +1340,7 @@ rank.oos |>
   
 
 
-# Candidate model rankings
+# Candidate model rankings ------------------------------------------------
 rank.oos |> 
   filter(!is.na(rank)) |>
   filter(.metric %in% c("ROC-AUC", "PR-AUC", "R2-VZ", "MCC", "Schoener's D")) |>
@@ -1247,16 +1348,11 @@ rank.oos |>
   arrange(rank) |>
   group_by(y, .metric) |>
   mutate(rank=min_rank(rank)) |>
+  mutate(rank=(194-min_rank(rank))/194*100) |>
   group_by(model) |>
   summarise(mdRank=median(rank, type=3),
-            # q025Rank=quantile(rank, probs=0.025, type=3),
-            # q05Rank=quantile(rank, probs=0.05, type=3),
-            # q10Rank=quantile(rank, probs=0.1, type=3),
             q25Rank=quantile(rank, probs=0.25, type=3),
             q75Rank=quantile(rank, probs=0.75, type=3),
-            # q90Rank=quantile(rank, probs=0.9, type=3),
-            # q95Rank=quantile(rank, probs=0.95, type=3),
-            # q975Rank=quantile(rank, probs=0.975, type=3),
             mnRank=mean(rank),
             sdRank=sd(rank),
             seRank=sd(rank)/sqrt(n()),
@@ -1264,8 +1360,8 @@ rank.oos |>
             MIN=min(rank),
             MAX=max(rank)) |>
   arrange(mnRank) |>
-  mutate(across(ends_with("Rank"), ~round(.x/194*100, 1)))
-
+  mutate(across(ends_with("Rank"), ~round(.x, 1)))
+  
 rank_lm <- aov(rank ~ model * y * .metric, 
               data=rank.oos |> 
                 filter(.metric %in% c("ROC-AUC", "PR-AUC", "R2-VZ", "MCC", "Schoener's D")) |>
@@ -1326,89 +1422,38 @@ vi_pt_df |>
 
 
 # Fig S1 ------------------------------------------------------------------
+# 
+# figS1 <- vi_pt_df |> 
+#   filter(top) |> 
+#   mutate(Variable=str_remove(Variable, "Dir[NSEW]") |>
+#            str_remove_all("Wk") |>
+#            str_remove_all("Wt") |>
+#            str_replace_all("UV", "Wind") |>
+#            str_replace_all("UX", "WindX") |>
+#            str_replace_all("VX", "WindX")) |>
+#   mutate(varTypeClean=forcats::fct_recode(varTypeClean, "Prev. year"="Previous year")) |>
+#   ggplot(aes(y, Variable, colour=y)) + 
+#   geom_point() + 
+#   scale_colour_brewer(type="qual", palette="Paired") +
+#   facet_grid(varTypeClean~., scales="free_y", space="free_y",
+#              labeller=label_wrap_gen(8)) +
+#   theme_ms +
+#   theme(axis.text.x=element_blank(),
+#         axis.ticks.x=element_blank(),
+#         axis.title.x=element_blank(),
+#         legend.key.height=unit(0.35, "cm"),
+#         panel.grid.major.y=element_line(colour="grey", linewidth=0.1))
+# ggsave("figs/pub/Fig_S1.png", figS1, width=90, height=240, units="mm", dpi=300)
 
-site_sum.df <- obs.df |>
-  left_join(y_i |> select(abbr, type, fig_long), by=c("y"="abbr")) |>
-  group_by(y, fig_long, type, sin) |>
-  summarise(prA=mean(alert=="A1"),
-            N=n()) |>
-  ungroup() |>
-  mutate(type=if_else(type=="hab", "HABs", "Biotoxins")) |>
-  left_join(site_all.df)
-figS1 <- ggplot(coast.sf) + 
-  geom_sf(fill="grey70", colour="grey70") + 
-  geom_point(data=site_sum.df, aes(lon, lat, colour=prA), shape=1) + 
-  scale_x_continuous("Longitude", breaks=c(-8, -4)) +
-  scale_y_continuous("Latitude", breaks=c(55, 58, 61)) +
-  scale_colour_viridis_c("(warnings+alerts)/N\n", option="inferno", limits=c(0, 1), end=0.9) +
-  theme_ms +
-  theme(legend.position=c(0.9, 0.2),
-        legend.key.width=unit(1, "mm")) + 
-  facet_wrap(~fig_long, nrow=2, labeller=label_wrap_gen(17))
-ggsave("figs/pub/Fig_S1.png", figS1, width=190, height=140, units="mm", dpi=400)
 
 
-site_month_sum.df <- obs.df |>
-  left_join(y_i |> select(abbr, type, fig_long), by=c("y"="abbr")) |>
-  mutate(month=month(date, label=T, abbr=F)) |>
-  group_by(y, fig_long, type, sin, month) |>
-  summarise(prA=mean(alert=="A1"),
-            N=n()) |>
-  ungroup() |>
-  mutate(type=if_else(type=="hab", "HABs", "Biotoxins")) |>
-  left_join(site_all.df)
-for(i in 1:nlevels(site_month_sum.df$fig_long)) {
-  ii <- levels(site_month_sum.df$fig_long)[i]
-  figS1 <- ggplot(coast.sf) + 
-    geom_sf(fill="grey70", colour="grey70") + 
-    geom_point(data=filter(site_month_sum.df, fig_long==ii), aes(lon, lat, colour=prA, group=sin), shape=1) + 
-    scale_x_continuous("Longitude", breaks=c(-8, -4)) +
-    scale_y_continuous("Latitude", breaks=c(55, 58, 61)) +
-    scale_colour_viridis_c("(warnings+alerts)/N", option="inferno", limits=c(0,1), end=0.9) +
-    ggtitle(ii) +
-    guides(colour=guide_colourbar(title.position="top", title.hjust=0.5)) +
-    theme_ms +
-    theme(legend.position="bottom", 
-          legend.key.height=unit(1, "mm")) + 
-    facet_wrap(~month, nrow=3)
-  ggsave(glue("figs/pub/Fig_S1{letters[i]}.png"), figS1, width=140, height=190, units="mm", dpi=400)
-}
+
 
 
 
 # Fig S2 ------------------------------------------------------------------
 
-figS2 <- vi_pt_df |> 
-  filter(top) |> 
-  mutate(Variable=str_remove(Variable, "Dir[NSEW]") |>
-           str_remove_all("Wk") |>
-           str_remove_all("Wt") |>
-           str_replace_all("UV", "Wind") |>
-           str_replace_all("UX", "WindX") |>
-           str_replace_all("VX", "WindX")) |>
-  mutate(varTypeClean=forcats::fct_recode(varTypeClean, "Prev. year"="Previous year")) |>
-  ggplot(aes(y, Variable, colour=y)) + 
-  geom_point() + 
-  scale_colour_brewer(type="qual", palette="Paired") +
-  facet_grid(varTypeClean~., scales="free_y", space="free_y",
-             labeller=label_wrap_gen(8)) +
-  theme_ms +
-  theme(axis.text.x=element_blank(),
-        axis.ticks.x=element_blank(),
-        axis.title.x=element_blank(),
-        legend.key.height=unit(0.35, "cm"),
-        panel.grid.major.y=element_line(colour="grey", linewidth=0.1))
-ggsave("figs/pub/Fig_S2.png", figS2, width=90, height=240, units="mm", dpi=300)
-
-
-
-
-
-
-
-# Fig S3 ------------------------------------------------------------------
-
-figS3 <- rank.oos |>
+figS2 <- rank.oos |>
   filter(covSet %in% c("nullGrand", "null4wk", "ensGLM2")) |>
   filter(.metric %in% c("ROC-AUC", "PR-AUC", "R2-VZ", "MCC", "Schoener's D")) |>
   group_by(.metric, y) |>
@@ -1432,9 +1477,9 @@ figS3 <- rank.oos |>
                       guide=guide_legend(ncol=2, order=1)) + 
   scale_shape_manual("Performance metric", values=c(1, 19, 3, 2, 4), 
                      labels=parse_format()) +
-  scale_x_continuous(expression(italic(Null['Date'])~'standardised gain'), 
+  scale_x_continuous(expression(italic(Null['Date'])~'skill score'), 
                      breaks=c(0, 0.5, 1), limits=c(-0.05,1)) + 
-  scale_y_continuous(expression(italic(Ensemble)~"standardised gain"), 
+  scale_y_continuous(expression(italic(Ensemble)~"skill score"), 
                      breaks=c(0, 0.5, 1), limits=c(-0.05,1)) + 
   theme_ms +
   theme(legend.position=c(0.855, 0.325),
@@ -1443,7 +1488,7 @@ figS3 <- rank.oos |>
         legend.text.align=0,
         legend.key.height=unit(0.35, "cm"),
         legend.key.width=unit(0.35, "cm"))
-ggsave("figs/pub/Fig_S3.png", figS3, width=90, height=85, units="mm", dpi=300)
+ggsave("figs/pub/Fig_S2.png", figS2, width=90, height=85, units="mm", dpi=300)
 
 
 
@@ -1471,6 +1516,78 @@ out.oos |>
   scale_colour_gradient2("MCC") +
   facet_wrap(~fig_long, nrow=2) + 
   theme(legend.position=c(0.9, 0.2))
+
+
+
+
+
+# best of each model type -------------------------------------------------
+
+out.fit <- readRDS("out/clean/out_fit.rds")
+rank_fit.df <- out.fit |> 
+  select(y, model, covSet, PCA, alert, prA1) |>
+  filter(!grepl("perfect|auto", model)) |>
+  na.omit() |>
+  find_AUCPR_min(y) |>
+  nest(dat=c(prA1, alert)) |>
+  mutate(AUCPR=map_dbl(dat, ~average_precision(.x, alert, prA1, event_level="second")$.estimate),
+         AUCNPR=(AUCPR-AUCPR_min)/(1-AUCPR_min)) |>
+  select(-dat) |>
+  group_by(y) |>
+  mutate(rank=min_rank(desc(AUCNPR)),
+         .metric="PR-AUC") |>
+  rename(.estimate=AUCNPR) |> select(-AUCPR) |>
+  filter(!grepl("perfect|auto|0|Ens-", model)) |>
+  group_by(model, covSet, PCA) |>
+  summarise(mnRank=mean(rank)) |>
+  group_by(model) |>
+  slice_min(mnRank, n=1, with_ties=F) |>
+  ungroup() |>
+  mutate(model=factor(model, levels=levels(model), labels=mod_i$labels),
+         y=factor(y, levels=levels(y_i$y)))
+
+
+
+fig6_mod_labs <- c("Null[Date]", "Ens.", "HBayes", "Ridge", 
+                   "MARS", "NN", "RF", "XGB")
+fig6_metric_labs <- c("ROC-AUC", "PR-AUC", "MCC", "R['VZ']^2", "D[overlap]")
+
+library(ggdist)
+rank.oos |>
+  ungroup() |>
+  inner_join(rank_fit.df) |>
+  filter(!grepl("auto|0|Ens-", model)) |>
+  # filter(!covSet %in% paste0("d", 13:16)) |>
+  filter(.metric %in% c("ROC-AUC", "PR-AUC", "R2-VZ", "MCC", "Schoener's D")) |>
+  mutate(.metric=factor(.metric, 
+                        levels=c("ROC-AUC", "PR-AUC", "MCC", "R2-VZ", "Schoener's D"),
+                        labels=c("ROC-AUC", "PR-AUC", "MCC", "R['VZ']^2", "D[overlap]"))) |> 
+  arrange(y, .metric, rank) |>
+  group_by(y, .metric) |>
+  mutate(rank=min_rank(rank)) |>
+  ungroup() |>
+  ggplot(aes(rank, model, fill=model)) + 
+  geom_dots(aes(colour=model), side="bottom") +#, scale=0.5, shape=1,
+            # binwidth=1, overflow="compress", alpha=0.7) +
+  stat_halfeye(scale=0.5, normalize="xy",# fill_type="gradient", 
+               .width=c(0.66, 0.95), interval_size_range=c(0.2, 0.5),
+               fatten_point=0.5,
+               aes(slab_alpha=after_stat(-pmax(abs(1-2*cdf), 0.5)))) +
+  scale_colour_manual("Model", values=mod_cols, guide="none") +
+  scale_fill_manual("Model", values=mod_cols, guide="none") +
+  # scale_y_discrete(labels=parse(text=paste0("italic(", fig6_mod_labs, ")"))) +
+  # scale_x_continuous("Performance percentile", breaks=seq(0,100,by=20)) +
+  scale_slab_alpha_continuous(range=c(0.3, 0.9), guide="none") +
+  theme_ms + 
+  theme(legend.position="none",
+        axis.title.y=element_blank(),
+        panel.grid.major.y=element_blank(),
+        panel.grid.major.x=element_line(colour="grey90", linewidth=0.3),
+        panel.grid.minor.x=element_line(colour="grey90", linewidth=0.15))
+
+
+# By month --------------------------------------------------------------
+
 
 
 
@@ -1661,6 +1778,10 @@ out.oos |>
 # Anim S1 -----------------------------------------------------------------
 
 
+site_month_sum.df <- site_all.df |> select(-type) |>
+  inner_join(obs.mo.Site) |>
+  mutate(month=month(dateStd, label=T, abbr=F))
+
 for(i in 1:12) {
   p <- site_month_sum.df |> 
     filter(month==month.name[i]) |>
@@ -1669,7 +1790,8 @@ for(i in 1:12) {
     geom_point(aes(lon, lat, colour=prA, group=sin), shape=1) + 
     scale_x_continuous("Longitude", breaks=c(-8, -4)) +
     scale_y_continuous("Latitude", breaks=c(55, 58, 61)) +
-    scale_colour_viridis_c("(warnings+alerts)/N\n", option="plasma", limits=c(0,1), end=0.95) +
+    scale_colour_viridis_c("Proportion of\nrecords ≥ amber\n", option="plasma", limits=c(0,1), end=0.95) +
+    # scale_colour_viridis_c("(warnings+alerts)/N\n", option="plasma", limits=c(0,1), end=0.95) +
     ggtitle(month.name[i]) +
     theme_ms +
     theme(legend.position=c(0.9, 0.2),

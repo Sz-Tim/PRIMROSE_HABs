@@ -5,7 +5,8 @@
 
 
 read_and_clean_sites <- function(url_sites, dateStart) {
-  url(url_sites) |>
+  paste0(url_sites, "?fromdate=gte.", dateStart) |>
+    url() |>
     readLines(warn=F) |>
     fromJSON() |> as_tibble() |>
     filter(east < 7e5,
@@ -13,8 +14,7 @@ read_and_clean_sites <- function(url_sites, dateStart) {
            !(east==0 & north==0),
            sin != "-99",
            !is.na(fromdate) & !is.na(todate),
-           fromdate != todate,
-           todate >= dateStart) |>
+           fromdate != todate) |>
     mutate(fromdate=date(fromdate), todate=date(todate)) |>
     rowwise() |>
     mutate(date=list(seq(fromdate, todate, by=1))) |>
@@ -31,13 +31,13 @@ read_and_clean_sites <- function(url_sites, dateStart) {
 
 
 read_and_clean_fsa <- function(url_fsa, hab_i, sites, dateStart="2016-01-01") {
-  url(url_fsa) |> 
+  paste0(url_fsa, "?date_collected=gte.", dateStart) |>
+    url() |> 
     readLines(warn=F) |>
     fromJSON() |> as_tibble() |> 
     filter(!is.na(date_collected)) |>
     mutate(datetime_collected=as_datetime(date_collected),
            date=date(datetime_collected)) |>
-    filter(date >= dateStart) |>
     mutate(across(any_of(hab_i$full), ~na_if(.x, -99))) |>
     group_by(sin) |> mutate(N=n()) |> ungroup() |> filter(N > 2) |>
     select(oid, sin, date, easting, northing, all_of(hab_i$full)) |>
@@ -53,13 +53,13 @@ read_and_clean_fsa <- function(url_fsa, hab_i, sites, dateStart="2016-01-01") {
 
 
 read_and_clean_cefas <- function(url_cefas, tox_i, sites, dateStart="2016-01-01") {
-  url(url_cefas) |> 
+  paste0(url_cefas, "?date_collected=gte.", dateStart) |>
+    url() |> 
     readLines(warn=F) |>
     fromJSON() |> as_tibble() |> 
     filter(!is.na(date_collected) & sin != "-99") |>
     mutate(datetime_collected=as_datetime(date_collected),
            date=date(datetime_collected)) |>
-    filter(date >= dateStart) |>
     mutate(across(any_of(tox_i$full), ~if_else(.x == -99, NA_real_, .x)),
            across(any_of(tox_i$full), ~if_else(.x < 0, 0, .x))) |>
     group_by(sin, date) |> slice_head(n=1) |> ungroup() |>
@@ -78,26 +78,25 @@ read_and_clean_cefas <- function(url_cefas, tox_i, sites, dateStart="2016-01-01"
 
 
 read_and_clean_fish <- function(url_mowi, url_ssf, fish_i, sites, dateStart="2016-01-01") {
-  bind_rows(url(url_mowi) |> 
+  bind_rows(url(paste0(url_mowi, "?date_collected=gte.", dateStart)) |> 
               readLines(warn=F) |>
               fromJSON() |> as_tibble(),
-            url(url_ssf) |> 
+            url(paste0(url_ssf, "?date_collected=gte.", dateStart)) |> 
               readLines(warn=F) |>
               fromJSON() |> as_tibble()) |> 
     filter(!is.na(date_collected)) |>
     mutate(datetime_collected=as_datetime(date_collected),
            date=date(datetime_collected)) |>
-    filter(date >= dateStart) |>
     mutate(across(any_of(fish_i$full), ~na_if(.x, -99))) |>
     group_by(sin) |> mutate(N=n()) |> ungroup() |> filter(N > 2) |>
-    select(oid, sin, date, easting, northing, all_of(fish_i$full)) |>
+    select(oid, sin, date, easting, northing, any_of(fish_i$full)) |>
     left_join(sites, by=c("sin", "date")) |>
     mutate(east=if_else(is.na(east), easting, east),
            north=if_else(is.na(north), northing, north)) |>
     rename(obsid=oid) |>
     group_by(sin) |> mutate(lon=median(east), lat=median(north)) |> ungroup() |>
-    rename(all_of(setNames(fish_i$full, fish_i$abbr))) |>
-    select(obsid, lon, lat, sin, date, all_of(fish_i$abbr)) |>
+    rename(any_of(setNames(fish_i$full, fish_i$abbr))) |>
+    select(obsid, lon, lat, sin, date, any_of(fish_i$abbr)) |>
     arrange(sin, date) |>
     filter(sin!=0) |>
     group_by(date, sin) |> 
@@ -122,7 +121,15 @@ read_and_clean_fish <- function(url_mowi, url_ssf, fish_i, sites, dateStart="201
 #' @export
 #'
 #' @examples
-get_CMEMS <- function(userid, pw, i.df, bbox, nDays_buffer, dateRng, out.dir) {
+get_CMEMS <- function(userid, pw, i.df, bbox, nDays_buffer, dateRng, out.dir,
+                      toolbox=TRUE) {
+  if(toolbox) {
+    save(list=ls(all.names=TRUE), file="temp/get_CMEMS.RData")
+    system2("bash", paste0(getwd(), "/code/00_getCMEMS.sh"))
+    file.remove("temp/get_CMEMS.RData")
+    return("Finished running /code/getCMEMS.sh")
+  } 
+  
   library(tidyverse); library(ncdf4); library(lubridate); library(glue)
   
   for(i in 1:nrow(i.df)) {
@@ -163,6 +170,9 @@ get_CMEMS <- function(userid, pw, i.df, bbox, nDays_buffer, dateRng, out.dir) {
       saveRDS(glue("{out.dir}/cmems_{i.df$var[i]}_{i.df$source[i]}.rds"))
   }
 }
+
+
+
 
 
 
@@ -372,7 +382,7 @@ subset_WRF <- function(domain, wrf.out, v2_start=NULL, refreshStart=NULL) {
   wrf.ls <- vector("list", length(f.wrf))
   for(i in seq_along(f.wrf)) {
     date_i <- str_split_fixed(str_split_fixed(f.wrf[i], "/wrfF?_", 2)[,2], "_d0", 2)[,1]
-    if(is.null(refreshStart) | date_i >= refreshStart) {
+    if(is.null(refreshStart) || date_i >= refreshStart) {
       v_i <- which(date_i >= v_dateRng$start & date_i < v_dateRng$end)
       wrf.ls[[i]] <- readRDS(f.wrf[i]) |>
         select(-lon_i, -lat_i) |>
@@ -615,9 +625,10 @@ find_buffer_intersect_ids <- function(site.sf, env.sf, id_env) {
 #' @export
 #'
 #' @examples
-get_shortestPaths <- function(ocean.path, site.df, transMx.path=NULL, recalc_transMx=T, site_savePath=NULL) {
+get_shortestPaths <- function(ocean.path, site.df, site_savePath=NULL) {
+  library(raster); library(gdistance); 
+  library(terra); library(spaths)
   library(tidyverse); library(sf); library(glue);
-  library(raster); library(gdistance)
   
   # adapted from:
   # https://agrdatasci.github.io/gdistance/reference/index.html
@@ -625,13 +636,6 @@ get_shortestPaths <- function(ocean.path, site.df, transMx.path=NULL, recalc_tra
   # load ocean raster and calculate transition matrix
   mesh.r <- raster(ocean.path)
   crs(mesh.r) <- CRS("+init=epsg:27700")
-  if(is.null(transMx.path) | recalc_transMx) {
-    mesh.tmx <- transition(mesh.r, mean, 16)
-    mesh.tmx <- geoCorrection(mesh.tmx)
-    saveRDS(mesh.tmx, "data/mesh_tmx.rds")
-  } else {
-    mesh.tmx <- readRDS(transMx.path)
-  }
   
   # locate sites in mesh
   set_ll_warn(TRUE)
@@ -640,24 +644,32 @@ get_shortestPaths <- function(ocean.path, site.df, transMx.path=NULL, recalc_tra
                                       proj4string=CRS("+init=epsg:27700")) |>
     points2nearestcell(mesh.r) |>
     as.data.frame()
-  site.df_new <- site.df |> select(siteid, sin) |> left_join(site.spdf)
+  site.df_new <- site.df |> dplyr::select(siteid, sin) |> left_join(site.spdf)
   if(!is.null(site_savePath)) {
     saveRDS(site.df_new, site_savePath)
   }
   
   # Pairwise each i to all others within site.df
-  dist.df <- map_dfr(1:nrow(site.spdf),
-                     ~shortestPath(mesh.tmx,
-                                   as.matrix(site.spdf[.x, c("lon", "lat")]),
-                                   as.matrix(site.spdf[-.x, c("lon", "lat")]),
-                                   output="SpatialLines") |>
-                       st_as_sf() |>
-                       mutate(origin=site.spdf$siteid[.x],
-                              destination=site.spdf$siteid[-.x],
-                              distance=st_length(.)) |>
-                       st_drop_geometry()) 
+  mesh.r <- rast(ocean.path)
+  crs(mesh.r) <- crs("+init=epsg:27700")
+  site.sf <- site.df_new |>
+    st_as_sf(coords=c("lon", "lat"), crs=27700) |>
+    st_crop(mesh.r)
+  out_paths <- spaths::shortest_paths(mesh.r, 
+                              site.sf, 
+                              output="distances")
+  # dist.df <- map_dfr(1:nrow(site.spdf),
+  #                    ~shortestPath(mesh.tmx,
+  #                                  as.matrix(site.spdf[.x, c("lon", "lat")]),
+  #                                  as.matrix(site.spdf[-.x, c("lon", "lat")]),
+  #                                  output="SpatialLines") |>
+  #                      st_as_sf() |>
+  #                      mutate(origin=site.spdf$siteid[.x],
+  #                             destination=site.spdf$siteid[-.x],
+  #                             distance=st_length(.)) |>
+  #                      st_drop_geometry()) 
   
-  return(list(site.df=site.df_new, dist.df=dist.df))
+  return(list(site.df=site.df_new, dist.df=out_paths))
 }
 
 
@@ -827,7 +839,7 @@ get_openBearing <- function(site.df, coast.path, buffer=10e3, nDir=120) {
     mutate(siteid=spoke.df$siteid,
            spoke.id=spoke.df$spoke.id)
   spoke.mesh <- st_intersection(spoke.lines, st_read(coast.path)) |>
-    st_cast("LINESTRING") |>
+    st_cast("LINESTRING") %>%
     mutate(len=round(as.numeric(st_length(.)))) |>
     group_by(siteid) |>
     filter(len==max(len)) |>
@@ -905,13 +917,12 @@ get_lags <- function(data, ..., n=2){
   variable <- enquos(...)
   
   indices <- seq_len(n)
-  combos <- crossing(indices, var=as.list(variable))
+  combos <- tidyr::crossing(indices, var=as.list(variable))
   
   quosures <- map2(combos$indices, combos$var,
                    ~quo(lag(!!.y, !!.x)) ) |>
     set_names(paste0(map_chr(combos$var, quo_text), combos$indices))
   mutate(data, !!!quosures )
-  
 }
 
 
@@ -992,11 +1003,11 @@ calc_y_features <- function(yRaw.df, y_i, tl_i, dist.df=NULL, forecastStart="300
       date_j <- y.df_i$date[j]
       yr_j <- year(date_j)
       wk.df <- y.df_i |>
-        filter(siteid %in% dist.df$dest_c[dist.df$origin==site_j][[1]] &
+        filter(siteid %in% dist.df$dest_c[dist.df$origins==site_j][[1]] &
                  date <= date_j & 
                  date > date_j-7) 
       yr.df <- yYr_i |>
-        filter(siteid %in% dist.df$dest_c[dist.df$origin==site_j][[1]] &
+        filter(siteid %in% dist.df$dest_c[dist.df$origins==site_j][[1]] &
                  year == yr_j - 1)
       yr.site_j <- yYr_i |> filter(siteid==site_j & year==yr_j-1)
       y_new[[i]]$lnNAvg1[j] <- mean(wk.df$lnN1, na.rm=T)
